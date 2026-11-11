@@ -3,3 +3,4 @@ game.db
 __pycache__/
 .pytest_cache/
 .auto-update-failed
+.venv/
