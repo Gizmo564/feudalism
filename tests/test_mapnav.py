@@ -117,7 +117,13 @@ def test_view_full_walkthrough(bot, game):
         layers._values = ["icons", "people"]
         i = click(100)
         await view.set_layers(layers)(i)
-        assert view.layers == {"icons": True, "buildings": False, "people": True}
+        layers._values = ["production"]
+        await view.set_layers(layers)(click(100))
+        assert view.production() and all(isinstance(v, str) for v in view.production().values())
+        assert "workers" in view.text()
+        layers._values = ["icons", "people"]
+        await view.set_layers(layers)(click(100))
+        assert view.layers == {"icons": True, "buildings": False, "people": True, "production": False}
         assert "Housing:" in i.edit_original_response.await_args.kwargs["content"]
         layers._values = ["icons", "buildings", "people"]
         await view.set_layers(layers)(click(100))
@@ -172,12 +178,17 @@ def test_info_view_tabs_and_priority_buttons(bot, game):
         i = click(100)
         await find(view, "Economy").callback(i)
         i.response.edit_message.assert_awaited()
-        assert view.tab == "economy" and len(view.children) == 4 + 1 + 3
+        assert view.tab == "economy" and len(view.children) == 4 + 1 + 5
         start = game.world["nations"][0]["priorities"]["food"]            # 5 by default: "+" is greyed out
         assert find(view, "+").disabled and not find(view, "-").disabled
         await find(view, "-").callback(click(100))
         assert game.world["nations"][0]["priorities"]["food"] == start - 1
         assert not find(view, "+").disabled
+        await find(view, "Off").callback(click(100))
+        assert game.world["nations"][0]["priorities"]["food"] == 0 and find(view, "Off").disabled
+        await find(view, "Max").callback(click(100))
+        assert game.world["nations"][0]["priorities"]["food"] == 5 and find(view, "Max").disabled
+        await find(view, "-").callback(click(100))
         menu = selects(view)[0]
         menu._values = ["wood"]
         await view.pick(menu)(click(100))
@@ -281,3 +292,27 @@ def test_nightly_tick_posts_report_log_and_private_reports(bot, game, monkeypatc
     monkeypatch.setattr(bot, "DM_REPORTS", False)
     asyncio.run(go())
     assert sent_dms == []
+
+
+def test_trade_board_buttons(bot, game):
+    async def go():
+        for nid in (0, 1):
+            t = next(k for k, v in game.world["tiles"].items() if v["owner"] == nid and v["building"] is None)
+            game.world["tiles"][t]["building"] = "market"
+        tid, _ = game.make_offer(100, "", "wood 5", "stone 2")
+        o = game.world["trades"][0]
+        assert "Trade board" == bot.offer_embed(game, o).title
+        assert bot.TradeButton.__discord_ui_compiled_template__.match("trade:accept:%d" % tid)
+        view = bot.offer_view(tid)
+        assert [c.item.label for c in view.children] == ["Accept", "Decline"]
+        # the sender cannot accept their own offer
+        i = click(100)
+        await view.children[0].callback(i)
+        assert "own offer" in i.response.send_message.await_args.args[0]
+        # another market owner can
+        i = click(101)
+        await view.children[0].callback(i)
+        i.response.edit_message.assert_awaited()
+        assert o["status"] == "accepted" and o["to"] == 1
+        assert "Accepted by" in bot.offer_embed(game, o).description
+    asyncio.run(go())

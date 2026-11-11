@@ -109,6 +109,10 @@ def claim_cost(world, rules, nid):
     out = dict(c["base"])
     for r, v in c["per_tile"].items():
         out[r] = out.get(r, 0) + v * count
+    scarcity = c.get("scarcity_percent", 0)
+    if scarcity:   # the fuller the map, the dearer the land; at a full map prices are (100 + scarcity)% of normal
+        pct = world.get("claimed_pct", W.claimed_pct(world))
+        out = {r: max(1, v * (10000 + scarcity * pct) // 10000) if v else 0 for r, v in out.items()}
     return out
 
 
@@ -326,8 +330,9 @@ def is_coastal(world, k):
     return any(world["tiles"][x]["terrain"] == "water" for x in neighbors(k) if x in world["tiles"])
 
 
-def work_plan(world, rules, n):
-    """Where the workers go tonight: {resource: (workers, amount produced)}. Oil only counts on oil tiles."""
+def tile_plan(world, rules, n):
+    """Where the workers go tonight, tile by tile: {tile: {resource: (workers, amount)}}.
+    A tile never holds more than workers_per_tile workers, so that is also its most output a night."""
     nid, prio = n["id"], n["priorities"]
     weights, cands = {}, {}
     for k in W.owned(world, nid):
@@ -349,6 +354,15 @@ def work_plan(world, rules, n):
             amount = cnt * rules["yield_per_worker"][r]
             if r == "food" and is_coastal(world, k):
                 amount += cnt * rules["coastal_food_bonus"]
+            plan.setdefault(k, {})[r] = (cnt, amount)
+    return plan
+
+
+def work_plan(world, rules, n):
+    """Totals for the whole nation: {resource: (workers, amount produced)}."""
+    plan = {}
+    for per in tile_plan(world, rules, n).values():
+        for r, (cnt, amount) in per.items():
             got = plan.get(r, (0, 0))
             plan[r] = (got[0] + cnt, got[1] + amount)
     return plan
@@ -450,4 +464,5 @@ def run_tick(world, rules):
     if won:
         world["winner"] = {"nation": won[0], "reason": won[1], "tick": world["tick"]}
         W.pub(world, "%s wins: %s" % (world["nations"][won[0]]["name"], won[1]))
+    W.refresh_scarcity(world)
     world["tick"] += 1

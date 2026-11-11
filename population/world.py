@@ -57,6 +57,18 @@ def oil_shown(world, t):
     return t["oil"] and (not world["settings"].get("hidden_oil") or t.get("found", False))
 
 
+def claimed_pct(world):
+    """Percent of all land tiles that someone owns."""
+    land = [t for t in world["tiles"].values() if t["terrain"] != "water"]
+    return 100 * sum(1 for t in land if t["owner"] is not None) // max(1, len(land))
+
+
+def refresh_scarcity(world):
+    """Remember how full the map is. Claim prices use this number, which only changes at night or when the
+    map or the player list changes, so the price you are quoted is the price you pay."""
+    world["claimed_pct"] = claimed_pct(world)
+
+
 def is_free_land(world, k):
     t = world["tiles"].get(k)
     return t is not None and t["terrain"] != "water" and t["owner"] is None
@@ -122,6 +134,7 @@ def new_world(rules, names, radius, seed):
     for name in names:
         place_nation(world, rules, name, rng, list(world["tiles"]), dict(rules["start"]["resources"]))
     discover_oil(world)
+    refresh_scarcity(world)
     return world
 
 
@@ -189,6 +202,7 @@ def expand_map(world, rules, rings=1):
         world["radius"] += 1
         rng = random.Random(world["seed"] * 7919 + world["radius"])
         make_tiles(rules, rng, ring(world["radius"]), world["tiles"])
+    refresh_scarcity(world)
 
 
 def add_nation(world, rules, name):
@@ -205,6 +219,7 @@ def add_nation(world, rules, name):
     until = world["tick"] + start["late_join_protection_ticks"]
     nid = place_nation(world, rules, name, rng, outer, res, until)
     discover_oil(world)
+    refresh_scarcity(world)
     return nid
 
 

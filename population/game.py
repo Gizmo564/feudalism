@@ -4,7 +4,7 @@ import json
 import os
 import random
 
-from . import advice, guide, infopage, world as W, tick, trade, victory, views, ruleset
+from . import advice, guide, infopage, pacts, world as W, tick, trade, victory, views, ruleset
 from .hexes import neighbors
 
 RULES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rules")
@@ -277,19 +277,94 @@ class Game:
         self.save()
         return "Priorities updated."
 
-    def trade_offer(self, uid, to_name, give_text, get_text):
-        nid = self.nid(uid)
-        other = next((n for n in self.world["nations"] if n["name"].lower() == to_name.lower()), None)
+    def nation_named(self, name):
+        other = next((n for n in self.world["nations"] if n["name"].lower() == name.strip().lower()), None)
         if other is None:
-            raise GameError("No nation called '%s'" % to_name)
-        give = {"resources": parse_pairs(give_text)} if give_text.strip() else {}
-        get = {"resources": parse_pairs(get_text)} if get_text.strip() else {}
+            raise GameError("No nation called '%s'" % name)
+        return other
+
+    def trade_offer(self, uid, to_name, give_text, get_text):
+        """to_name blank = an open offer for anyone with a Market. Returns the text for the player."""
+        return self.make_offer(uid, to_name, give_text, get_text)[1]
+
+    def make_offer(self, uid, to_name, give_text, get_text, private=False):
+        """Three kinds: open to anyone (no name), public to one nation, or private to one nation (private=True)."""
+        nid = self.nid(uid)
+        other = self.nation_named(to_name) if (to_name or "").strip() else None
+        if private and other is None:
+            raise GameError("A private offer needs a nation. Name who it is for, or make it public.")
         try:
-            tid = trade.offer(self.world, self.rules, nid, other["id"], give, get)
+            give = {"resources": parse_pairs(give_text)} if give_text.strip() else {}
+            get = {"resources": parse_pairs(get_text)} if get_text.strip() else {}
+            tid = trade.offer(self.world, self.rules, nid, other["id"] if other else None, give, get)
+        except ValueError as e:
+            raise GameError(str(e))
+        if private:
+            trade.find(self.world, tid)["private"] = True
+        self.save()
+        return tid, ("Private offer %d sent to %s." % (tid, other["name"]) if private else
+                     "Offer %d sent to %s." % (tid, other["name"])) if other else "Offer %d posted for anyone with a Market." % tid
+
+    def offer_line(self, o):
+        """One public sentence describing an offer."""
+        w = self.world
+        who = w["nations"][o["from"]]["name"]
+        to = " to %s" % w["nations"][o["to"]]["name"] if o["to"] is not None else " to anyone with a Market"
+        if o.get("private"):
+            to += " (private)"
+        return "**Offer %d** - %s gives %s and wants %s%s." % (
+            o["id"], who, self.fmt(o["give"].get("resources", {})), self.fmt(o["get"].get("resources", {})), to)
+
+    # ---------- pacts (records only) ----------
+
+    def pact_propose(self, uid, to_name, text):
+        nid, other = self.nid(uid), self.nation_named(to_name)
+        try:
+            pid = pacts.propose(self.world, nid, other["id"], text)
         except ValueError as e:
             raise GameError(str(e))
         self.save()
-        return "Offer %d sent to %s." % (tid, other["name"])
+        return "Pact %d proposed to %s. It only counts if they accept; nothing enforces it." % (pid, other["name"])
+
+    def pact_accept(self, uid, pid):
+        nid = self.nid(uid)
+        try:
+            pacts.accept(self.world, pid, nid)
+        except ValueError as e:
+            raise GameError(str(e))
+        self.save()
+        return "Pact %d is now on the public record." % pid
+
+    def pact_decline(self, uid, pid):
+        nid = self.nid(uid)
+        try:
+            pacts.decline(self.world, pid, nid)
+        except ValueError as e:
+            raise GameError(str(e))
+        self.save()
+        return "Pact %d closed." % pid
+
+    def pact_break(self, uid, pid):
+        nid = self.nid(uid)
+        try:
+            pacts.end(self.world, pid, nid)
+        except ValueError as e:
+            raise GameError(str(e))
+        self.save()
+        return "Pact %d broken. Everyone will see it in the next report." % pid
+
+    def pact_list(self, uid):
+        nid = self.nid(uid)
+        w = self.world
+        mine = pacts.for_nation(w, nid)
+        if not mine:
+            return "You have no pacts. Propose one with /pact propose."
+        lines = []
+        for p in mine:
+            other = w["nations"][p["b"] if p["a"] == nid else p["a"]]["name"]
+            state = "active" if p["status"] == "active" else ("waiting for them" if p["a"] == nid else "waiting for you")
+            lines.append("Pact %d with %s (%s): %s" % (p["id"], other, state, p["text"]))
+        return "\n".join(lines)
 
     def trade_accept(self, uid, tid):
         nid = self.nid(uid)
@@ -302,6 +377,10 @@ class Game:
 
     def trade_decline(self, uid, tid):
         nid = self.nid(uid)
+        o = trade.find(self.world, tid)
+        if o and o["status"] == "open" and o["to"] is None and o["from"] != nid:
+            raise GameError("That offer is open to everyone. Only %s can withdraw it. To pass, just ignore it." %
+                            self.world["nations"][o["from"]]["name"])
         try:
             trade.decline(self.world, tid, nid)
         except ValueError as e:
@@ -334,10 +413,13 @@ class Game:
             if a["owner"] == nid:
                 lines.append("Army %d: %d at %s%s" % (a["id"], a["n"], a["tile"], " -> %s" % a["dest"] if a["dest"] else ""))
         for o in w["trades"]:
-            if o["status"] == "open" and o["to"] == nid:
+            if o["status"] == "open" and o["to"] in (nid, None) and o["from"] != nid:
                 lines.append("Offer %d from %s: gives %s, wants %s" % (
                     o["id"], w["nations"][o["from"]]["name"], self.fmt(o["give"].get("resources", {})),
                     self.fmt(o["get"].get("resources", {}))))
+        for p in pacts.for_nation(w, nid):
+            other = w["nations"][p["b"] if p["a"] == nid else p["a"]]["name"]
+            lines.append("Pact %d with %s (%s): %s" % (p["id"], other, p["status"], p["text"]))
         queued = [o for o in w["orders"] if o["nation"] == nid]
         if queued:
             lines.append("Queued orders: %d" % len(queued))
@@ -384,9 +466,10 @@ class Game:
 
     def public_events(self):
         """The last night's public events (empty while fog of war hides them)."""
+        pacts_news = list(self.world.get("last_pacts", []))
         if self.world["settings"]["fog"]:
-            return []
-        return list(self.world.get("last_public", []))
+            return pacts_news
+        return pacts_news + list(self.world.get("last_public", []))
 
     def welcome(self, name):
         return guide.welcome(self.rules, name)
@@ -416,12 +499,14 @@ class Game:
         self.world["report"] = {str(i): dict(b, tick=self.world["tick"]) for i, b in before.items()}
         events = self.world["events"]
         self.world["last_public"] = list(events.get("public", []))
+        self.world["last_pacts"] = list(events.get("pacts", []))
         self.world["last_events"] = events
         self.world["events"] = {}
         self.store.snapshot(self.world["tick"], W.to_json(self.world))
         lines = ["**Tick %d**" % self.world["tick"]]
-        if not self.world["settings"]["fog"] and not split_log:
-            lines += ["- " + e for e in events.get("public", [])[:15]]
+        if not split_log:
+            shown = events.get("pacts", []) + ([] if self.world["settings"]["fog"] else events.get("public", []))
+            lines += ["- " + e for e in shown[:15]]
         lines += advice.race(self.world, self.rules)
         if self.world["winner"]:
             self.phase = "over"

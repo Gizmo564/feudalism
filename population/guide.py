@@ -46,7 +46,8 @@ def resources(rules):
         "Food: every person eats %d a night. Without it people starve. Livestock counts as %d food when you run short." % (
             rules["eat_per_person"], rules["food_value"].get("livestock", 1)),
         "", "**What things cost**",
-        "Claiming land: %s, plus %s for each tile you own." % (cost(rules["claim"]["base"]), cost(rules["claim"]["per_tile"])),
+        "Claiming land: %s, plus %s for each tile you own. Land gets dearer as the map fills up and cheaper when it grows." % (
+            cost(rules["claim"]["base"]), cost(rules["claim"]["per_tile"])),
         "Only %d claim a night." % rules["claim"]["per_tick"]]
     for name, spec in rules["buildings"].items():
         effect = []
@@ -87,7 +88,8 @@ def war(rules):
             rules["oil_upkeep"]["soldiers_per_oil"], soldier, rules["oil_upkeep"]["shortfall_loss_percent"], soldier),
         "",
         "**Trade**",
-        "/trade needs a Market on both sides. Offers expire after %d nights; goods take time to arrive." % rules["trade"]["offer_expires_ticks"],
+        "/trade needs a Market on both sides. Name a nation, or leave 'to' empty to post on the trade board for anyone. Offers expire after %d nights; goods take time to arrive." % rules["trade"]["offer_expires_ticks"],
+        "/pact writes a promise between two nations on the public record. The game never enforces it; breaking one is announced.",
     ])
 
 
@@ -124,7 +126,8 @@ def commands(rules):
         "/standings - who is ahead",
         "/claim, /build, /train, /move, /priorities - the typed versions of orders",
         "/cancel - clear tonight's orders and start again",
-        "/trade, /accept, /decline - deals with other players",
+        "/trade, /offers, /accept, /decline - deals with other players (open offers appear on the trade board)",
+        "/pact propose|accept|decline|break|list - recorded promises",
         "/tutorial - practise in a private test game",
     ])
 

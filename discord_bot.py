@@ -16,6 +16,8 @@ from population.store import Store
 from population.tutorial import Tutorial
 from population.hexes import neighbors
 from population import world as W
+from population import tick
+from population import trade as trade_mod
 
 
 def load_env(path=".env"):
@@ -265,12 +267,16 @@ class InfoView(discord.ui.View):
         menu.callback = self.pick(menu)
         self.add_item(menu)
         value = prios[self.resource]
+        off = discord.ui.Button(label="Off", row=2, disabled=value <= 0)
+        off.callback = self.change(to=0)
         minus = discord.ui.Button(label="-", row=2, disabled=value <= 0)
         minus.callback = self.change(-1)
         label = discord.ui.Button(label="%s: %d/5" % (self.resource, value), row=2, disabled=True)
         plus = discord.ui.Button(label="+", row=2, disabled=value >= 5)
         plus.callback = self.change(1)
-        for item in (minus, label, plus):
+        top = discord.ui.Button(label="Max", row=2, disabled=value >= 5)
+        top.callback = self.change(to=5)
+        for item in (off, minus, label, plus, top):
             self.add_item(item)
 
     async def refresh(self, interaction):
@@ -289,11 +295,11 @@ class InfoView(discord.ui.View):
             await self.refresh(interaction)
         return cb
 
-    def change(self, step):
+    def change(self, step=0, to=None):
         async def cb(interaction):
             current = self.g.world["nations"][self.g.nid(self.uid)]["priorities"][self.resource]
             try:
-                self.g.set_priority(self.uid, self.resource, current + step)
+                self.g.set_priority(self.uid, self.resource, current + step if to is None else to)
             except (GameError, ValueError) as e:
                 return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
             await self.refresh(interaction)
@@ -323,7 +329,9 @@ class HelpView(discord.ui.View):
 DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u2190", "e": "\u2192", "sw": "\u2199", "se": "\u2198"}
 LAYERS = (("icons", "Terrain icons", "Draw a small picture on each tile"),
           ("buildings", "Buildings", "Show homes, barracks, markets and walls"),
-          ("people", "Housing numbers", "Label buildings with how many people they house"))
+          ("people", "Housing numbers", "Label buildings with how many people they house"),
+          ("production", "Production", "Show what each of your tiles makes tonight"))
+LETTER = {"food": "F", "livestock": "L", "wood": "W", "stone": "S", "ore": "O", "oil": "Oi"}
 
 
 class MapView(discord.ui.View):
@@ -333,7 +341,7 @@ class MapView(discord.ui.View):
         super().__init__(timeout=900)
         self.uid, self.nid, self.radius, self.g = uid, nid, radius, g or game
         self.practice = uid in tutorials
-        self.layers = {"icons": False, "buildings": True, "people": False}
+        self.layers = {"icons": False, "buildings": True, "people": False, "production": False}
         self.center = self.g.world["nations"][nid]["capital"]
         self.selected = None
         self.choosing_army = False
@@ -346,7 +354,14 @@ class MapView(discord.ui.View):
         return render.render(self.g.world, self.g.rules, nid=self.nid, center=self.center, radius=self.radius, tile=48,
                              legend=False, coords="claim", tint=True, icons=self.layers["icons"], claim=True,
                              tidy=True, mark=self.selected, buildings=self.layers["buildings"],
-                             people=self.layers["people"])
+                             people=self.layers["people"], production=self.production())
+
+    def production(self):
+        """{tile: 'F5'} for your working tiles: resource letter and workers, out of the per-tile maximum."""
+        if not self.layers["production"]:
+            return None
+        plan = tick.tile_plan(self.g.world, self.g.rules, self.g.world["nations"][self.nid])
+        return {k: " ".join("%s%d" % (LETTER[r], c) for r, (c, _) in per.items()) for k, per in plan.items()}
 
     def text(self):
         lines = ["**[Practice game]**"] if self.practice else []
@@ -354,6 +369,9 @@ class MapView(discord.ui.View):
             lines.append("Pick a tile from the menu to claim, build or move there. Outlined tiles are free land you can claim.")
         else:
             lines.append(mapnav.tile_card(self.g.world, self.g.rules, self.nid, self.selected)["text"])
+        if self.layers["production"]:
+            cap = self.g.rules["workers_per_tile"]
+            lines.append("Tags show resource and workers (a tile takes up to %d). F food, L livestock, W wood, S stone, O ore." % cap)
         if self.layers["people"]:
             hw, hs = W.housing(self.g.world, self.g.rules, self.nid)
             n = self.g.world["nations"][self.nid]
@@ -543,20 +561,175 @@ async def priorities(interaction: discord.Interaction, settings: str):
     await run(interaction, game_for(interaction.user.id).priorities, interaction.user.id, settings)
 
 
-@tree.command(description="Offer a trade. You need a Market, and so does they.")
-@app_commands.describe(to="Nation name", give="What you give, e.g. 'wood 10'", get="What you want, e.g. 'stone 5'")
-async def trade(interaction: discord.Interaction, to: str, give: str, get: str = ""):
-    await run(interaction, game_for(interaction.user.id).trade_offer, interaction.user.id, to, give, get)
+def trade_channel():
+    channel_id = store.get("trade_channel")
+    return client.get_channel(channel_id) if channel_id else announce_channel()
+
+
+def offer_embed(g, o):
+    """The public trade-board card for one offer."""
+    status = o["status"]
+    color = {"open": 0xC8A24A, "accepted": 0x4C9F70}.get(status, 0x8A8A8A)
+    text = g.offer_line(o)
+    if status != "open":
+        who = g.world["nations"][o["to"]]["name"] if o["to"] is not None else ""
+        text += "\n**%s**" % {"accepted": "Accepted by %s." % who, "declined": "Declined.", "withdrawn": "Withdrawn.",
+                              "expired": "Expired."}.get(status, status)
+    else:
+        text += "\nExpires after %d nights." % g.rules["trade"]["offer_expires_ticks"]
+    return discord.Embed(title="Trade board", description=text, color=color)
+
+
+class TradeButton(discord.ui.DynamicItem[discord.ui.Button], template=r"trade:(?P<act>accept|decline):(?P<id>\d+)"):
+    """Accept/Decline under a public offer. The custom id carries the offer number, so these keep working after a restart."""
+
+    def __init__(self, act, tid):
+        accept = act == "accept"
+        super().__init__(discord.ui.Button(label="Accept" if accept else "Decline",
+                                           style=discord.ButtonStyle.success if accept else discord.ButtonStyle.secondary,
+                                           custom_id="trade:%s:%d" % (act, tid)))
+        self.act, self.tid = act, tid
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["act"], int(match["id"]))
+
+    async def callback(self, interaction):
+        try:
+            if self.act == "accept":
+                text = game.trade_accept(interaction.user.id, self.tid)
+            else:
+                text = game.trade_decline(interaction.user.id, self.tid)
+        except (GameError, ValueError) as e:
+            return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+        o = trade_mod.find(game.world, self.tid)
+        o["shown"] = True
+        game.save()
+        await interaction.response.edit_message(embed=offer_embed(game, o), view=None)
+        await interaction.followup.send(text, ephemeral=True)
+
+
+def offer_view(tid):
+    view = discord.ui.View(timeout=None)
+    view.add_item(TradeButton("accept", tid))
+    view.add_item(TradeButton("decline", tid))
+    return view
+
+
+async def post_offer(tid):
+    """Show an offer with Accept/Decline buttons: on the public board, or by DM for a private offer.
+    Returns True if it was posted."""
+    o = trade_mod.find(game.world, tid)
+    if o.get("private"):
+        uid = next((u for u, n in game.players.items() if n == o["to"]), None)
+        try:
+            channel = await (await client.fetch_user(int(uid))).create_dm()
+        except (discord.HTTPException, TypeError, ValueError):
+            return False
+    else:
+        channel = trade_channel()
+    if channel is None:
+        return False
+    try:
+        msg = await channel.send(embed=offer_embed(game, o), view=offer_view(tid))
+    except discord.Forbidden:
+        return False
+    o["post"] = [msg.channel.id, msg.id]
+    game.save()
+    return True
+
+
+async def refresh_board():
+    """After a night: edit board cards whose offers expired, so nobody clicks a dead button."""
+    for o in game.world["trades"]:
+        if o.get("post") and o["status"] != "open" and not o.get("shown"):
+            o["shown"] = True
+            try:
+                channel = client.get_channel(o["post"][0]) or await client.fetch_channel(o["post"][0])
+                msg = await channel.fetch_message(o["post"][1])
+                await msg.edit(embed=offer_embed(game, o), view=None)
+            except discord.HTTPException:
+                pass
+    game.save()
+
+
+@tree.command(description="Offer a trade. Leave 'to' empty to post it on the trade board for anyone with a Market.")
+@app_commands.describe(give="What you give, e.g. 'wood 10'", get="What you want, e.g. 'stone 5'",
+                       to="Nation name (leave empty for an open offer)",
+                       who_sees="Public: posted on the trade board. Private: only you and the named nation see it")
+@app_commands.choices(who_sees=[app_commands.Choice(name="Public (trade board)", value="public"),
+                                app_commands.Choice(name="Private (only you and them)", value="private")])
+async def trade(interaction: discord.Interaction, give: str, get: str = "", to: str = "", who_sees: str = "public"):
+    g = game_for(interaction.user.id)
+    private = who_sees == "private"
+    try:
+        tid, text = g.make_offer(interaction.user.id, to, give, get, private=private)
+    except (GameError, ValueError) as e:
+        return await say(interaction, "Can't do that: %s" % e)
+    if g is game and await post_offer(tid):
+        text += " They were sent it with buttons." if private else " It is on the trade board."
+    elif private:
+        text += " I couldn't DM them, so they will see it in /status and /offers."
+    await say(interaction, text)
+
+
+@tree.command(description="List the trade offers you can accept right now")
+async def offers(interaction: discord.Interaction):
+    g = game_for(interaction.user.id)
+    nid = g.players.get(str(interaction.user.id))
+    if nid is None:
+        return await say(interaction, "You are not in this game.")
+    lines = [g.offer_line(o) for o in g.world["trades"]
+             if o["status"] == "open" and o["from"] != nid and o["to"] in (nid, None)]
+    await say(interaction, "\n".join(lines) or "No open offers right now. Post one with /trade.")
 
 
 @tree.command(description="Accept a trade offer (see /status for offer numbers)")
 async def accept(interaction: discord.Interaction, offer: int):
     await run(interaction, game_for(interaction.user.id).trade_accept, interaction.user.id, offer)
+    if game_for(interaction.user.id) is game:
+        await refresh_board()
 
 
 @tree.command(description="Decline a trade offer")
 async def decline(interaction: discord.Interaction, offer: int):
     await run(interaction, game_for(interaction.user.id).trade_decline, interaction.user.id, offer)
+    if game_for(interaction.user.id) is game:
+        await refresh_board()
+
+
+# ---------- pacts: written promises, kept as a record, never enforced ----------
+
+pact = app_commands.Group(name="pact", description="Promises between nations. The game records them; it does not enforce them.")
+
+
+@pact.command(name="propose", description="Propose a pact, e.g. 'no attacks until night 30'")
+@app_commands.describe(nation="Who you are proposing to", terms="What you both promise (under 120 characters)")
+async def pact_propose(interaction: discord.Interaction, nation: str, terms: str):
+    await run(interaction, game_for(interaction.user.id).pact_propose, interaction.user.id, nation, terms)
+
+
+@pact.command(name="accept", description="Accept a pact proposed to you. It goes on the public record.")
+async def pact_accept(interaction: discord.Interaction, number: int):
+    await run(interaction, game_for(interaction.user.id).pact_accept, interaction.user.id, number)
+
+
+@pact.command(name="decline", description="Decline a proposal, or withdraw one you made")
+async def pact_decline(interaction: discord.Interaction, number: int):
+    await run(interaction, game_for(interaction.user.id).pact_decline, interaction.user.id, number)
+
+
+@pact.command(name="break", description="End an active pact. Everyone will see that you broke it.")
+async def pact_break(interaction: discord.Interaction, number: int):
+    await run(interaction, game_for(interaction.user.id).pact_break, interaction.user.id, number)
+
+
+@pact.command(name="list", description="Your pacts and proposals")
+async def pact_list(interaction: discord.Interaction):
+    await run(interaction, game_for(interaction.user.id).pact_list, interaction.user.id)
+
+
+tree.add_command(pact)
 
 
 # ---------- practice game ----------
@@ -637,6 +810,15 @@ async def admin_announcements(interaction: discord.Interaction, channel: discord
         return await say(interaction, deny(interaction))
     store.set("announce_channel", channel.id)
     await say(interaction, "Announcements and nightly reports will go to #%s." % channel.name)
+
+
+@admin.command(name="tradeboard", description="Choose the channel for public trade offers (empty = use announcements)")
+async def admin_tradeboard(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    store.set("trade_channel", channel.id if channel else None)
+    await say(interaction, "Trade offers will be posted in #%s." % channel.name if channel
+              else "Trade offers will use the announcements channel.")
 
 
 @admin.command(name="gamelog", description="Choose a channel for the nightly story of events (leave empty to turn off)")
@@ -752,6 +934,7 @@ async def do_tick():
         text = "**Night %d**\n%s" % (game.world["tick"], "\n".join("- " + e for e in events) or "A quiet night.")
         for i in range(0, len(text), 1900):
             await log.send(text[i:i + 1900])
+    await refresh_board()
     if DM_REPORTS:
         for uid in game.players:
             await dm(uid, game.report(uid))
@@ -776,6 +959,7 @@ async def ticker():
 
 @client.event
 async def on_ready():
+    client.add_dynamic_items(TradeButton)
     if GUILD_ID:
         guild = discord.Object(id=int(GUILD_ID))
         tree.copy_global_to(guild=guild)

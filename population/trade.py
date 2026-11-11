@@ -33,19 +33,23 @@ def need_markets(world, rules, a, b):
 
 
 def offer(world, rules, frm, to, give, get):
-    """`frm` gives `give` and asks `to` for `get`. Each is {"resources": {...}, "tiles": [...]}."""
+    """`frm` gives `give` and asks `to` for `get`. Each is {"resources": {...}, "tiles": [...]}.
+    to=None is an open offer: the first nation with a Market that accepts it gets the deal."""
     if frm == to:
         raise ValueError("you cannot trade with yourself")
     for nid in (frm, to):
-        if not world["nations"][nid]["alive"]:
+        if nid is not None and not world["nations"][nid]["alive"]:
             raise ValueError("that nation has been eliminated")
-    need_markets(world, rules, frm, to)
+    need_markets(world, rules, frm, frm if to is None else to)
+    if not give.get("resources") and not give.get("tiles") and not get.get("resources") and not get.get("tiles"):
+        raise ValueError("an offer needs something in it")
     check_side(world, rules, frm, give)
     o = {"id": world["next_trade_id"], "from": frm, "to": to, "give": give, "get": get,
          "tick": world["tick"], "status": "open"}
     world["next_trade_id"] += 1
     world["trades"].append(o)
-    W.ev(world, to, "%s offered you a trade (offer %d)" % (world["nations"][frm]["name"], o["id"]))
+    if to is not None:
+        W.ev(world, to, "%s offered you a trade (offer %d)" % (world["nations"][frm]["name"], o["id"]))
     return o["id"]
 
 
@@ -60,11 +64,21 @@ def accept(world, rules, tid, by):
     o = find(world, tid)
     if o is None or o["status"] != "open":
         raise ValueError("that offer is not open")
-    if o["to"] != by:
-        raise ValueError("that offer is not for you")
-    need_markets(world, rules, o["from"], o["to"])
-    check_side(world, rules, o["from"], o["give"])
-    check_side(world, rules, o["to"], o["get"])
+    if o["to"] is None:
+        if by == o["from"]:
+            raise ValueError("that is your own offer")
+        if not world["nations"][by]["alive"]:
+            raise ValueError("your nation has been eliminated")
+        need_markets(world, rules, o["from"], by)
+        check_side(world, rules, o["from"], o["give"])
+        check_side(world, rules, by, o["get"])
+        o["to"] = by
+    else:
+        if o["to"] != by:
+            raise ValueError("that offer is not for you")
+        need_markets(world, rules, o["from"], o["to"])
+        check_side(world, rules, o["from"], o["give"])
+        check_side(world, rules, o["to"], o["get"])
     speed = rules["movement"]["trade_tiles_per_tick"]
     dist = distance(world["nations"][o["from"]]["capital"], world["nations"][o["to"]]["capital"])
     travel = max(1, math.ceil(dist / speed))
@@ -85,7 +99,7 @@ def decline(world, tid, by):
     o = find(world, tid)
     if o is None or o["status"] != "open" or by not in (o["from"], o["to"]):
         raise ValueError("that offer is not open")
-    o["status"] = "declined"
+    o["status"] = "withdrawn" if by == o["from"] else "declined"
 
 
 def deliver(world):

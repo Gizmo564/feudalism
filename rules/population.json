@@ -136,13 +136,14 @@
   },
   "claim": {
     "base": {
-      "wood": 5
+      "wood": 3
     },
     "per_tile": {
-      "wood": 2,
+      "wood": 1,
       "stone": 1
     },
-    "per_tick": 1
+    "per_tick": 1,
+    "scarcity_percent": 200
   },
   "soldier": {
     "train_cost": {

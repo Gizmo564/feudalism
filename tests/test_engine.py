@@ -639,3 +639,79 @@ def test_oil_visible_when_not_hidden(rules):
     w["settings"]["hidden_oil"] = False
     spot = next(k for k, t in w["tiles"].items() if t["oil"] and t["owner"] is None)
     assert {v["k"]: v for v in views.map_view(w, rules, 0)}[spot]["oil"] is True
+
+
+# ---------- claim price: cheaper start, dearer as the map fills ----------
+
+def test_claim_price_rises_with_scarcity_and_falls_when_map_grows(rules):
+    w = two_nations(rules)
+    W.refresh_scarcity(w)
+    cheap = tick.claim_cost(w, rules, 0)
+    for k, t in list(w["tiles"].items()):          # someone owns most of the map
+        if t["terrain"] != "water" and t["owner"] is None and w["tiles"][k]["owner"] is None:
+            t["owner"] = 1
+    W.refresh_scarcity(w)
+    full = tick.claim_cost(w, rules, 0)
+    assert all(full[r] >= cheap[r] for r in cheap) and sum(full.values()) > sum(cheap.values())
+    assert full["wood"] <= cheap["wood"] * (100 + rules["claim"]["scarcity_percent"]) // 100 + 1
+    W.expand_map(w, rules, 2)                      # new land is free, so land gets cheaper again
+    assert sum(tick.claim_cost(w, rules, 0).values()) < sum(full.values())
+
+
+def test_quoted_price_is_what_you_pay(rules):
+    w = two_nations(rules)
+    give(w, 0, wood=500, stone=500)
+    W.refresh_scarcity(w)
+    quote = tick.claim_cost(w, rules, 0)
+    before = dict(w["nations"][0]["resources"])
+    k = "0,-1"
+    tick.queue(w, rules, 0, {"type": "claim", "tile": k})
+    tick.apply_orders(w, rules, random.Random(1))
+    for r, v in quote.items():
+        assert before[r] - w["nations"][0]["resources"][r] == v
+
+
+# ---------- per-tile production cap ----------
+
+def test_tile_plan_matches_totals_and_respects_cap(rules):
+    w = two_nations(rules)
+    n = w["nations"][0]
+    n["workers"] = 40
+    for k in neighbors(n["capital"]):
+        if w["tiles"][k]["terrain"] != "water":
+            w["tiles"][k]["owner"] = 0
+    plan = tick.tile_plan(w, rules, n)
+    assert all(sum(c for c, _ in per.values()) <= rules["workers_per_tile"] for per in plan.values())
+    totals = {}
+    for per in plan.values():
+        for r, (c, a) in per.items():
+            got = totals.get(r, (0, 0))
+            totals[r] = (got[0] + c, got[1] + a)
+    assert totals == tick.work_plan(w, rules, n)
+
+
+# ---------- open offers ----------
+
+def test_open_offer_goes_to_first_nation_with_a_market(rules):
+    w = market_world(rules)
+    w["tiles"]["-3,1"].update(owner=0)
+    tid = trade.offer(w, rules, 0, None, {"resources": {"wood": 10}}, {"resources": {"stone": 5}})
+    with pytest.raises(ValueError):
+        trade.accept(w, rules, tid, 0)               # not your own
+    trade.accept(w, rules, tid, 1)
+    o = trade.find(w, tid)
+    assert o["status"] == "accepted" and o["to"] == 1
+    with pytest.raises(ValueError):
+        trade.accept(w, rules, tid, 1)               # only once
+
+
+def test_open_offer_needs_the_senders_market_and_a_market_to_accept(rules):
+    w = two_nations(rules)
+    with pytest.raises(ValueError):
+        trade.offer(w, rules, 0, None, {"resources": {"wood": 5}}, {})
+    w["tiles"]["-3,0"].update(owner=0, building="market")
+    tid = trade.offer(w, rules, 0, None, {"resources": {"wood": 5}}, {})
+    with pytest.raises(ValueError):
+        trade.accept(w, rules, tid, 1)               # no market
+    trade.decline(w, tid, 0)
+    assert trade.find(w, tid)["status"] == "withdrawn"

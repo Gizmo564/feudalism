@@ -177,13 +177,14 @@ class Canvas:
 
 
 def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=True, coords=False,
-           tint=False, icons=True, claim=False, tidy=False, mark=None, buildings=True, people=False):
+           tint=False, icons=True, claim=False, tidy=False, mark=None, buildings=True, people=False, production=None):
     """Return PNG bytes. nid=None is the public view (everything shown, no armies).
     center + radius draws a zoomed window around one tile (terrain icon and building badge both shown).
     tint: terrain as tile colour. icons: terrain line icons (overview/zoom). claim: highlight tiles the viewer
     can claim (needs nid). coords: True = every tile, "claim" = claimable tiles only. tidy: names below the land,
     army counts in a tile corner. mark: ring one tile (the selected one). buildings: show building badges
-    (the capital always shows). people: tag your homes/barracks/capital with how many people they house."""
+    (the capital always shows). people: tag your homes/barracks/capital with how many people they house.
+    production: {tile: "F5"} small tags on your working tiles (resource letter and workers)."""
     if nid is None:
         info = {k: {"k": k, "terrain": t["terrain"], "oil": W.oil_shown(world, t), "visible": True, "owner": t["owner"],
                     "building": t["building"]} for k, t in world["tiles"].items()}
@@ -295,6 +296,8 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             cv.icon(BUILDING_ICON[b], x, by, bs, INK, 1.2)
             if people and owner == nid:
                 housing_tag(cv, rules, b, x, by + br + s * 0.2, s)
+        if production and k in production and not b:
+            tag(cv, production[k], x, y + s * 0.02, s)
         if coords is True or (coords == "claim" and k in claimable):
             cv.text(x, y + s * 0.5 if tidy else y - s * 0.72, k, s * 0.2 if tidy else s * 0.26, INK, bold=False)
 
@@ -354,6 +357,13 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         cv.text(x0 + 24, y, "Oil deposit", 12, MUTED, bold=False, anchor="lm")
 
     return cv.png(width, height)
+
+
+def tag(cv, label, x, y, s):
+    size = s * 0.22
+    w = size * 0.62 * len(label) + 6
+    cv.rect(x - w / 2, y - size * 0.7, x + w / 2, y + size * 0.7, (255, 255, 255), MUTED, 1)
+    cv.text(x, y, label, size, INK)
 
 
 def housing_tag(cv, rules, building, x, y, s):

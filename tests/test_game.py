@@ -247,3 +247,66 @@ def test_tutorial_walks_through_the_basics():
     t.night()
     assert "Tutorial complete" in t.hint()
     assert g.world["tick"] == 4 and t.game.world["nations"][1]["alive"]
+
+
+def test_pacts_are_records_only(game):
+    msg = game.pact_propose(100, "Brask", "no attacks until night 30")
+    assert "nothing enforces" in msg
+    with pytest.raises(GameError):
+        game.pact_accept(102, 1)                      # not for Corvain
+    game.pact_accept(101, 1)
+    assert "Pact 1 with Brask" in game.status(100) and "Pact 1 with Aldmere" in game.status(101)
+    assert "Pact 1" in game.pact_list(100)
+    game.pact_break(100, 1)                           # allowed, and it is recorded
+    assert game.world["pacts"][0]["status"] == "broken" and game.world["pacts"][0]["broken_by"] == 0
+    with pytest.raises(GameError):
+        game.pact_break(100, 1)
+    game.run_tick()
+    assert any("broken" in e and "Aldmere" in e for e in game.public_events())
+    assert game.pact_list(100) == "You have no pacts. Propose one with /pact propose."
+
+
+def test_pact_input_checks(game):
+    for bad in ("", "x" * 200):
+        with pytest.raises(GameError):
+            game.pact_propose(100, "Brask", bad)
+    with pytest.raises(GameError):
+        game.pact_propose(100, "Aldmere", "self pact")
+    with pytest.raises(GameError):
+        game.pact_propose(100, "Nobody", "hello")
+    game.pact_propose(100, "Brask", "peace")
+    game.pact_decline(100, 1)
+    assert game.world["pacts"][0]["status"] == "withdrawn"
+
+
+def test_open_offer_status_and_line(game):
+    for nid in (0, 1):
+        t = next(k for k, v in game.world["tiles"].items() if v["owner"] == nid and v["building"] is None)
+        game.world["tiles"][t]["building"] = "market"
+    tid, text = game.make_offer(100, "", "wood 5", "stone 2")
+    assert "anyone with a Market" in text and "anyone with a Market" in game.offer_line(trade_find(game, tid))
+    assert "Offer %d from Aldmere" % tid in game.status(101)
+    with pytest.raises(GameError):
+        game.trade_decline(101, tid)                  # only the sender can withdraw an open offer
+    game.trade_decline(100, tid)
+    assert "Offer %d from" % tid not in game.status(101)
+    with pytest.raises(GameError):
+        game.make_offer(100, "", "", "")
+
+
+def trade_find(game, tid):
+    from population import trade
+    return trade.find(game.world, tid)
+
+
+def test_private_offer_needs_a_named_nation(game):
+    for nid in (0, 1):
+        t = next(k for k, v in game.world["tiles"].items() if v["owner"] == nid and v["building"] is None)
+        game.world["tiles"][t]["building"] = "market"
+    with pytest.raises(GameError):
+        game.make_offer(100, "", "wood 5", "", private=True)
+    tid, text = game.make_offer(100, "Brask", "wood 5", "", private=True)
+    assert "Private" in text and trade_find(game, tid)["private"]
+    assert "(private)" in game.offer_line(trade_find(game, tid))
+    assert "Offer %d from Aldmere" % tid in game.status(101)
+    assert "Offer %d from" % tid not in game.status(102)
