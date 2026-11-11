@@ -86,18 +86,22 @@ def pick_terrain(rules, rng):
 
 
 def make_tiles(rules, rng, keys, tiles):
-    """Create tiles for `keys`. Terrain is random, then smoothed so it forms patches."""
+    """Create tiles for `keys`. Scatter some seed points, give each a terrain, and let every tile copy its
+    nearest seed, so terrain forms patches (lakes, forests, ranges). Tiles that already exist act as seeds too,
+    so a map expansion continues the patches instead of starting over. Hills then soften the edge of mountains."""
     keys = sorted(keys)
-    terrain = {k: pick_terrain(rules, rng) for k in keys}
-    for _ in range(2):
-        nxt = dict(terrain)
-        for k in keys:
-            if rng.random() < 0.45:
-                n = rng.choice(neighbors(k))
-                found = terrain.get(n) or (tiles[n]["terrain"] if n in tiles else None)
-                if found:
-                    nxt[k] = found
-        terrain = nxt
+    seeds = [(k, tiles[k]["terrain"]) for k in tiles]
+    for k in keys:
+        if rng.random() < 0.12:
+            seeds.append((k, pick_terrain(rules, rng)))
+    if not seeds:
+        seeds.append((keys[0], pick_terrain(rules, rng)))
+    terrain = {}
+    for k in keys:
+        terrain[k] = min(seeds, key=lambda s: distance(k, s[0]) + rng.random() * 0.9)[1]
+    for k in keys:  # a field next to a mountain becomes hills half the time
+        if terrain[k] == "field" and any(terrain.get(n) == "mountain" for n in neighbors(k)) and rng.random() < 0.5:
+            terrain[k] = "hills"
     for k in keys:
         land = terrain[k] != "water"
         oil = land and rng.randrange(rules["oil_deposit_one_in"]) == 0
@@ -109,7 +113,7 @@ def new_world(rules, names, radius, seed):
     world = {
         "ruleset": rules["name"], "ruleset_version": rules["version"],
         "seed": seed, "tick": 0, "radius": radius,
-        "settings": {"fog": rules["fog_of_war"], "hidden_oil": rules.get("hidden_oil", False)},
+        "settings": {"fog": rules["fog_of_war"], "hidden_oil": rules.get("hidden_oil", True)},
         "tiles": {}, "nations": [], "armies": [], "orders": [],
         "trades": [], "shipments": [], "events": {}, "winner": None,
         "next_army_id": 1, "next_trade_id": 1,

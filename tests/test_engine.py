@@ -635,5 +635,7 @@ def test_hidden_oil_shows_only_after_land_is_claimed(rules):
 
 def test_oil_visible_when_not_hidden(rules):
     w = W.new_world(rules, ["a", "b"], 5, 4)
+    assert w["settings"]["hidden_oil"] is True            # hidden is the default
+    w["settings"]["hidden_oil"] = False
     spot = next(k for k, t in w["tiles"].items() if t["oil"] and t["owner"] is None)
     assert {v["k"]: v for v in views.map_view(w, rules, 0)}[spot]["oil"] is True

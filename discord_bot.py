@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from population import render, ruleset
+from population import mapnav, render, ruleset
 from population.game import Game, GameError
 from population.store import Store
 from population.hexes import neighbors
@@ -126,26 +126,155 @@ async def standings(interaction: discord.Interaction):
 
 @tree.command(description="The whole map as you can see it")
 async def map(interaction: discord.Interaction):
-    await show_map(interaction, zoom=False, radius=3)
-
-
-@tree.command(description="Zoomed map around your capital, with tile coordinates")
-@app_commands.describe(radius="How many tiles out to show (1-6)")
-async def zoom(interaction: discord.Interaction, radius: app_commands.Range[int, 1, 6] = 3):
-    await show_map(interaction, zoom=True, radius=radius)
-
-
-async def show_map(interaction, zoom, radius):
     if game.phase not in ("running", "over"):
         return await say(interaction, "Can't do that: there is no game running")
     nid = game.players.get(str(interaction.user.id))
     await interaction.response.defer(ephemeral=True)
-    if zoom and nid is not None:
-        data = render.render(game.world, game.rules, nid=nid, center=game.world["nations"][nid]["capital"],
-                             radius=radius, tile=48, legend=False, coords=True)
-    else:
-        data = render.render(game.world, game.rules, nid=nid)
-    await interaction.followup.send(file=png(data), ephemeral=True)
+    await interaction.followup.send(file=png(overview(nid)), ephemeral=True)
+
+
+@tree.command(description="Interactive map around your capital: pan, zoom, click a tile to claim, build or move")
+@app_commands.describe(radius="How many tiles out to show (1-6)")
+async def zoom(interaction: discord.Interaction, radius: app_commands.Range[int, 1, 6] = 3):
+    nid = my_nation(interaction)
+    if nid is None:
+        return await say(interaction, "Can't do that: you need to be a player in a running game (try /map)")
+    await interaction.response.defer(ephemeral=True)
+    view = MapView(interaction.user.id, nid, radius)
+    await interaction.followup.send(content=view.text(), file=png(view.image()), view=view, ephemeral=True)
+
+
+def overview(nid=None):
+    """The whole-map picture: terrain as colour, claimable tiles outlined for a player."""
+    return render.render(game.world, game.rules, nid=nid, tint=True, icons=False, claim=nid is not None, tidy=True)
+
+
+DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u25c0", "e": "\u25b6", "sw": "\u2199", "se": "\u2198"}
+BUILD_EMOJI = {"home": "\U0001f3e0", "barracks": "\U0001f6e1\ufe0f", "market": "\U0001f3ea", "wall": "\U0001f9f1"}
+
+
+class MapView(discord.ui.View):
+    """Buttons and menus under the zoomed map. Only the player who opened it can use it (it is private)."""
+
+    def __init__(self, uid, nid, radius=3):
+        super().__init__(timeout=900)
+        self.uid, self.nid, self.radius, self.icons = uid, nid, radius, False
+        self.center = game.world["nations"][nid]["capital"]
+        self.selected = None
+        self.layout()
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    def image(self):
+        return render.render(game.world, game.rules, nid=self.nid, center=self.center, radius=self.radius, tile=48,
+                             legend=False, coords="claim", tint=True, icons=self.icons, claim=True, tidy=True,
+                             mark=self.selected)
+
+    def text(self):
+        if self.selected is None:
+            return "Pick a tile from the menu to claim, build or move there. Outlined tiles are free land you can claim."
+        return mapnav.tile_card(game.world, game.rules, self.nid, self.selected)["text"]
+
+    def add(self, item, row):
+        item.row = row
+        self.add_item(item)
+
+    def button(self, label, row, callback, style=discord.ButtonStyle.secondary, disabled=False):
+        b = discord.ui.Button(label=label, style=style, disabled=disabled)
+        b.callback = callback
+        self.add(b, row)
+
+    def layout(self):
+        self.clear_items()
+        world, rules = game.world, game.rules
+        for row, names in enumerate((("nw", "ne", "home", "sw", "se"), ("w", "e", "out", "in", "icons"))):
+            for name in names:
+                if name in DIR_BUTTONS:
+                    self.button(DIR_BUTTONS[name], row, self.mover(name))
+                elif name == "home":
+                    self.button("Center", row, self.go_home)
+                elif name == "out":
+                    self.button("-", row, self.resize(1), disabled=self.radius >= 6)
+                elif name == "in":
+                    self.button("+", row, self.resize(-1), disabled=self.radius <= 1)
+                else:
+                    self.button("Icons: on" if self.icons else "Icons: off", row, self.toggle_icons,
+                                discord.ButtonStyle.primary if self.icons else discord.ButtonStyle.secondary)
+        options = mapnav.pick_options(world, rules, self.nid, self.center, self.radius)
+        if options:
+            menu = discord.ui.Select(placeholder="Pick a tile...", options=[
+                discord.SelectOption(label=k, description=text[:100], value=k, default=k == self.selected)
+                for k, text in options])
+            menu.callback = self.picker(menu)
+            self.add(menu, 2)
+        if self.selected is None:
+            return
+        card = mapnav.tile_card(world, rules, self.nid, self.selected)
+        if card["can_claim"]:
+            self.button("Claim", 3, self.claim_here, discord.ButtonStyle.success)
+        for b in card["builds"]:
+            self.button(b.capitalize(), 3, self.build_here(b), discord.ButtonStyle.primary)
+        armies = mapnav.my_armies(world, self.nid)
+        if armies and card["can_move"]:
+            soldier = game.word("soldier")
+            menu = discord.ui.Select(placeholder="Send an army here...", options=[
+                discord.SelectOption(label="Army %d (%d %ss)" % (a["id"], a["n"], soldier), description="at " + a["tile"],
+                                     value=str(a["id"])) for a in armies[:25]])
+            menu.callback = self.send_army(menu)
+            self.add(menu, 4)
+
+    async def redraw(self, interaction):
+        self.layout()
+        await interaction.response.defer()
+        await interaction.edit_original_response(content=self.text(), attachments=[png(self.image())], view=self)
+
+    def mover(self, name):
+        async def cb(interaction):
+            self.center = mapnav.shift(game.world, self.center, name)
+            await self.redraw(interaction)
+        return cb
+
+    async def go_home(self, interaction):
+        self.center = game.world["nations"][self.nid]["capital"]
+        await self.redraw(interaction)
+
+    def resize(self, change):
+        async def cb(interaction):
+            self.radius = max(1, min(6, self.radius + change))
+            await self.redraw(interaction)
+        return cb
+
+    async def toggle_icons(self, interaction):
+        self.icons = not self.icons
+        await self.redraw(interaction)
+
+    def picker(self, menu):
+        async def cb(interaction):
+            self.selected = menu.values[0]
+            await self.redraw(interaction)
+        return cb
+
+    async def order(self, interaction, fn, *args):
+        """Queue an order and tell the player privately; the map stays open."""
+        try:
+            text = fn(interaction.user.id, *args)
+        except (GameError, ValueError) as e:
+            text = "Can't do that: %s" % e
+        await interaction.response.send_message(text, ephemeral=True)
+
+    async def claim_here(self, interaction):
+        await self.order(interaction, game.claim, self.selected)
+
+    def build_here(self, building):
+        async def cb(interaction):
+            await self.order(interaction, game.build, self.selected, building)
+        return cb
+
+    def send_army(self, menu):
+        async def cb(interaction):
+            await self.order(interaction, game.move, int(menu.values[0]), self.selected)
+        return cb
 
 
 @tree.command(description="Claim a free tile next to your land (1 per night, cost rises as you grow)")
@@ -349,7 +478,7 @@ async def do_tick():
     store.set("last_tick", time.time())
     channel = announce_channel()
     if channel:
-        data = render.render(game.world, game.rules)
+        data = overview()
         await channel.send(report, file=png(data, "tick.png"))
         try:
             await sync_roles(channel.guild)

@@ -13,6 +13,8 @@ from .hexes import parse, within, neighbors
 
 BG = (250, 249, 245)
 NEUTRAL, WATER, FOG = (237, 234, 224), (220, 235, 247), (196, 194, 186)
+TINT = {"field": (226, 232, 200), "forest": (190, 210, 170), "hills": (226, 212, 176), "mountain": (200, 198, 194),
+        "water": WATER}  # neutral-tile colours when terrain is shown as colour
 INK, MUTED = (44, 44, 42), (95, 94, 90)
 SS = 2  # draw at double size, then shrink, for smooth edges
 
@@ -174,9 +176,13 @@ class Canvas:
         return out.getvalue()
 
 
-def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=True, coords=False):
+def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=True, coords=False,
+           tint=False, icons=True, claim=False, tidy=False, mark=None):
     """Return PNG bytes. nid=None is the public view (everything shown, no armies).
-    center + radius draws a zoomed window around one tile (terrain icon and building badge both shown)."""
+    center + radius draws a zoomed window around one tile (terrain icon and building badge both shown).
+    tint: terrain as tile colour. icons: terrain line icons (overview/zoom). claim: highlight tiles the viewer
+    can claim (needs nid). coords: True = every tile, "claim" = claimable tiles only. tidy: names below the land,
+    army counts in a tile corner. mark: ring one tile (the selected one)."""
     if nid is None:
         info = {k: {"k": k, "terrain": t["terrain"], "oil": W.oil_shown(world, t), "visible": True, "owner": t["owner"],
                     "building": t["building"]} for k, t in world["tiles"].items()}
@@ -203,6 +209,16 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
     width = map_w + legend_w
     cv = Canvas(width, height)
 
+    claimable = set()
+    if nid is not None and (claim or coords == "claim"):
+        mine = {k for k in info if info[k]["owner"] == nid}
+        for k in mine:
+            q, r = parse(k)
+            for dq, dr in [e[0] for e in EDGES]:
+                o = info.get("%d,%d" % (q + dq, r + dr))
+                if o and o["k"] in keys and o["visible"] and o["owner"] is None and o["terrain"] != "water":
+                    claimable.add(o["k"])
+
     def corner(k, i, scale=1.0):
         x, y = pos[k][0] + ox, pos[k][1] + oy
         a = math.radians(60 * i - 30)
@@ -218,7 +234,9 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         elif t["owner"] is not None:
             fill = line = nation_colours(t["owner"])[0]
         else:
-            fill, line = NEUTRAL, BG
+            fill, line = (TINT[t["terrain"]] if tint else NEUTRAL), BG
+        if t["owner"] is not None and tint and t["visible"] and t["terrain"] != "water":
+            fill = line = _mix(fill, TINT[t["terrain"]], 0.78)
         cv.polygon([corner(k, i) for i in range(6)], fill, line, 1.2 if t["owner"] is not None else 0.8)
 
     for k in order:  # borders: dark line wherever the next tile has a different owner
@@ -234,12 +252,27 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
                 continue
             cv.line(corner(k, c1, inset), corner(k, c2, inset), dark, bw)
 
+    if claim:
+        mine_col = nation_colours(nid)[1]
+        for k in claimable:
+            pts = [corner(k, i, 0.84) for i in range(6)]
+            for i in range(6):
+                cv.line(pts[i], pts[(i + 1) % 6], mine_col, 2.0)
+
+    if mark in pos:
+        pts = [corner(mark, i, 0.92) for i in range(6)]
+        for i in range(6):
+            cv.line(pts[i], pts[(i + 1) % 6], (255, 255, 255), 5)
+        for i in range(6):
+            cv.line(pts[i], pts[(i + 1) % 6], INK, 2.4)
+
     for k in order:
         t = info[k]
         if not t["visible"]:
             continue
         x, y = pos[k][0] + ox, pos[k][1] + oy
         owner = t["owner"]
+        show_icon = icons and (zoomed or icons != "zoom")
         dark = nation_colours(owner)[1] if owner is not None else MUTED
         if t["oil"]:
             cv.oil(x + 8 * K, y - 8 * K, 0.85 * K)
@@ -250,18 +283,15 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         base = fill_of(t, owner)
         icon_col = _mix((24, 95, 165) if t["terrain"] == "water" else MUTED, base, 0.5)
         b = t["building"]
-        if b and not zoomed:
+        if b:  # a building takes the place of the terrain icon
             by, br, bs = y, 9 * K, 9 / 6.5 * K
-        elif b:
-            by, br, bs = y + 9 * K, 6.5 * K, K
-            cv.icon(TERRAIN_ICON[t["terrain"]], x, y - 7 * K, 0.85 * K, icon_col)
-        else:
+        elif show_icon:
             cv.icon(TERRAIN_ICON[t["terrain"]], x, y, K, icon_col)
         if b:
             cv.circle(x, by, br, (255, 255, 255), dark, 1.5 * (0.7 + 0.3 * K))
             cv.icon(BUILDING_ICON[b], x, by, bs, INK, 1.2)
-        if coords:
-            cv.text(x, y - s * 0.72, k, s * 0.26, INK, bold=False)
+        if coords is True or (coords == "claim" and k in claimable):
+            cv.text(x, y + s * 0.5 if tidy else y - s * 0.72, k, s * 0.2 if tidy else s * 0.26, INK, bold=False)
 
     kc = min(K, 1.6)
     for n in world["nations"]:  # nation names at the middle of their land
@@ -269,7 +299,11 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         if mine:
             mx = sum(p[0] for p in mine) / len(mine) + ox
             my = sum(p[1] for p in mine) / len(mine) + oy
-            cv.text(mx, my + 22 * kc, n["name"], 12 * kc, nation_colours(n["id"])[1], halo=BG)
+            if tidy:
+                my = max(p[1] for p in mine) + oy + s * 0.95
+            else:
+                my += 22 * kc
+            cv.text(mx, my, n["name"], 12 * kc, nation_colours(n["id"])[1], halo=BG)
 
     if nid is not None:
         for a in views.armies_view(world, rules, nid):
@@ -278,9 +312,14 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             x, y = pos[a["tile"]][0] + ox, pos[a["tile"]][1] + oy
             label = str(a["n"]) if a["owner"] == nid else "?"
             w = s * (0.42 + 0.2 * len(label))
-            cv.rect(x - w / 2, y + s * 0.3, x + w / 2, y + s * 0.3 + s * 0.4, (255, 255, 255),
-                    nation_colours(a["owner"])[1], 1.5)
-            cv.text(x, y + s * 0.5, label, s * 0.3, INK)
+            if tidy:  # small tag in the lower-right corner of the tile
+                x, y = x + s * 0.5, y + s * 0.45
+                w, hh = s * (0.34 + 0.16 * len(label)), s * 0.34
+            else:
+                hh = s * 0.4
+            top = y - hh / 2 if tidy else y + s * 0.3
+            cv.rect(x - w / 2, top, x + w / 2, top + hh, (255, 255, 255), nation_colours(a["owner"])[1], 1.5)
+            cv.text(x, top + hh / 2, label, s * 0.26 if tidy else s * 0.3, INK)
 
     if legend:
         x0, y = map_w + 12, 22
@@ -300,6 +339,8 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             if name in BUILDING_ICON:
                 cv.circle(x0 + 9, y, 9, (255, 255, 255), MUTED, 1.2)
                 cv.icon(path, x0 + 9, y, 1.25, INK, 1.2)
+            elif tint and not icons:
+                cv.rect(x0, y - 8, x0 + 18, y + 8, TINT[name], MUTED, 1)
             else:
                 cv.icon(path, x0 + 9, y, 1.1, MUTED)
             cv.text(x0 + 24, y, name.capitalize(), 12, MUTED, bold=False, anchor="lm")
