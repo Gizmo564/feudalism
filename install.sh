@@ -2,8 +2,18 @@
 # Install or update the bot on an Ubuntu/Debian machine. Safe to run again: running it IS the update.
 #
 #   First time:   git clone https://github.com/Gizmo564/feudalism.git ~/feudalism && ~/feudalism/install.sh
+#                 (the repo is private: when git asks for a password, paste a GitHub token with read access)
 #   Update later: feudalism-update        (or ~/feudalism/install.sh)
+#   Automatic:    ~/feudalism/install.sh --auto       checks GitHub every 15 minutes (turn off with --no-auto)
 set -euo pipefail
+
+AUTO=""
+case "${1:-}" in
+  --auto) AUTO=on ;;
+  --no-auto) AUTO=off ;;
+  "") ;;
+  *) echo "Usage: install.sh [--auto | --no-auto]"; exit 1 ;;
+esac
 
 REPO="https://github.com/Gizmo564/feudalism.git"
 APP_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"      # wherever this script lives
@@ -23,6 +33,7 @@ sudo apt-get install -y -qq python3 python3-venv python3-pip git
 say "Getting the latest code"
 cd "$APP_DIR"
 if [ -d .git ]; then
+  git config credential.helper store      # remember the GitHub token so updates don't ask again
   git pull --ff-only
 else
   echo "Note: $APP_DIR is not a git clone, so I can't pull updates. Clone the repo to get updates."
@@ -70,6 +81,34 @@ sudo systemctl enable "$SERVICE" >/dev/null
 sudo systemctl restart "$SERVICE"
 sudo ln -sf "${APP_DIR}/install.sh" /usr/local/bin/feudalism-update
 
+if [ "$AUTO" = on ]; then
+  say "Turning on automatic updates (every 15 minutes)"
+  sudo tee /etc/systemd/system/feudalism-autoupdate.service >/dev/null <<UNIT
+[Unit]
+Description=Pull, test and restart the Feudalism bot when GitHub has new commits
+
+[Service]
+Type=oneshot
+ExecStart=${APP_DIR}/auto-update.sh
+UNIT
+  sudo tee /etc/systemd/system/feudalism-autoupdate.timer >/dev/null <<UNIT
+[Unit]
+Description=Check GitHub for Feudalism bot updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target
+UNIT
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now feudalism-autoupdate.timer
+elif [ "$AUTO" = off ]; then
+  say "Turning off automatic updates"
+  sudo systemctl disable --now feudalism-autoupdate.timer 2>/dev/null || true
+fi
+
 sleep 3
 say "Status"
 systemctl --no-pager --lines=8 status "$SERVICE" || true
@@ -78,6 +117,7 @@ cat <<DONE
 Done. Useful commands:
   feudalism-update                        pull the latest code from GitHub and restart
   journalctl -u ${SERVICE} -f             watch the bot's log
+  journalctl -u feudalism-autoupdate      what automatic updates did (if turned on)
   sudo systemctl restart ${SERVICE}       restart it
 Back up ${APP_DIR}/game.db regularly. It holds the whole game.
 DONE
