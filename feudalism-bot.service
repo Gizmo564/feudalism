@@ -1,0 +1,16 @@
+# Copy to /etc/systemd/system/, edit the two paths and User, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now feudalism-bot
+[Unit]
+Description=Feudalism / Population Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=CHANGE_ME
+WorkingDirectory=/home/CHANGE_ME/feudalism
+ExecStart=/usr/bin/python3 discord_bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

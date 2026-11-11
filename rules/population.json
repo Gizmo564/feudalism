@@ -1,0 +1,188 @@
+{
+  "name": "Population",
+  "version": 1,
+  "resources": [
+    "food",
+    "wood",
+    "stone",
+    "ore",
+    "oil",
+    "livestock"
+  ],
+  "terrain": {
+    "field": {
+      "produces": [
+        "food",
+        "livestock"
+      ],
+      "defense_percent": 0
+    },
+    "forest": {
+      "produces": [
+        "wood"
+      ],
+      "defense_percent": 20
+    },
+    "hills": {
+      "produces": [
+        "stone",
+        "livestock"
+      ],
+      "defense_percent": 25
+    },
+    "mountain": {
+      "produces": [
+        "ore"
+      ],
+      "defense_percent": 50
+    },
+    "water": {
+      "produces": [],
+      "defense_percent": 0
+    }
+  },
+  "terrain_weights": {
+    "field": 30,
+    "forest": 25,
+    "hills": 20,
+    "mountain": 15,
+    "water": 10
+  },
+  "oil_deposit_one_in": 12,
+  "yield_per_worker": {
+    "food": 5,
+    "livestock": 2,
+    "wood": 2,
+    "stone": 2,
+    "ore": 1,
+    "oil": 2
+  },
+  "coastal_food_bonus": 1,
+  "workers_per_tile": 5,
+  "default_priorities": {
+    "food": 5,
+    "wood": 3,
+    "stone": 3,
+    "ore": 2,
+    "oil": 1,
+    "livestock": 1
+  },
+  "eat_per_person": 1,
+  "food_value": {
+    "livestock": 2
+  },
+  "spoilage": {
+    "keep_ticks": 10,
+    "percent": 10
+  },
+  "growth": {
+    "percent": 10,
+    "reserve_ticks": 1
+  },
+  "over_housing_shrink_percent": 20,
+  "starvation_death_percent": 50,
+  "buildings": {
+    "home": {
+      "cost": {
+        "wood": 10,
+        "stone": 5
+      },
+      "houses_workers": 10
+    },
+    "barracks": {
+      "cost": {
+        "wood": 15,
+        "stone": 15,
+        "ore": 5
+      },
+      "houses_soldiers": 10
+    },
+    "market": {
+      "cost": {
+        "wood": 20,
+        "stone": 10
+      }
+    },
+    "wall": {
+      "cost": {
+        "stone": 20
+      },
+      "defense_percent": 20
+    }
+  },
+  "capital": {
+    "houses_workers": 20,
+    "houses_soldiers": 10,
+    "defense_percent": 50
+  },
+  "start": {
+    "workers": 12,
+    "soldiers": 6,
+    "resources": {
+      "food": 40,
+      "wood": 30,
+      "stone": 20,
+      "ore": 5,
+      "oil": 0,
+      "livestock": 0
+    },
+    "min_spacing": 4,
+    "min_land_neighbors": 5,
+    "min_fields_near": 3,
+    "min_wood_stone_near": 2,
+    "start_fields": 3,
+    "late_join_catchup_percent": 50,
+    "late_join_protection_ticks": 3
+  },
+  "claim": {
+    "base": {
+      "wood": 5
+    },
+    "per_tile": {
+      "wood": 2,
+      "stone": 1
+    },
+    "per_tick": 1
+  },
+  "soldier": {
+    "train_cost": {
+      "ore": 1,
+      "food": 2
+    }
+  },
+  "combat": {
+    "roll_percent": [
+      80,
+      90,
+      100,
+      110,
+      120
+    ],
+    "casualty_percent": 50
+  },
+  "movement": {
+    "trade_tiles_per_tick": 2
+  },
+  "oil_upkeep": {
+    "soldiers_per_oil": 5,
+    "shortfall_loss_percent": 20
+  },
+  "trade": {
+    "requires_market": true,
+    "offer_expires_ticks": 3
+  },
+  "vision_radius": 2,
+  "fog_of_war": false,
+  "autopilot": {
+    "idle_ticks_before_decay": 5,
+    "decay_percent": 5
+  },
+  "victory": {
+    "hold_ticks": 5,
+    "land_share_percent": 40,
+    "population_share_percent": 35,
+    "stock_share_percent": 35,
+    "stock_min": 200,
+    "last_nation_standing": true
+  }
+}
