@@ -45,6 +45,18 @@ def housing(world, rules, nid):
     return w, s
 
 
+def discover_oil(world):
+    """Any oil deposit on owned land counts as discovered from then on."""
+    for t in world["tiles"].values():
+        if t["oil"] and t["owner"] is not None:
+            t["found"] = True
+
+
+def oil_shown(world, t):
+    """Whether players can see this tile's oil deposit on the map."""
+    return t["oil"] and (not world["settings"].get("hidden_oil") or t.get("found", False))
+
+
 def is_free_land(world, k):
     t = world["tiles"].get(k)
     return t is not None and t["terrain"] != "water" and t["owner"] is None
@@ -97,7 +109,7 @@ def new_world(rules, names, radius, seed):
     world = {
         "ruleset": rules["name"], "ruleset_version": rules["version"],
         "seed": seed, "tick": 0, "radius": radius,
-        "settings": {"fog": rules["fog_of_war"]},
+        "settings": {"fog": rules["fog_of_war"], "hidden_oil": rules.get("hidden_oil", False)},
         "tiles": {}, "nations": [], "armies": [], "orders": [],
         "trades": [], "shipments": [], "events": {}, "winner": None,
         "next_army_id": 1, "next_trade_id": 1,
@@ -105,6 +117,7 @@ def new_world(rules, names, radius, seed):
     make_tiles(rules, rng, within("0,0", radius), world["tiles"])
     for name in names:
         place_nation(world, rules, name, rng, list(world["tiles"]), dict(rules["start"]["resources"]))
+    discover_oil(world)
     return world
 
 
@@ -186,7 +199,9 @@ def add_nation(world, rules, name):
             avg = sum(n["resources"][r] for n in alive) // len(alive)
             res[r] = max(res[r], avg * start["late_join_catchup_percent"] // 100)
     until = world["tick"] + start["late_join_protection_ticks"]
-    return place_nation(world, rules, name, rng, outer, res, until)
+    nid = place_nation(world, rules, name, rng, outer, res, until)
+    discover_oil(world)
+    return nid
 
 
 # ---------- saving ----------

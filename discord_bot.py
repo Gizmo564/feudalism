@@ -43,19 +43,39 @@ admin = app_commands.Group(name="admin", description="Admin commands")
 
 # ---------- small helpers ----------
 
-async def say(interaction, text, file=None):
-    kwargs = {"ephemeral": True}
+async def say(interaction, text, file=None, public=False):
+    """Reply to a command. Private ("only you can see this") unless public=True."""
+    kwargs = {"ephemeral": not public}
     if file:
         kwargs["file"] = file
     await interaction.response.send_message(text, **kwargs)
 
 
-async def run(interaction, fn, *args):
-    """Call a Game method, show its text, and show GameError messages politely."""
+async def run(interaction, fn, *args, public=False):
+    """Call a Game method and show its text. Errors are always private."""
     try:
-        await say(interaction, fn(*args))
+        text = fn(*args)
     except GameError as e:
-        await say(interaction, "Can't do that: %s" % e)
+        return await say(interaction, "Can't do that: %s" % e)
+    await say(interaction, text, public=public)
+
+
+def announce_channel():
+    channel_id = store.get("announce_channel") or store.get("report_channel")
+    return client.get_channel(channel_id) if channel_id else None
+
+
+async def publish(interaction, text):
+    """Show a public message. If an announcements channel is set (and it isn't this one), post there
+    and give the admin a private note; otherwise reply publicly right here."""
+    channel = announce_channel()
+    if channel and channel.id != interaction.channel_id:
+        try:
+            await channel.send(text)
+        except discord.Forbidden:
+            return await say(interaction, "I can't post in #%s. Give me Send Messages there." % channel.name)
+        return await say(interaction, "Posted in #%s." % channel.name)
+    await say(interaction, text, public=True)
 
 
 def is_admin(interaction):
@@ -91,7 +111,7 @@ def my_nation(interaction):
 @tree.command(description="Join the game that is open for sign-ups")
 @app_commands.describe(name="Your nation's name (2-20 characters)")
 async def join(interaction: discord.Interaction, name: str):
-    await run(interaction, game.join, interaction.user.id, name)
+    await run(interaction, game.join, interaction.user.id, name, public=True)
 
 
 @tree.command(description="Your nation: land, people, stock, orders, and last night's news (only you see this)")
@@ -101,7 +121,7 @@ async def status(interaction: discord.Interaction):
 
 @tree.command(description="Everyone's land and population")
 async def standings(interaction: discord.Interaction):
-    await run(interaction, game.standings)
+    await run(interaction, game.standings, public=True)
 
 
 @tree.command(description="The whole map as you can see it")
@@ -201,16 +221,24 @@ async def decline(interaction: discord.Interaction, offer: int):
 
 # ---------- admin commands (need the admin role) ----------
 
-async def admin_run(interaction, fn, *args):
+async def admin_run(interaction, fn, *args, public=False):
+    """Run an admin action. public=True announces the result to everyone."""
     if not is_admin(interaction):
         return await say(interaction, deny(interaction))
-    await run(interaction, fn, *args)
+    try:
+        text = fn(*args)
+    except GameError as e:
+        return await say(interaction, "Can't do that: %s" % e)
+    if public:
+        await publish(interaction, text)
+    else:
+        await say(interaction, text)
 
 
 @admin.command(name="open", description="Open sign-ups for a mode")
 @app_commands.choices(mode=[app_commands.Choice(name=m, value=m) for m in Game.modes()])
 async def admin_open(interaction: discord.Interaction, mode: app_commands.Choice[str]):
-    await admin_run(interaction, game.open_signup, mode.value)
+    await admin_run(interaction, game.open_signup, mode.value, public=True)
 
 
 @admin.command(name="start", description="Start the game with everyone who joined. Reports post in this channel.")
@@ -218,7 +246,22 @@ async def admin_start(interaction: discord.Interaction, radius: app_commands.Ran
     if is_admin(interaction):
         store.set("report_channel", interaction.channel_id)
         store.set("last_tick", time.time())
-    await admin_run(interaction, game.start, radius)
+    await admin_run(interaction, game.start, radius, public=True)
+
+
+@admin.command(name="announcements", description="Choose the channel for announcements and nightly reports")
+async def admin_announcements(interaction: discord.Interaction, channel: discord.TextChannel):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    store.set("announce_channel", channel.id)
+    await say(interaction, "Announcements and nightly reports will go to #%s." % channel.name)
+
+
+@admin.command(name="announce", description="Post a message to the announcements channel")
+async def admin_announce(interaction: discord.Interaction, message: str):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    await publish(interaction, message)
 
 
 @admin.command(name="tick", description="Run a tick right now")
@@ -243,27 +286,27 @@ async def admin_pause(interaction: discord.Interaction, paused: bool):
 
 @admin.command(name="fog", description="Turn fog of war on or off")
 async def admin_fog(interaction: discord.Interaction, on: bool):
-    await admin_run(interaction, game.set_fog, on)
+    await admin_run(interaction, game.set_fog, on, public=True)
 
 
 @admin.command(name="hiddenoil", description="Hide oil deposits until someone claims the land")
 async def admin_hiddenoil(interaction: discord.Interaction, on: bool):
-    await admin_run(interaction, game.set_hidden_oil, on)
+    await admin_run(interaction, game.set_hidden_oil, on, public=True)
 
 
 @admin.command(name="expand", description="Add rings of new land to the map")
 async def admin_expand(interaction: discord.Interaction, rings: app_commands.Range[int, 1, 5] = 1):
-    await admin_run(interaction, game.expand, rings)
+    await admin_run(interaction, game.expand, rings, public=True)
 
 
 @admin.command(name="empire", description="Set the land percent needed to win (Feudalism)")
 async def admin_empire(interaction: discord.Interaction, percent: int):
-    await admin_run(interaction, game.set_empire, percent)
+    await admin_run(interaction, game.set_empire, percent, public=True)
 
 
 @admin.command(name="addplayer", description="Add a late joiner to a running game")
 async def admin_addplayer(interaction: discord.Interaction, user: discord.Member, name: str):
-    await admin_run(interaction, game.add_player, user.id, name)
+    await admin_run(interaction, game.add_player, user.id, name, public=True)
 
 
 @admin.command(name="rollback", description="Restore the world to the state after a past tick")
@@ -273,7 +316,7 @@ async def admin_rollback(interaction: discord.Interaction, tick: int):
 
 @admin.command(name="end", description="End the game; the land leader wins")
 async def admin_end(interaction: discord.Interaction):
-    await admin_run(interaction, game.end)
+    await admin_run(interaction, game.end, public=True)
 
 
 tree.add_command(admin)
@@ -304,8 +347,7 @@ async def sync_roles(guild):
 async def do_tick():
     report = game.run_tick()
     store.set("last_tick", time.time())
-    channel_id = store.get("report_channel")
-    channel = client.get_channel(channel_id) if channel_id else None
+    channel = announce_channel()
     if channel:
         data = render.render(game.world, game.rules)
         await channel.send(report, file=png(data, "tick.png"))
