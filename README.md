@@ -41,4 +41,4 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 git clone https://github.com/Gizmo564/feudalism.git ~/feudalism && ~/feudalism/install.sh
 ```
 
-The repo is private, so when git asks for a password, paste a GitHub token with read access. The script installs packages, sets up a virtual environment, asks for your bot token once, runs the tests, and installs a systemd service. Update later with `feudalism-update`, which pulls from GitHub, retests, and restarts. `.env` and `game.db` stay on the machine and are never committed.
+The script installs packages, sets up a virtual environment, asks for your bot token once, runs the tests, and installs a systemd service. Update later with `feudalism-update`, which pulls from GitHub, retests, and restarts. `.env` and `game.db` stay on the machine and are never committed.

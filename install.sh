@@ -2,7 +2,6 @@
 # Install or update the bot on an Ubuntu/Debian machine. Safe to run again: running it IS the update.
 #
 #   First time:   git clone https://github.com/Gizmo564/feudalism.git ~/feudalism && ~/feudalism/install.sh
-#                 (the repo is private: when git asks for a password, paste a GitHub token with read access)
 #   Update later: feudalism-update        (or ~/feudalism/install.sh)
 set -euo pipefail
 
@@ -24,7 +23,6 @@ sudo apt-get install -y -qq python3 python3-venv python3-pip git
 say "Getting the latest code"
 cd "$APP_DIR"
 if [ -d .git ]; then
-  git config credential.helper store      # remember the GitHub token so updates don't ask again
   git pull --ff-only
 else
   echo "Note: $APP_DIR is not a git clone, so I can't pull updates. Clone the repo to get updates."
