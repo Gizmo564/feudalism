@@ -326,7 +326,8 @@ def is_coastal(world, k):
     return any(world["tiles"][x]["terrain"] == "water" for x in neighbors(k) if x in world["tiles"])
 
 
-def produce(world, rules, n):
+def work_plan(world, rules, n):
+    """Where the workers go tonight: {resource: (workers, amount produced)}. Oil only counts on oil tiles."""
     nid, prio = n["id"], n["priorities"]
     weights, cands = {}, {}
     for k in W.owned(world, nid):
@@ -336,6 +337,7 @@ def produce(world, rules, n):
         if c:
             cands[k] = c
             weights[k] = max(prio[r] for r in c)
+    plan = {}
     per_tile = allocate(n["workers"], weights, rules["workers_per_tile"])
     for k, w in per_tile.items():
         if w == 0:
@@ -347,7 +349,14 @@ def produce(world, rules, n):
             amount = cnt * rules["yield_per_worker"][r]
             if r == "food" and is_coastal(world, k):
                 amount += cnt * rules["coastal_food_bonus"]
-            n["resources"][r] += amount
+            got = plan.get(r, (0, 0))
+            plan[r] = (got[0] + cnt, got[1] + amount)
+    return plan
+
+
+def produce(world, rules, n):
+    for r, (_, amount) in work_plan(world, rules, n).items():
+        n["resources"][r] += amount
 
 
 def eat_and_grow(world, rules, n):

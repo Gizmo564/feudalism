@@ -100,3 +100,23 @@ def test_hidden_oil_command(game):
     assert "hidden" in game.set_hidden_oil(True)
     assert game.world["settings"]["hidden_oil"] is True
     assert "visible" in game.set_hidden_oil(False)
+
+
+def test_info_page(game):
+    text = game.info(100)
+    for part in ("People:", "Where the", "Stock", "Food balance", "Land:", "Buildings:", "Next claim costs"):
+        assert part in text
+    game.priorities(100, "food 5, wood 0, stone 0, ore 0, oil 0, livestock 0")
+    text = game.info(100)
+    assert "food:" in text and "wood: " in text.split("Stock")[1]
+    assert "wood:" not in text.split("Stock")[0]        # nobody works on wood now
+
+
+def test_info_matches_what_the_tick_produces(game):
+    from population import tick
+    n = game.world["nations"][0]
+    plan = tick.work_plan(game.world, game.rules, n)
+    before = dict(n["resources"])
+    tick.produce(game.world, game.rules, n)
+    for res, (_, amount) in plan.items():
+        assert n["resources"][res] == before[res] + amount

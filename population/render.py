@@ -177,12 +177,13 @@ class Canvas:
 
 
 def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=True, coords=False,
-           tint=False, icons=True, claim=False, tidy=False, mark=None):
+           tint=False, icons=True, claim=False, tidy=False, mark=None, buildings=True, people=False):
     """Return PNG bytes. nid=None is the public view (everything shown, no armies).
     center + radius draws a zoomed window around one tile (terrain icon and building badge both shown).
     tint: terrain as tile colour. icons: terrain line icons (overview/zoom). claim: highlight tiles the viewer
     can claim (needs nid). coords: True = every tile, "claim" = claimable tiles only. tidy: names below the land,
-    army counts in a tile corner. mark: ring one tile (the selected one)."""
+    army counts in a tile corner. mark: ring one tile (the selected one). buildings: show building badges
+    (the capital always shows). people: tag your homes/barracks/capital with how many people they house."""
     if nid is None:
         info = {k: {"k": k, "terrain": t["terrain"], "oil": W.oil_shown(world, t), "visible": True, "owner": t["owner"],
                     "building": t["building"]} for k, t in world["tiles"].items()}
@@ -279,10 +280,12 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         if t["building"] == "capital":
             cv.circle(x, y, 10 * K, (255, 255, 255), dark, 2 * (0.7 + 0.3 * K))
             cv.text(x, y + 0.5 * K, world["nations"][owner]["name"][0].upper(), 13 * K, dark)
+            if people and owner == nid:
+                housing_tag(cv, rules, "capital", x, y + 10 * K + s * 0.2, s)
             continue
         base = fill_of(t, owner)
         icon_col = _mix((24, 95, 165) if t["terrain"] == "water" else MUTED, base, 0.5)
-        b = t["building"]
+        b = t["building"] if buildings else None
         if b:  # a building takes the place of the terrain icon
             by, br, bs = y, 9 * K, 9 / 6.5 * K
         elif show_icon:
@@ -290,6 +293,8 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         if b:
             cv.circle(x, by, br, (255, 255, 255), dark, 1.5 * (0.7 + 0.3 * K))
             cv.icon(BUILDING_ICON[b], x, by, bs, INK, 1.2)
+            if people and owner == nid:
+                housing_tag(cv, rules, b, x, by + br + s * 0.2, s)
         if coords is True or (coords == "claim" and k in claimable):
             cv.text(x, y + s * 0.5 if tidy else y - s * 0.72, k, s * 0.2 if tidy else s * 0.26, INK, bold=False)
 
@@ -349,6 +354,20 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         cv.text(x0 + 24, y, "Oil deposit", 12, MUTED, bold=False, anchor="lm")
 
     return cv.png(width, height)
+
+
+def housing_tag(cv, rules, building, x, y, s):
+    """A small label under a building: how many workers (w) and soldiers (s) it houses."""
+    spec = rules["capital"] if building == "capital" else rules["buildings"][building]
+    parts = [("%d%s" % (spec[key], letter)) for key, letter in (("houses_workers", "w"), ("houses_soldiers", "s"))
+             if spec.get(key)]
+    if not parts:
+        return
+    label = " ".join(parts)
+    size = s * 0.22
+    w = size * 0.62 * len(label) + 6
+    cv.rect(x - w / 2, y - size * 0.7, x + w / 2, y + size * 0.7, (255, 255, 255), MUTED, 1)
+    cv.text(x, y, label, size, INK)
 
 
 def fill_of(t, owner):

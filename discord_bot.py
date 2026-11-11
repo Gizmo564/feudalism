@@ -119,6 +119,11 @@ async def status(interaction: discord.Interaction):
     await run(interaction, game.status, interaction.user.id)
 
 
+@tree.command(description="Your nation in detail: people, where they work, stock and income, land (only you see this)")
+async def info(interaction: discord.Interaction):
+    await run(interaction, game.info, interaction.user.id)
+
+
 @tree.command(description="Everyone's land and population")
 async def standings(interaction: discord.Interaction):
     await run(interaction, game.standings, public=True)
@@ -149,8 +154,10 @@ def overview(nid=None):
     return render.render(game.world, game.rules, nid=nid, tint=True, icons=False, claim=nid is not None, tidy=True)
 
 
-DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u25c0", "e": "\u25b6", "sw": "\u2199", "se": "\u2198"}
-BUILD_EMOJI = {"home": "\U0001f3e0", "barracks": "\U0001f6e1\ufe0f", "market": "\U0001f3ea", "wall": "\U0001f9f1"}
+DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u2190", "e": "\u2192", "sw": "\u2199", "se": "\u2198"}
+LAYERS = (("icons", "Terrain icons", "Draw a small picture on each tile"),
+          ("buildings", "Buildings", "Show homes, barracks, markets and walls"),
+          ("people", "Housing numbers", "Label buildings with how many people they house"))
 
 
 class MapView(discord.ui.View):
@@ -158,9 +165,11 @@ class MapView(discord.ui.View):
 
     def __init__(self, uid, nid, radius=3):
         super().__init__(timeout=900)
-        self.uid, self.nid, self.radius, self.icons = uid, nid, radius, False
+        self.uid, self.nid, self.radius = uid, nid, radius
+        self.layers = {"icons": False, "buildings": True, "people": False}
         self.center = game.world["nations"][nid]["capital"]
         self.selected = None
+        self.choosing_army = False
         self.layout()
 
     async def interaction_check(self, interaction):
@@ -168,13 +177,22 @@ class MapView(discord.ui.View):
 
     def image(self):
         return render.render(game.world, game.rules, nid=self.nid, center=self.center, radius=self.radius, tile=48,
-                             legend=False, coords="claim", tint=True, icons=self.icons, claim=True, tidy=True,
-                             mark=self.selected)
+                             legend=False, coords="claim", tint=True, icons=self.layers["icons"], claim=True,
+                             tidy=True, mark=self.selected, buildings=self.layers["buildings"],
+                             people=self.layers["people"])
 
     def text(self):
+        lines = []
         if self.selected is None:
-            return "Pick a tile from the menu to claim, build or move there. Outlined tiles are free land you can claim."
-        return mapnav.tile_card(game.world, game.rules, self.nid, self.selected)["text"]
+            lines.append("Pick a tile from the menu to claim, build or move there. Outlined tiles are free land you can claim.")
+        else:
+            lines.append(mapnav.tile_card(game.world, game.rules, self.nid, self.selected)["text"])
+        if self.layers["people"]:
+            hw, hs = W.housing(game.world, game.rules, self.nid)
+            n = game.world["nations"][self.nid]
+            lines.append("Housing: %d/%d %ss, %d/%d %ss" % (n["workers"], hw, game.word("worker"),
+                                                           W.soldiers(game.world, self.nid), hs, game.word("soldier")))
+        return "\n".join(lines)
 
     def add(self, item, row):
         item.row = row
@@ -186,43 +204,48 @@ class MapView(discord.ui.View):
         self.add(b, row)
 
     def layout(self):
+        """Row 0-1: move and zoom. Row 2: layers. Row 3: tile picker. Row 4: actions for the picked tile."""
         self.clear_items()
         world, rules = game.world, game.rules
-        for row, names in enumerate((("nw", "ne", "home", "sw", "se"), ("w", "e", "out", "in", "icons"))):
-            for name in names:
-                if name in DIR_BUTTONS:
-                    self.button(DIR_BUTTONS[name], row, self.mover(name))
-                elif name == "home":
-                    self.button("Center", row, self.go_home)
-                elif name == "out":
-                    self.button("-", row, self.resize(1), disabled=self.radius >= 6)
-                elif name == "in":
-                    self.button("+", row, self.resize(-1), disabled=self.radius <= 1)
-                else:
-                    self.button("Icons: on" if self.icons else "Icons: off", row, self.toggle_icons,
-                                discord.ButtonStyle.primary if self.icons else discord.ButtonStyle.secondary)
+        for name in ("nw", "ne"):
+            self.button(DIR_BUTTONS[name], 0, self.mover(name))
+        self.button("Center", 0, self.go_home, discord.ButtonStyle.primary)
+        for name in ("sw", "se"):
+            self.button(DIR_BUTTONS[name], 0, self.mover(name))
+        for name in ("w", "e"):
+            self.button(DIR_BUTTONS[name], 1, self.mover(name))
+        self.button("Zoom out", 1, self.resize(1), disabled=self.radius >= 6)
+        self.button("Zoom in", 1, self.resize(-1), disabled=self.radius <= 1)
+        layers = discord.ui.Select(placeholder="Show on map...", min_values=0, max_values=len(LAYERS), options=[
+            discord.SelectOption(label=label, description=desc, value=key, default=self.layers[key])
+            for key, label, desc in LAYERS])
+        layers.callback = self.set_layers(layers)
+        self.add(layers, 2)
         options = mapnav.pick_options(world, rules, self.nid, self.center, self.radius)
         if options:
             menu = discord.ui.Select(placeholder="Pick a tile...", options=[
                 discord.SelectOption(label=k, description=text[:100], value=k, default=k == self.selected)
                 for k, text in options])
             menu.callback = self.picker(menu)
-            self.add(menu, 2)
+            self.add(menu, 3)
         if self.selected is None:
             return
         card = mapnav.tile_card(world, rules, self.nid, self.selected)
-        if card["can_claim"]:
-            self.button("Claim", 3, self.claim_here, discord.ButtonStyle.success)
-        for b in card["builds"]:
-            self.button(b.capitalize(), 3, self.build_here(b), discord.ButtonStyle.primary)
         armies = mapnav.my_armies(world, self.nid)
-        if armies and card["can_move"]:
+        if self.choosing_army and armies and card["can_move"]:
             soldier = game.word("soldier")
-            menu = discord.ui.Select(placeholder="Send an army here...", options=[
+            menu = discord.ui.Select(placeholder="Which army goes there?", options=[
                 discord.SelectOption(label="Army %d (%d %ss)" % (a["id"], a["n"], soldier), description="at " + a["tile"],
                                      value=str(a["id"])) for a in armies[:25]])
             menu.callback = self.send_army(menu)
             self.add(menu, 4)
+            return
+        if card["can_claim"]:
+            self.button("Claim", 4, self.claim_here, discord.ButtonStyle.success)
+        for b in card["builds"]:
+            self.button(b.capitalize(), 4, self.build_here(b), discord.ButtonStyle.primary)
+        if armies and card["can_move"]:
+            self.button("Send army", 4, self.pick_army)
 
     async def redraw(self, interaction):
         self.layout()
@@ -245,15 +268,23 @@ class MapView(discord.ui.View):
             await self.redraw(interaction)
         return cb
 
-    async def toggle_icons(self, interaction):
-        self.icons = not self.icons
-        await self.redraw(interaction)
+    def set_layers(self, menu):
+        async def cb(interaction):
+            for key, _, _ in LAYERS:
+                self.layers[key] = key in menu.values
+            await self.redraw(interaction)
+        return cb
 
     def picker(self, menu):
         async def cb(interaction):
             self.selected = menu.values[0]
+            self.choosing_army = False
             await self.redraw(interaction)
         return cb
+
+    async def pick_army(self, interaction):
+        self.choosing_army = True
+        await self.redraw(interaction)
 
     async def order(self, interaction, fn, *args):
         """Queue an order and tell the player privately; the map stays open."""
@@ -273,6 +304,7 @@ class MapView(discord.ui.View):
 
     def send_army(self, menu):
         async def cb(interaction):
+            self.choosing_army = False
             await self.order(interaction, game.move, int(menu.values[0]), self.selected)
         return cb
 

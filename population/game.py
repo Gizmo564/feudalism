@@ -261,6 +261,53 @@ class Game:
             lines.append("Last night:\n- " + "\n- ".join(news[:10]))
         return "\n".join(lines)
 
+    def info(self, uid):
+        """A fuller picture of your nation: people, where they work, stock and income, land."""
+        nid = self.nid(uid)
+        w, r = self.world, self.rules
+        n = w["nations"][nid]
+        if not n["alive"]:
+            return "Your nation has fallen. You are now a spectator."
+        hw, hs = W.housing(w, r, nid)
+        soldiers = W.soldiers(w, nid)
+        people = n["workers"] + soldiers
+        need = people * r["eat_per_person"]
+        plan = tick.work_plan(w, r, n)
+        idle = n["workers"] - sum(c for c, _ in plan.values())
+
+        def share(part, whole):
+            return "%d%%" % (100 * part // whole) if whole else "0%"
+
+        lines = ["**%s - info** (tick %d)" % (n["name"], w["tick"]), "", "**People: %d**" % people,
+                 "%ss: %d (%s) - room for %d" % (self.word("worker").capitalize(), n["workers"], share(n["workers"], people), hw),
+                 "%ss: %d (%s) - room for %d" % (self.word("soldier").capitalize(), soldiers, share(soldiers, people), hs),
+                 "Eating %d food a night." % need, "", "**Where the %ss work**" % self.word("worker")]
+        for res, (cnt, amount) in sorted(plan.items(), key=lambda x: -x[1][0]):
+            lines.append("%s: %d (%s) -> +%d" % (res, cnt, share(cnt, n["workers"]), amount))
+        if idle:
+            lines.append("Idle: %d (no tile can use them under your priorities)" % idle)
+        lines += ["", "**Stock** (tonight's output in brackets)"]
+        for res in r["resources"]:
+            have, gain = n["resources"].get(res, 0), plan.get(res, (0, 0))[1]
+            lines.append("%s: %d%s" % (res, have, " (+%d)" % gain if gain else ""))
+        food_net = plan.get("food", (0, 0))[1] - need
+        lines.append("Food balance: %+d a night%s." % (food_net, "" if food_net >= 0 or not need else
+                     ", lasts about %d nights" % (n["resources"].get("food", 0) // -food_net)))
+        mine = W.owned(w, nid)
+        terrain, buildings = {}, {}
+        for k in mine:
+            t = w["tiles"][k]
+            terrain[t["terrain"]] = terrain.get(t["terrain"], 0) + 1
+            if t["building"]:
+                buildings[t["building"]] = buildings.get(t["building"], 0) + 1
+        land_total = sum(1 for t in w["tiles"].values() if t["terrain"] != "water")
+        oil = sum(1 for k in mine if W.oil_shown(w, w["tiles"][k]))
+        lines += ["", "**Land: %d tiles** (%s of all land)" % (len(mine), share(len(mine), land_total)),
+                  ", ".join("%s %d" % (k, v) for k, v in sorted(terrain.items(), key=lambda x: -x[1])),
+                  "Buildings: " + (", ".join("%s %d" % (k, v) for k, v in sorted(buildings.items())) or "none"),
+                  "Oil deposits found: %d" % oil, "Next claim costs: " + self.fmt(tick.claim_cost(w, r, nid))]
+        return "\n".join(lines)
+
     def standings(self):
         self.need_running()
         rows = views.public_standings(self.world, self.rules, -1) if not self.world["settings"]["fog"] else []

@@ -60,7 +60,7 @@ def test_render_options(game):
     w, rules = game.world, game.rules
     cap = w["nations"][0]["capital"]
     free = sorted(mapnav.claimable(w, 0))[0]
-    for kw in ({}, {"icons": True}, {"icons": False, "mark": free}):
+    for kw in ({}, {"icons": True}, {"icons": False, "mark": free}, {"buildings": False}, {"people": True}):
         data = render.render(w, rules, nid=0, center=cap, radius=3, tile=48, legend=False, coords="claim",
                              tint=True, claim=True, tidy=True, **kw)
         assert data[:4] == b"\x89PNG"
@@ -92,44 +92,57 @@ def find(view, label=None, kind=None):
             return c
 
 
+def selects(view):
+    return [c for c in view.children if type(c).__name__ == "Select"]
+
+
 def test_view_full_walkthrough(bot, game):
     async def go():
         view = bot.MapView(100, 0, 3)
-        assert find(view, "Icons: off") is not None and find(view, "Claim") is None
-        # pan, zoom, icons all redraw the picture
-        for label in ("▶", "-", "Icons: off", "Center"):
+        assert find(view, "Claim") is None and len(view.children) == 11   # 9 buttons + layers + tile menus
+        # pan, zoom, recentre all redraw the picture
+        for label in ("\u2192", "Zoom out", "Center"):
             i = click(100)
             await find(view, label).callback(i)
             i.edit_original_response.assert_awaited()
-            kwargs = i.edit_original_response.await_args.kwargs
-            assert kwargs["attachments"][0].filename == "map.png"
-        assert view.icons is True and view.radius == 4
-        # pick a claimable tile, claim it
-        menu = find(view, kind="Select")
-        free = mapnav.pick_options(game.world, game.rules, 0, view.center, view.radius)[0][0]
-        menu._values = [free]
+            assert i.edit_original_response.await_args.kwargs["attachments"][0].filename == "map.png"
+        assert view.radius == 4
+        # layers: turn on icons and housing numbers, hide buildings
+        layers, tiles = selects(view)
+        layers._values = ["icons", "people"]
         i = click(100)
-        await view.picker(menu)(i)
+        await view.set_layers(layers)(i)
+        assert view.layers == {"icons": True, "buildings": False, "people": True}
+        assert "Housing:" in i.edit_original_response.await_args.kwargs["content"]
+        layers._values = ["icons", "buildings", "people"]
+        await view.set_layers(layers)(click(100))
+        # pick a claimable tile, claim it
+        free = mapnav.pick_options(game.world, game.rules, 0, view.center, view.radius)[0][0]
+        tiles._values = [free]
+        await view.picker(tiles)(click(100))
         assert view.selected == free and find(view, "Claim") is not None
         i = click(100)
         await find(view, "Claim").callback(i)
         assert "queued" in i.response.send_message.await_args.args[0]
         assert any(o["type"] == "claim" and o["tile"] == free for o in game.world["orders"])
-        # pick own empty tile, build
+        # pick one of your empty tiles, build
         mine = next(k for k in game.world["tiles"] if game.world["tiles"][k]["owner"] == 0
                     and game.world["tiles"][k]["building"] is None)
-        menu = [c for c in view.children if type(c).__name__ == "Select"][0]
-        menu._values = [mine]
-        await view.picker(menu)(click(100))
+        tiles = selects(view)[1]
+        tiles._values = [mine]
+        await view.picker(tiles)(click(100))
         i = click(100)
         await find(view, "Home").callback(i)
         assert "Build" in i.response.send_message.await_args.args[0]
-        # send an army to a tile
-        army_menu = [c for c in view.children if type(c).__name__ == "Select"][-1]
+        # send an army: the button swaps the action row for an army menu
+        await find(view, "Send army").callback(click(100))
+        army_menu = selects(view)[-1]
+        assert army_menu.placeholder.startswith("Which army")
         army_menu._values = [str(game.world["armies"][0]["id"])]
         i = click(100)
         await view.send_army(army_menu)(i)
         assert "march" in i.response.send_message.await_args.args[0]
+        assert view.choosing_army is False
         # someone else can't use it
         assert await view.interaction_check(click(999)) is False
 
