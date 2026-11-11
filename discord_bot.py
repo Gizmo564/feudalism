@@ -10,9 +10,10 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from population import mapnav, render, ruleset
+from population import guide, infopage, mapnav, render, ruleset
 from population.game import Game, GameError
 from population.store import Store
+from population.tutorial import Tutorial
 from population.hexes import neighbors
 from population import world as W
 
@@ -33,6 +34,7 @@ ADMIN_ROLE = os.environ.get("ADMIN_ROLE", "admin")
 TICK_TIME = os.environ.get("TICK_TIME", "02:00")
 TICK_TZ = os.environ.get("TICK_TZ", "America/Denver")
 TICK_MINUTES = os.environ.get("TICK_MINUTES", "").strip()
+DM_REPORTS = os.environ.get("DM_REPORTS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 store = Store(os.environ.get("DB_PATH", "game.db"))
 game = Game(store)
@@ -43,9 +45,24 @@ admin = app_commands.Group(name="admin", description="Admin commands")
 
 # ---------- small helpers ----------
 
-async def say(interaction, text, file=None, public=False):
-    """Reply to a command. Private ("only you can see this") unless public=True."""
-    kwargs = {"ephemeral": not public}
+tutorials = {}      # discord user id -> Tutorial. Practice games live in memory only.
+
+
+def game_for(user_id):
+    """The game a player is looking at: their practice game if they have one, otherwise the real game."""
+    t = tutorials.get(user_id)
+    return t.game if t else game
+
+
+async def say(interaction, text, file=None, public=False, **kwargs):
+    """Reply to a command. Private ("only you can see this") unless public=True.
+    Anyone in a practice game always gets private replies, tagged so they know it is practice."""
+    parent = getattr(interaction.command, "parent", None)
+    if interaction.user.id in tutorials and parent is not admin:
+        public = False
+        if text:
+            text = "**[Practice game]** " + text
+    kwargs["ephemeral"] = not public
     if file:
         kwargs["file"] = file
     await interaction.response.send_message(text, **kwargs)
@@ -55,7 +72,7 @@ async def run(interaction, fn, *args, public=False):
     """Call a Game method and show its text. Errors are always private."""
     try:
         text = fn(*args)
-    except GameError as e:
+    except (GameError, ValueError) as e:
         return await say(interaction, "Can't do that: %s" % e)
     await say(interaction, text, public=public)
 
@@ -102,8 +119,34 @@ def tile_choices(keys, typed):
 
 
 def my_nation(interaction):
-    nid = game.players.get(str(interaction.user.id))
-    return nid if game.phase == "running" and nid is not None else None
+    g = game_for(interaction.user.id)
+    nid = g.players.get(str(interaction.user.id))
+    return nid if g.phase == "running" and nid is not None else None
+
+
+def make_embed(page):
+    """Turn an infopage dict into a Discord embed."""
+    embed = discord.Embed(title=page["title"], description=page["description"] or None,
+                          colour=discord.Colour.from_rgb(*page["color"]))
+    for name, value, inline in page["fields"]:
+        embed.add_field(name=name, value=value, inline=inline)
+    if page["footer"]:
+        embed.set_footer(text=page["footer"][:2000])
+    return embed
+
+
+async def dm(user_id, text):
+    """Send a private message. Quietly gives up if the person has DMs closed."""
+    try:
+        user = await client.fetch_user(int(user_id))
+        await user.send(text[:2000])
+    except (discord.HTTPException, ValueError):
+        pass
+
+
+def log_channel():
+    channel_id = store.get("log_channel")
+    return client.get_channel(channel_id) if channel_id else None
 
 
 # ---------- player commands ----------
@@ -111,31 +154,64 @@ def my_nation(interaction):
 @tree.command(description="Join the game that is open for sign-ups")
 @app_commands.describe(name="Your nation's name (2-20 characters)")
 async def join(interaction: discord.Interaction, name: str):
-    await run(interaction, game.join, interaction.user.id, name, public=True)
+    try:
+        text = game.join(interaction.user.id, name)
+    except GameError as e:
+        return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+    await interaction.response.send_message(text)                       # public: everyone sees who joined
+    await interaction.followup.send(game.welcome(name), ephemeral=True)   # private: what happens next
 
 
-@tree.command(description="Your nation: land, people, stock, orders, and last night's news (only you see this)")
+@tree.command(description="Your nation: what needs attention, land, people, stock, and orders (only you see this)")
 async def status(interaction: discord.Interaction):
-    await run(interaction, game.status, interaction.user.id)
+    await run(interaction, game_for(interaction.user.id).status, interaction.user.id)
 
 
-@tree.command(description="Your nation in detail: people, where they work, stock and income, land (only you see this)")
+@tree.command(description="Your nation in detail, with tabs. Change work priorities with buttons (only you see this)")
 async def info(interaction: discord.Interaction):
-    await run(interaction, game.info, interaction.user.id)
+    g = game_for(interaction.user.id)
+    try:
+        g.nid(interaction.user.id)
+    except GameError as e:
+        return await say(interaction, "Can't do that: %s" % e)
+    view = InfoView(interaction.user.id, g)
+    await interaction.response.send_message(embed=view.embed(), view=view, ephemeral=True)
 
 
-@tree.command(description="Everyone's land and population")
+@tree.command(description="What happened to you last night: gains, losses, and news (only you see this)")
+async def report(interaction: discord.Interaction):
+    await run(interaction, game_for(interaction.user.id).report, interaction.user.id)
+
+
+@tree.command(name="help", description="How to play, in a few short pages")
+async def help_command(interaction: discord.Interaction):
+    g = game_for(interaction.user.id)
+    try:
+        text = g.help("basics")
+    except GameError as e:
+        return await say(interaction, "Can't do that: %s" % e)
+    view = HelpView(interaction.user.id, g)
+    await interaction.response.send_message(text, view=view, ephemeral=True)
+
+
+@tree.command(description="Clear tonight's queued orders so you can start over")
+async def cancel(interaction: discord.Interaction):
+    await run(interaction, game_for(interaction.user.id).cancel, interaction.user.id)
+
+
+@tree.command(description="Everyone's land and population, and how close anyone is to winning")
 async def standings(interaction: discord.Interaction):
-    await run(interaction, game.standings, public=True)
+    await run(interaction, game_for(interaction.user.id).standings, public=True)
 
 
 @tree.command(description="The whole map as you can see it")
 async def map(interaction: discord.Interaction):
-    if game.phase not in ("running", "over"):
+    g = game_for(interaction.user.id)
+    if g.phase not in ("running", "over"):
         return await say(interaction, "Can't do that: there is no game running")
-    nid = game.players.get(str(interaction.user.id))
+    nid = g.players.get(str(interaction.user.id))
     await interaction.response.defer(ephemeral=True)
-    await interaction.followup.send(file=png(overview(nid)), ephemeral=True)
+    await interaction.followup.send(file=png(overview(g, nid)), ephemeral=True)
 
 
 @tree.command(description="Interactive map around your capital: pan, zoom, click a tile to claim, build or move")
@@ -145,13 +221,103 @@ async def zoom(interaction: discord.Interaction, radius: app_commands.Range[int,
     if nid is None:
         return await say(interaction, "Can't do that: you need to be a player in a running game (try /map)")
     await interaction.response.defer(ephemeral=True)
-    view = MapView(interaction.user.id, nid, radius)
+    view = MapView(interaction.user.id, nid, radius, game_for(interaction.user.id))
     await interaction.followup.send(content=view.text(), file=png(view.image()), view=view, ephemeral=True)
 
 
-def overview(nid=None):
+def overview(g=None, nid=None):
     """The whole-map picture: terrain as colour, claimable tiles outlined for a player."""
-    return render.render(game.world, game.rules, nid=nid, tint=True, icons=False, claim=nid is not None, tidy=True)
+    g = g or game
+    return render.render(g.world, g.rules, nid=nid, tint=True, icons=False, claim=nid is not None, tidy=True)
+
+
+def money(res):
+    return ", ".join("%d %s" % (v, k) for k, v in res.items() if v) or "nothing"
+
+
+class InfoView(discord.ui.View):
+    """The /info page: four tabs, and on the Economy tab buttons that change work priorities."""
+
+    def __init__(self, uid, g):
+        super().__init__(timeout=900)
+        self.uid, self.g, self.tab, self.resource = uid, g, "overview", "food"
+        self.layout()
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    def embed(self):
+        return make_embed(self.g.info_page(self.uid, self.tab, self.resource))
+
+    def layout(self):
+        self.clear_items()
+        for tab in infopage.TABS:
+            b = discord.ui.Button(label=tab.capitalize(), row=0, style=discord.ButtonStyle.primary if tab == self.tab
+                                  else discord.ButtonStyle.secondary)
+            b.callback = self.switch(tab)
+            self.add_item(b)
+        if self.tab != "economy":
+            return
+        prios = self.g.world["nations"][self.g.nid(self.uid)]["priorities"]
+        menu = discord.ui.Select(placeholder="Pick a resource...", row=1, options=[
+            discord.SelectOption(label=r.capitalize(), value=r, description="priority %d of 5" % prios[r],
+                                 default=r == self.resource) for r in self.g.rules["resources"]])
+        menu.callback = self.pick(menu)
+        self.add_item(menu)
+        value = prios[self.resource]
+        minus = discord.ui.Button(label="-", row=2, disabled=value <= 0)
+        minus.callback = self.change(-1)
+        label = discord.ui.Button(label="%s: %d/5" % (self.resource, value), row=2, disabled=True)
+        plus = discord.ui.Button(label="+", row=2, disabled=value >= 5)
+        plus.callback = self.change(1)
+        for item in (minus, label, plus):
+            self.add_item(item)
+
+    async def refresh(self, interaction):
+        self.layout()
+        await interaction.response.edit_message(embed=self.embed(), view=self)
+
+    def switch(self, tab):
+        async def cb(interaction):
+            self.tab = tab
+            await self.refresh(interaction)
+        return cb
+
+    def pick(self, menu):
+        async def cb(interaction):
+            self.resource = menu.values[0]
+            await self.refresh(interaction)
+        return cb
+
+    def change(self, step):
+        async def cb(interaction):
+            current = self.g.world["nations"][self.g.nid(self.uid)]["priorities"][self.resource]
+            try:
+                self.g.set_priority(self.uid, self.resource, current + step)
+            except (GameError, ValueError) as e:
+                return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+            await self.refresh(interaction)
+        return cb
+
+
+class HelpView(discord.ui.View):
+    """Five short help pages, one button each."""
+
+    def __init__(self, uid, g):
+        super().__init__(timeout=900)
+        self.uid, self.g = uid, g
+        for tab in guide.HELP_TABS:
+            b = discord.ui.Button(label=tab.capitalize(), style=discord.ButtonStyle.secondary)
+            b.callback = self.show(tab)
+            self.add_item(b)
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    def show(self, tab):
+        async def cb(interaction):
+            await interaction.response.edit_message(content=self.g.help(tab), view=self)
+        return cb
 
 
 DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u2190", "e": "\u2192", "sw": "\u2199", "se": "\u2198"}
@@ -163,11 +329,12 @@ LAYERS = (("icons", "Terrain icons", "Draw a small picture on each tile"),
 class MapView(discord.ui.View):
     """Buttons and menus under the zoomed map. Only the player who opened it can use it (it is private)."""
 
-    def __init__(self, uid, nid, radius=3):
+    def __init__(self, uid, nid, radius=3, g=None):
         super().__init__(timeout=900)
-        self.uid, self.nid, self.radius = uid, nid, radius
+        self.uid, self.nid, self.radius, self.g = uid, nid, radius, g or game
+        self.practice = uid in tutorials
         self.layers = {"icons": False, "buildings": True, "people": False}
-        self.center = game.world["nations"][nid]["capital"]
+        self.center = self.g.world["nations"][nid]["capital"]
         self.selected = None
         self.choosing_army = False
         self.layout()
@@ -176,22 +343,22 @@ class MapView(discord.ui.View):
         return interaction.user.id == self.uid
 
     def image(self):
-        return render.render(game.world, game.rules, nid=self.nid, center=self.center, radius=self.radius, tile=48,
+        return render.render(self.g.world, self.g.rules, nid=self.nid, center=self.center, radius=self.radius, tile=48,
                              legend=False, coords="claim", tint=True, icons=self.layers["icons"], claim=True,
                              tidy=True, mark=self.selected, buildings=self.layers["buildings"],
                              people=self.layers["people"])
 
     def text(self):
-        lines = []
+        lines = ["**[Practice game]**"] if self.practice else []
         if self.selected is None:
             lines.append("Pick a tile from the menu to claim, build or move there. Outlined tiles are free land you can claim.")
         else:
-            lines.append(mapnav.tile_card(game.world, game.rules, self.nid, self.selected)["text"])
+            lines.append(mapnav.tile_card(self.g.world, self.g.rules, self.nid, self.selected)["text"])
         if self.layers["people"]:
-            hw, hs = W.housing(game.world, game.rules, self.nid)
-            n = game.world["nations"][self.nid]
-            lines.append("Housing: %d/%d %ss, %d/%d %ss" % (n["workers"], hw, game.word("worker"),
-                                                           W.soldiers(game.world, self.nid), hs, game.word("soldier")))
+            hw, hs = W.housing(self.g.world, self.g.rules, self.nid)
+            n = self.g.world["nations"][self.nid]
+            lines.append("Housing: %d/%d %ss, %d/%d %ss" % (n["workers"], hw, self.g.word("worker"),
+                                                           W.soldiers(self.g.world, self.nid), hs, self.g.word("soldier")))
         return "\n".join(lines)
 
     def add(self, item, row):
@@ -204,9 +371,10 @@ class MapView(discord.ui.View):
         self.add(b, row)
 
     def layout(self):
-        """Row 0-1: move and zoom. Row 2: layers. Row 3: tile picker. Row 4: actions for the picked tile."""
+        """Row 0-1: move and zoom. Row 2: layers. Row 3: tile picker. Row 4: actions for the picked tile
+        (with their costs; greyed out when you can't pay)."""
         self.clear_items()
-        world, rules = game.world, game.rules
+        world, rules = self.g.world, self.g.rules
         for name in ("nw", "ne"):
             self.button(DIR_BUTTONS[name], 0, self.mover(name))
         self.button("Center", 0, self.go_home, discord.ButtonStyle.primary)
@@ -233,7 +401,7 @@ class MapView(discord.ui.View):
         card = mapnav.tile_card(world, rules, self.nid, self.selected)
         armies = mapnav.my_armies(world, self.nid)
         if self.choosing_army and armies and card["can_move"]:
-            soldier = game.word("soldier")
+            soldier = self.g.word("soldier")
             menu = discord.ui.Select(placeholder="Which army goes there?", options=[
                 discord.SelectOption(label="Army %d (%d %ss)" % (a["id"], a["n"], soldier), description="at " + a["tile"],
                                      value=str(a["id"])) for a in armies[:25]])
@@ -241,9 +409,17 @@ class MapView(discord.ui.View):
             self.add(menu, 4)
             return
         if card["can_claim"]:
-            self.button("Claim", 4, self.claim_here, discord.ButtonStyle.success)
+            if card["claim_queued"]:
+                self.button("Claim (one already queued)", 4, self.claim_here, disabled=True)
+            elif card["claim_missing"]:
+                self.button("Claim: short %s" % money(card["claim_missing"]), 4, self.claim_here, disabled=True)
+            else:
+                self.button("Claim (%s)" % money(card["claim_cost"]), 4, self.claim_here, discord.ButtonStyle.success)
         for b in card["builds"]:
-            self.button(b.capitalize(), 4, self.build_here(b), discord.ButtonStyle.primary)
+            missing = card["build_missing"][b]
+            label = "%s: short %s" % (b.capitalize(), money(missing)) if missing else "%s (%s)" % (
+                b.capitalize(), money(card["build_cost"][b]))
+            self.button(label[:80], 4, self.build_here(b), discord.ButtonStyle.primary, disabled=bool(missing))
         if armies and card["can_move"]:
             self.button("Send army", 4, self.pick_army)
 
@@ -254,12 +430,12 @@ class MapView(discord.ui.View):
 
     def mover(self, name):
         async def cb(interaction):
-            self.center = mapnav.shift(game.world, self.center, name)
+            self.center = mapnav.shift(self.g.world, self.center, name)
             await self.redraw(interaction)
         return cb
 
     async def go_home(self, interaction):
-        self.center = game.world["nations"][self.nid]["capital"]
+        self.center = self.g.world["nations"][self.nid]["capital"]
         await self.redraw(interaction)
 
     def resize(self, change):
@@ -295,24 +471,24 @@ class MapView(discord.ui.View):
         await interaction.response.send_message(text, ephemeral=True)
 
     async def claim_here(self, interaction):
-        await self.order(interaction, game.claim, self.selected)
+        await self.order(interaction, self.g.claim, self.selected)
 
     def build_here(self, building):
         async def cb(interaction):
-            await self.order(interaction, game.build, self.selected, building)
+            await self.order(interaction, self.g.build, self.selected, building)
         return cb
 
     def send_army(self, menu):
         async def cb(interaction):
             self.choosing_army = False
-            await self.order(interaction, game.move, int(menu.values[0]), self.selected)
+            await self.order(interaction, self.g.move, int(menu.values[0]), self.selected)
         return cb
 
 
 @tree.command(description="Claim a free tile next to your land (1 per night, cost rises as you grow)")
 @app_commands.describe(tile="Tile coordinates like 3,-2")
 async def claim(interaction: discord.Interaction, tile: str):
-    await run(interaction, game.claim, interaction.user.id, tile.strip())
+    await run(interaction, game_for(interaction.user.id).claim, interaction.user.id, tile.strip())
 
 
 @claim.autocomplete("tile")
@@ -320,7 +496,8 @@ async def claim_tiles(interaction: discord.Interaction, current: str):
     nid = my_nation(interaction)
     if nid is None:
         return []
-    free = {n for k in W.owned(game.world, nid) for n in neighbors(k) if W.is_free_land(game.world, n)}
+    g = game_for(interaction.user.id)
+    free = {n for k in W.owned(g.world, nid) for n in neighbors(k) if W.is_free_land(g.world, n)}
     return tile_choices(sorted(free), current)
 
 
@@ -328,7 +505,7 @@ async def claim_tiles(interaction: discord.Interaction, current: str):
 @app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market or wall")
 @app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall")])
 async def build(interaction: discord.Interaction, tile: str, building: app_commands.Choice[str]):
-    await run(interaction, game.build, interaction.user.id, tile.strip(), building.value)
+    await run(interaction, game_for(interaction.user.id).build, interaction.user.id, tile.strip(), building.value)
 
 
 @build.autocomplete("tile")
@@ -336,48 +513,89 @@ async def build_tiles(interaction: discord.Interaction, current: str):
     nid = my_nation(interaction)
     if nid is None:
         return []
-    free = [k for k in W.owned(game.world, nid) if game.world["tiles"][k]["building"] is None]
+    g = game_for(interaction.user.id)
+    free = [k for k in W.owned(g.world, nid) if g.world["tiles"][k]["building"] is None]
     return tile_choices(free, current)
 
 
 @tree.command(description="Turn workers into soldiers (needs barracks room, ore and food)")
 async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500]):
-    await run(interaction, game.train, interaction.user.id, count)
+    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count)
 
 
 @tree.command(description="March an army toward a tile (attacks if it is enemy land)")
 @app_commands.describe(army="Army number from /status", tile="Destination like 3,-2")
 async def move(interaction: discord.Interaction, army: int, tile: str):
-    await run(interaction, game.move, interaction.user.id, army, tile.strip())
+    await run(interaction, game_for(interaction.user.id).move, interaction.user.id, army, tile.strip())
 
 
 @move.autocomplete("tile")
 async def move_tiles(interaction: discord.Interaction, current: str):
-    if game.phase != "running":
+    g = game_for(interaction.user.id)
+    if g.phase != "running":
         return []
-    land = [k for k, t in game.world["tiles"].items() if t["terrain"] != "water"]
+    land = [k for k, t in g.world["tiles"].items() if t["terrain"] != "water"]
     return tile_choices(sorted(land), current)
 
 
-@tree.command(description="Set work priorities 0-5, e.g. 'food 5, wood 3, oil 0'")
+@tree.command(description="Set work priorities 0-5, e.g. 'food 5, wood 3, oil 0' (or use the buttons in /info)")
 async def priorities(interaction: discord.Interaction, settings: str):
-    await run(interaction, game.priorities, interaction.user.id, settings)
+    await run(interaction, game_for(interaction.user.id).priorities, interaction.user.id, settings)
 
 
 @tree.command(description="Offer a trade. You need a Market, and so does they.")
 @app_commands.describe(to="Nation name", give="What you give, e.g. 'wood 10'", get="What you want, e.g. 'stone 5'")
 async def trade(interaction: discord.Interaction, to: str, give: str, get: str = ""):
-    await run(interaction, game.trade_offer, interaction.user.id, to, give, get)
+    await run(interaction, game_for(interaction.user.id).trade_offer, interaction.user.id, to, give, get)
 
 
 @tree.command(description="Accept a trade offer (see /status for offer numbers)")
 async def accept(interaction: discord.Interaction, offer: int):
-    await run(interaction, game.trade_accept, interaction.user.id, offer)
+    await run(interaction, game_for(interaction.user.id).trade_accept, interaction.user.id, offer)
 
 
 @tree.command(description="Decline a trade offer")
 async def decline(interaction: discord.Interaction, offer: int):
-    await run(interaction, game.trade_decline, interaction.user.id, offer)
+    await run(interaction, game_for(interaction.user.id).trade_decline, interaction.user.id, offer)
+
+
+# ---------- practice game ----------
+
+practice = app_commands.Group(name="tutorial", description="Practise in a private test game")
+
+
+@practice.command(name="start", description="Start a private practice game against two simple rivals")
+async def tutorial_start(interaction: discord.Interaction):
+    mode = (game.rules or {}).get("name", "feudalism").lower()
+    t = Tutorial(interaction.user.id, mode if mode in Game.modes() else "feudalism")
+    tutorials[interaction.user.id] = t
+    await say(interaction, "Practice game started. Nothing here touches the real game, and every command now works on this "
+                           "practice realm until you type /tutorial stop.\n\n" + t.hint())
+
+
+@practice.command(name="night", description="Let one night pass in your practice game")
+async def tutorial_night(interaction: discord.Interaction):
+    t = tutorials.get(interaction.user.id)
+    if t is None:
+        return await say(interaction, "You have no practice game. Type /tutorial start.")
+    t.night()
+    await say(interaction, t.game.report(interaction.user.id) + "\n\n" + t.hint())
+
+
+@practice.command(name="hint", description="What to try next in your practice game")
+async def tutorial_hint(interaction: discord.Interaction):
+    t = tutorials.get(interaction.user.id)
+    await say(interaction, t.hint() if t else "You have no practice game. Type /tutorial start.")
+
+
+@practice.command(name="stop", description="Leave the practice game and go back to the real one")
+async def tutorial_stop(interaction: discord.Interaction):
+    if tutorials.pop(interaction.user.id, None) is None:
+        return await say(interaction, "You have no practice game.")
+    await say(interaction, "Practice game closed. Your commands now work on the real game again.")
+
+
+tree.add_command(practice)
 
 
 # ---------- admin commands (need the admin role) ----------
@@ -408,6 +626,9 @@ async def admin_start(interaction: discord.Interaction, radius: app_commands.Ran
         store.set("report_channel", interaction.channel_id)
         store.set("last_tick", time.time())
     await admin_run(interaction, game.start, radius, public=True)
+    if is_admin(interaction) and game.phase == "running":
+        for uid, text in game.start_messages().items():
+            await dm(uid, text)
 
 
 @admin.command(name="announcements", description="Choose the channel for announcements and nightly reports")
@@ -416,6 +637,15 @@ async def admin_announcements(interaction: discord.Interaction, channel: discord
         return await say(interaction, deny(interaction))
     store.set("announce_channel", channel.id)
     await say(interaction, "Announcements and nightly reports will go to #%s." % channel.name)
+
+
+@admin.command(name="gamelog", description="Choose a channel for the nightly story of events (leave empty to turn off)")
+async def admin_gamelog(interaction: discord.Interaction, channel: discord.TextChannel = None):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    store.set("log_channel", channel.id if channel else None)
+    await say(interaction, "Nightly events will go to #%s." % channel.name if channel
+              else "Game log turned off. Events will be part of the nightly report.")
 
 
 @admin.command(name="announce", description="Post a message to the announcements channel")
@@ -506,16 +736,25 @@ async def sync_roles(guild):
 
 
 async def do_tick():
-    report = game.run_tick()
+    log = log_channel()
+    report = game.run_tick(split_log=log is not None)
     store.set("last_tick", time.time())
     channel = announce_channel()
     if channel:
         data = overview()
-        await channel.send(report, file=png(data, "tick.png"))
+        await channel.send((report + "\nUse /report to see your own night.")[:1990], file=png(data, "tick.png"))
         try:
             await sync_roles(channel.guild)
         except discord.Forbidden:
             await channel.send("I couldn't update title roles. Give me Manage Roles and put my role above the title roles.")
+    if log:
+        events = game.public_events()
+        text = "**Night %d**\n%s" % (game.world["tick"], "\n".join("- " + e for e in events) or "A quiet night.")
+        for i in range(0, len(text), 1900):
+            await log.send(text[i:i + 1900])
+    if DM_REPORTS:
+        for uid in game.players:
+            await dm(uid, game.report(uid))
 
 
 def tick_is_due():

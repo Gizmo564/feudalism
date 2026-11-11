@@ -4,7 +4,7 @@ import json
 import os
 import random
 
-from . import world as W, tick, trade, victory, views, ruleset
+from . import advice, guide, infopage, world as W, tick, trade, victory, views, ruleset
 from .hexes import neighbors
 
 RULES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rules")
@@ -162,34 +162,118 @@ class Game:
     def word(self, key):
         return self.rules.get("terms", {}).get(key, key)
 
+    def queue(self, nid, order):
+        try:
+            tick.queue(self.world, self.rules, nid, order)
+        except ValueError as e:
+            raise GameError(str(e))
+        self.save()
+
+    def check_claim(self, nid, k):
+        """Raise a GameError that says what is wrong and what to do instead."""
+        w, r = self.world, self.rules
+        t = w["tiles"].get(k)
+        if t is None:
+            raise GameError("%s isn't on the map. Open /zoom and pick a tile from the menu." % k)
+        if t["terrain"] == "water":
+            raise GameError("%s is water, and nobody can claim water." % k)
+        if t["owner"] == nid:
+            raise GameError("%s is already yours." % k)
+        if t["owner"] is not None:
+            raise GameError("%s belongs to %s. To take it, send an army there (/zoom, then Send army)." % (
+                k, w["nations"][t["owner"]]["name"]))
+        if k not in advice.free_frontier(w, nid):
+            raise GameError("%s doesn't touch your land. You can only claim tiles next to yours: the outlined ones in /zoom." % k)
+        if tick.foreign_army_on(w, k, nid):
+            raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
+        if advice.claim_queued(w, nid) >= r["claim"]["per_tick"]:
+            raise GameError("You already have a claim queued for tonight (the limit is %d a night). /cancel clears your orders." %
+                            r["claim"]["per_tick"])
+        cost = tick.claim_cost(w, r, nid)
+        missing = advice.shortfall(advice.available(w, r, nid), cost)
+        if missing:
+            raise GameError("Not enough to claim %s: it costs %s and you are short %s. Orders are paid when the night starts, "
+                            "so wait until you have enough." % (k, self.fmt(cost), self.fmt(missing)))
+
+    def check_build(self, nid, k, building):
+        w, r = self.world, self.rules
+        if building not in r["buildings"]:
+            raise GameError("Unknown building '%s'. Choose from: %s." % (building, ", ".join(r["buildings"])))
+        t = w["tiles"].get(k)
+        if t is None or t["owner"] != nid:
+            raise GameError("%s isn't yours. Build on land you own (pick it in /zoom)." % k)
+        if t["building"]:
+            raise GameError("%s already has a %s." % (k, t["building"]))
+        if tick.foreign_army_on(w, k, nid):
+            raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
+        cost = r["buildings"][building]["cost"]
+        missing = advice.shortfall(advice.available(w, r, nid), cost)
+        if missing:
+            raise GameError("Not enough for a %s: it costs %s and you are short %s." % (building, self.fmt(cost), self.fmt(missing)))
+
     def claim(self, uid, tile):
         nid = self.nid(uid)
-        tick.queue(self.world, self.rules, nid, {"type": "claim", "tile": tile})
-        self.save()
-        cost = tick.claim_cost(self.world, self.rules, nid)
-        return "Claim of %s queued for tonight. Cost: %s." % (tile, self.fmt(cost))
+        self.check_claim(nid, tile)
+        self.queue(nid, {"type": "claim", "tile": tile})
+        return "Claim of %s queued for tonight. Cost: %s." % (tile, self.fmt(tick.claim_cost(self.world, self.rules, nid)))
 
     def build(self, uid, tile, building):
         nid = self.nid(uid)
-        tick.queue(self.world, self.rules, nid, {"type": "build", "tile": tile, "building": building})
-        self.save()
-        return "Build %s on %s queued." % (building, tile)
+        self.check_build(nid, tile, building)
+        self.queue(nid, {"type": "build", "tile": tile, "building": building})
+        return "Build %s on %s queued. Cost: %s." % (building, tile, self.fmt(self.rules["buildings"][building]["cost"]))
 
     def train(self, uid, n):
         nid = self.nid(uid)
-        tick.queue(self.world, self.rules, nid, {"type": "train", "n": n})
-        self.save()
-        return "Training %d %ss queued." % (n, self.word("soldier"))
+        w, r = self.world, self.rules
+        me = w["nations"][nid]
+        room = W.housing(w, r, nid)[1] - W.soldiers(w, nid)
+        can = min(n, room, me["workers"] - 1)
+        for res, v in r["soldier"]["train_cost"].items():
+            if v > 0:
+                can = min(can, me["resources"].get(res, 0) // v)
+        if can <= 0:
+            reasons = []
+            if room <= 0:
+                reasons.append("no room: build a barracks")
+            if me["workers"] <= 1:
+                reasons.append("not enough %ss" % self.word("worker"))
+            short = advice.shortfall(me["resources"], r["soldier"]["train_cost"])
+            if short:
+                reasons.append("short of %s" % self.fmt(short))
+            raise GameError("Can't train any %ss right now: %s." % (self.word("soldier"), "; ".join(reasons) or "nothing available"))
+        self.queue(nid, {"type": "train", "n": n})
+        note = "" if can >= n else " (you asked for %d, but only %d fit right now)" % (n, can)
+        return "Training %d %ss queued%s." % (can, self.word("soldier"), note)
 
     def move(self, uid, army, dest):
         nid = self.nid(uid)
-        tick.queue(self.world, self.rules, nid, {"type": "move", "army": army, "dest": dest})
+        w = self.world
+        mine = [a for a in w["armies"] if a["owner"] == nid]
+        if not any(a["id"] == army for a in mine):
+            have = ", ".join("%d (at %s)" % (a["id"], a["tile"]) for a in mine) or "none"
+            raise GameError("You have no army %d. Your armies: %s." % (army, have))
+        t = w["tiles"].get(dest)
+        if t is None:
+            raise GameError("%s isn't on the map. Open /zoom and pick a tile from the menu." % dest)
+        if t["terrain"] == "water":
+            raise GameError("Armies can't cross water. Pick a land tile.")
+        self.queue(nid, {"type": "move", "army": army, "dest": dest})
+        return "Army %d will march toward %s (one tile a night)." % (army, dest)
+
+    def cancel(self, uid):
+        nid = self.nid(uid)
+        mine = [o for o in self.world["orders"] if o["nation"] == nid]
+        self.world["orders"] = [o for o in self.world["orders"] if o["nation"] != nid]
         self.save()
-        return "Army %d will march toward %s." % (army, dest)
+        return "Cleared %d queued order%s." % (len(mine), "" if len(mine) == 1 else "s") if mine else "You had no queued orders."
 
     def priorities(self, uid, text):
         nid = self.nid(uid)
-        tick.set_priorities(self.world, self.rules, nid, parse_pairs(text))
+        try:
+            tick.set_priorities(self.world, self.rules, nid, parse_pairs(text))
+        except ValueError as e:
+            raise GameError("%s. Resources: %s. Priorities go from 0 to 5." % (e, ", ".join(self.rules["resources"])))
         self.save()
         return "Priorities updated."
 
@@ -240,6 +324,7 @@ class Game:
         lines = ["**%s**%s - tick %d" % (n["name"], " (%s)" % title if title else "", w["tick"])]
         if not n["alive"]:
             return lines[0] + "\nYour nation has fallen. You are now a spectator."
+        lines.append("\n".join("- " + a for a in advice.advice(w, r, nid)))
         lines.append("Land: %d tiles | %ss: %d/%d | %ss: %d/%d" % (
             len(W.owned(w, nid)), self.word("worker"), n["workers"], hw, self.word("soldier"), W.soldiers(w, nid), hs))
         lines.append("Stock: " + self.fmt(n["resources"]))
@@ -261,52 +346,30 @@ class Game:
             lines.append("Last night:\n- " + "\n- ".join(news[:10]))
         return "\n".join(lines)
 
-    def info(self, uid):
-        """A fuller picture of your nation: people, where they work, stock and income, land."""
+    def info_page(self, uid, tab="overview", resource="food"):
+        """The /info page for one tab, as data for the bot to show."""
+        return infopage.page(self.world, self.rules, self.nid(uid), tab, resource)
+
+    def set_priority(self, uid, resource, value):
         nid = self.nid(uid)
-        w, r = self.world, self.rules
-        n = w["nations"][nid]
-        if not n["alive"]:
-            return "Your nation has fallen. You are now a spectator."
-        hw, hs = W.housing(w, r, nid)
-        soldiers = W.soldiers(w, nid)
-        people = n["workers"] + soldiers
-        need = people * r["eat_per_person"]
-        plan = tick.work_plan(w, r, n)
-        idle = n["workers"] - sum(c for c, _ in plan.values())
+        if resource not in self.rules["resources"]:
+            raise GameError("Unknown resource '%s'." % resource)
+        try:
+            tick.set_priorities(self.world, self.rules, nid, {resource: value})
+        except ValueError as e:
+            raise GameError(str(e))
+        self.save()
+        return "%s priority is now %d." % (resource.capitalize(), value)
 
-        def share(part, whole):
-            return "%d%%" % (100 * part // whole) if whole else "0%"
+    def report(self, uid):
+        nid = self.nid(uid)
+        row = self.world.get("report", {}).get(str(nid))
+        return guide.report(self.world, self.rules, nid, row, self.world.get("last_events", {}).get(str(nid), []))
 
-        lines = ["**%s - info** (tick %d)" % (n["name"], w["tick"]), "", "**People: %d**" % people,
-                 "%ss: %d (%s) - room for %d" % (self.word("worker").capitalize(), n["workers"], share(n["workers"], people), hw),
-                 "%ss: %d (%s) - room for %d" % (self.word("soldier").capitalize(), soldiers, share(soldiers, people), hs),
-                 "Eating %d food a night." % need, "", "**Where the %ss work**" % self.word("worker")]
-        for res, (cnt, amount) in sorted(plan.items(), key=lambda x: -x[1][0]):
-            lines.append("%s: %d (%s) -> +%d" % (res, cnt, share(cnt, n["workers"]), amount))
-        if idle:
-            lines.append("Idle: %d (no tile can use them under your priorities)" % idle)
-        lines += ["", "**Stock** (tonight's output in brackets)"]
-        for res in r["resources"]:
-            have, gain = n["resources"].get(res, 0), plan.get(res, (0, 0))[1]
-            lines.append("%s: %d%s" % (res, have, " (+%d)" % gain if gain else ""))
-        food_net = plan.get("food", (0, 0))[1] - need
-        lines.append("Food balance: %+d a night%s." % (food_net, "" if food_net >= 0 or not need else
-                     ", lasts about %d nights" % (n["resources"].get("food", 0) // -food_net)))
-        mine = W.owned(w, nid)
-        terrain, buildings = {}, {}
-        for k in mine:
-            t = w["tiles"][k]
-            terrain[t["terrain"]] = terrain.get(t["terrain"], 0) + 1
-            if t["building"]:
-                buildings[t["building"]] = buildings.get(t["building"], 0) + 1
-        land_total = sum(1 for t in w["tiles"].values() if t["terrain"] != "water")
-        oil = sum(1 for k in mine if W.oil_shown(w, w["tiles"][k]))
-        lines += ["", "**Land: %d tiles** (%s of all land)" % (len(mine), share(len(mine), land_total)),
-                  ", ".join("%s %d" % (k, v) for k, v in sorted(terrain.items(), key=lambda x: -x[1])),
-                  "Buildings: " + (", ".join("%s %d" % (k, v) for k, v in sorted(buildings.items())) or "none"),
-                  "Oil deposits found: %d" % oil, "Next claim costs: " + self.fmt(tick.claim_cost(w, r, nid))]
-        return "\n".join(lines)
+    def help(self, tab="basics"):
+        if self.rules is None:
+            raise GameError("No game has been set up yet.")
+        return guide.help_page(self.rules, tab)
 
     def standings(self):
         self.need_running()
@@ -314,9 +377,23 @@ class Game:
         rows = sorted(rows, key=lambda x: (-x["land"], -x["population"]))
         if not rows:
             return "Standings are hidden while fog of war is on."
-        return "\n".join("%d. %s%s - %d tiles, %d people%s" % (
+        table = "\n".join("%d. %s%s - %d tiles, %d people%s" % (
             i + 1, r["name"], " (%s)" % r["rank"] if r.get("rank") else "", r["land"], r["population"],
             "" if r["alive"] else " (fallen)") for i, r in enumerate(rows[:15]))
+        return "\n".join([table] + advice.race(self.world, self.rules))
+
+    def public_events(self):
+        """The last night's public events (empty while fog of war hides them)."""
+        if self.world["settings"]["fog"]:
+            return []
+        return list(self.world.get("last_public", []))
+
+    def welcome(self, name):
+        return guide.welcome(self.rules, name)
+
+    def start_messages(self):
+        """{discord user id: first-night message} for everyone in a game that has just started."""
+        return {uid: guide.started(self.world, self.rules, nid) for uid, nid in self.players.items()}
 
     def titles(self):
         """{discord user id: title} for the bot to turn into roles. Empty if the mode has no titles."""
@@ -327,17 +404,25 @@ class Game:
 
     # ---------- the nightly tick ----------
 
-    def run_tick(self):
-        """Run one tick. Returns the public report text."""
+    def run_tick(self, split_log=False):
+        """Run one tick. Returns the public report text. With split_log the night's public events are left out
+        (the bot posts them in the game-log channel instead; see public_events)."""
         self.need_running()
+        before = {n["id"]: {"land": len(W.owned(self.world, n["id"])), "workers": n["workers"],
+                            "soldiers": W.soldiers(self.world, n["id"]), "res": dict(n["resources"])}
+                  for n in self.world["nations"] if n["alive"]}
         tick.run_tick(self.world, self.rules)
+        advice.record(self.world, self.rules)
+        self.world["report"] = {str(i): dict(b, tick=self.world["tick"]) for i, b in before.items()}
         events = self.world["events"]
+        self.world["last_public"] = list(events.get("public", []))
         self.world["last_events"] = events
         self.world["events"] = {}
         self.store.snapshot(self.world["tick"], W.to_json(self.world))
         lines = ["**Tick %d**" % self.world["tick"]]
-        if not self.world["settings"]["fog"]:
+        if not self.world["settings"]["fog"] and not split_log:
             lines += ["- " + e for e in events.get("public", [])[:15]]
+        lines += advice.race(self.world, self.rules)
         if self.world["winner"]:
             self.phase = "over"
             lines.append("**%s wins: %s**" % (self.world["nations"][self.world["winner"]["nation"]]["name"],

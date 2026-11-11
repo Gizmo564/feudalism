@@ -21,3 +21,15 @@ Run a mode with `python3 simulate.py --rules rules/feudalism.json`.
 6. In Discord: `/admin open` (pick a mode), players `/join`, then `/admin start`. Use `/admin tick` to advance by hand. For the playtest set TICK_MINUTES=5 in `.env`.
 
 The bot connects out to Discord, so you do not need a public URL or ngrok (that is only for Discord's webhook-style example app).
+
+## Player commands
+- `/zoom` – interactive map: pan, zoom, pick a tile, then Claim / Build / Send army. A layers menu toggles terrain icons, buildings and housing numbers.
+- `/info` – your nation in four tabs (Overview, Economy, Land, Military) with alerts at the top; change work priorities with the buttons on the Economy tab.
+- `/report` – what happened to you last night. `/status`, `/standings`, `/map` – quick views.
+- `/help` – how to play in five short pages. `/cancel` – clear tonight's orders.
+- `/claim`, `/build`, `/train`, `/move`, `/priorities`, `/trade`, `/accept`, `/decline` – typed versions of orders. Orders are checked when you give them, with a message saying what to do instead.
+- `/tutorial start|night|hint|stop` – a private practice game against two simple rivals. While it is on, every command works on the practice realm.
+
+## Admin extras
+- `/admin gamelog #channel` – post each night's public events there as a story (leave the channel empty to turn it off).
+- Players get a private message when the game starts, and each night's `/report` as a DM. Set `DM_REPORTS=0` in `.env` to turn the DMs off (people with DMs closed are skipped quietly).

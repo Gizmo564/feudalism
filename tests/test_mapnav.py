@@ -79,14 +79,19 @@ def bot(tmp_path, monkeypatch, game):
 
 
 def click(uid):
-    i = SimpleNamespace(user=SimpleNamespace(id=uid), response=MagicMock(), edit_original_response=AsyncMock())
-    i.response.defer, i.response.send_message = AsyncMock(), AsyncMock()
+    i = SimpleNamespace(user=SimpleNamespace(id=uid), response=MagicMock(), edit_original_response=AsyncMock(),
+                        command=None, followup=MagicMock())
+    i.response.defer, i.response.send_message, i.response.edit_message = AsyncMock(), AsyncMock(), AsyncMock()
+    i.followup.send = AsyncMock()
     return i
 
 
 def find(view, label=None, kind=None):
+    """A button by its label, or by the start of it (action buttons carry their cost)."""
     for c in view.children:
-        if label is not None and getattr(c, "label", None) == label:
+        text = getattr(c, "label", None)
+        if label is not None and text is not None and (text == label or text.startswith(label + " (")
+                                                      or text.startswith(label + ":")):
             return c
         if kind is not None and type(c).__name__ == kind and label is None:
             return c
@@ -157,3 +162,122 @@ def test_failed_order_is_reported_not_raised(bot, game):
         await view.claim_here(i)
         assert "Can't do that" in i.response.send_message.await_args.args[0]
     asyncio.run(go())
+
+
+def test_info_view_tabs_and_priority_buttons(bot, game):
+    async def go():
+        view = bot.InfoView(100, game)
+        assert [c.label for c in view.children] == ["Overview", "Economy", "Land", "Military"]
+        assert view.embed().fields[0].name == "People"
+        i = click(100)
+        await find(view, "Economy").callback(i)
+        i.response.edit_message.assert_awaited()
+        assert view.tab == "economy" and len(view.children) == 4 + 1 + 3
+        start = game.world["nations"][0]["priorities"]["food"]            # 5 by default: "+" is greyed out
+        assert find(view, "+").disabled and not find(view, "-").disabled
+        await find(view, "-").callback(click(100))
+        assert game.world["nations"][0]["priorities"]["food"] == start - 1
+        assert not find(view, "+").disabled
+        menu = selects(view)[0]
+        menu._values = ["wood"]
+        await view.pick(menu)(click(100))
+        assert view.resource == "wood" and any(getattr(c, "label", None) == "wood: 3/5" for c in view.children)
+        assert view.embed().title.startswith("Aldmere")
+        for tab in ("Land", "Military", "Overview"):
+            await find(view, tab).callback(click(100))
+        assert await view.interaction_check(click(999)) is False
+    asyncio.run(go())
+
+
+def test_help_view_has_every_page(bot, game):
+    async def go():
+        view = bot.HelpView(100, game)
+        assert len(view.children) == 5
+        for button in view.children:
+            i = click(100)
+            await button.callback(i)
+            text = i.response.edit_message.await_args.kwargs["content"]
+            assert 0 < len(text) < 2000
+    asyncio.run(go())
+
+
+def test_practice_game_takes_over_commands_until_stopped(bot, game):
+    from population import advice
+
+    async def go():
+        uid = 4242
+        i = click(uid)
+        await bot.tutorial_start.callback(i)
+        assert "Practice game started" in i.response.send_message.await_args.args[0]
+        practice = bot.game_for(uid)
+        assert practice is not game and practice.world["tick"] == 0
+        i = click(uid)
+        await bot.status.callback(i)
+        sent = i.response.send_message.await_args
+        assert sent.args[0].startswith("**[Practice game]**") and sent.kwargs["ephemeral"] is True
+        tile = sorted(advice.free_frontier(practice.world, 0))[0]
+        i = click(uid)
+        await bot.claim.callback(i, tile)
+        assert "queued" in i.response.send_message.await_args.args[0]
+        assert not any(o["type"] == "claim" for o in game.world["orders"])      # the real game is untouched
+        i = click(uid)
+        await bot.tutorial_night.callback(i)
+        assert practice.world["tick"] == 1 and "night 1" in i.response.send_message.await_args.args[0]
+        i = click(uid)
+        await bot.tutorial_stop.callback(i)
+        assert bot.game_for(uid) is game
+        i = click(uid)
+        await bot.tutorial_night.callback(i)
+        assert "no practice game" in i.response.send_message.await_args.args[0]
+    asyncio.run(go())
+
+
+def test_join_is_public_and_welcome_is_private(bot, tmp_path):
+    from population.game import Game
+    from population.store import Store
+
+    async def go():
+        g = Game(Store(str(tmp_path / "j.db")))
+        g.open_signup("feudalism")
+        bot.game = g
+        i = click(7)
+        await bot.join.callback(i, "Newcomer")
+        public = i.response.send_message.await_args
+        assert "Newcomer" in public.args[0] and "ephemeral" not in public.kwargs
+        assert "ephemeral" in i.followup.send.await_args.kwargs and i.followup.send.await_args.kwargs["ephemeral"] is True
+    asyncio.run(go())
+
+
+def test_nightly_tick_posts_report_log_and_private_reports(bot, game, monkeypatch):
+    class Channel:
+        def __init__(self):
+            self.sent, self.guild = [], None
+
+        async def send(self, text, **kwargs):
+            self.sent.append(text)
+
+    announce, log = Channel(), Channel()
+    channels = {1: announce, 2: log}
+    monkeypatch.setattr(bot.client, "get_channel", lambda i: channels.get(i))
+    monkeypatch.setattr(bot, "sync_roles", AsyncMock())
+    sent_dms = []
+
+    async def fake_dm(uid, text):
+        sent_dms.append((uid, text))
+
+    monkeypatch.setattr(bot, "dm", fake_dm)
+    bot.store.set("announce_channel", 1)
+    bot.store.set("log_channel", 2)
+
+    async def go():
+        await bot.do_tick()
+    asyncio.run(go())
+    assert "Tick 1" in announce.sent[0] and "/report" in announce.sent[0] and "To win" in announce.sent[0]
+    assert log.sent and log.sent[0].startswith("**Night 1**")
+    assert sorted(uid for uid, _ in sent_dms) == ["100", "101", "102", "103"]
+    assert all("night 1" in text for _, text in sent_dms)
+    # with DMs switched off nobody is messaged
+    sent_dms.clear()
+    monkeypatch.setattr(bot, "DM_REPORTS", False)
+    asyncio.run(go())
+    assert sent_dms == []

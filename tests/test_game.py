@@ -1,5 +1,6 @@
 import pytest
 
+from population import world as W
 from population.game import Game, GameError, parse_pairs
 from population.store import Store
 
@@ -47,7 +48,8 @@ def test_status_and_orders(game):
 
 
 def test_tick_snapshots_and_rollback(game):
-    game.claim(100, "0,0")
+    from population import advice
+    game.claim(100, sorted(advice.free_frontier(game.world, 0))[0])
     report = game.run_tick()
     assert "Tick 1" in report and game.world["tick"] == 1
     game.rollback(0)
@@ -102,14 +104,26 @@ def test_hidden_oil_command(game):
     assert "visible" in game.set_hidden_oil(False)
 
 
-def test_info_page(game):
-    text = game.info(100)
-    for part in ("People:", "Where the", "Stock", "Food balance", "Land:", "Buildings:", "Next claim costs"):
-        assert part in text
+def test_info_pages(game):
+    from population import infopage
+    for tab in infopage.TABS:
+        text = infopage.as_text(game.info_page(100, tab))
+        assert "Aldmere" in text
+    overview = infopage.as_text(game.info_page(100, "overview"))
+    for part in ("People", "Work", "Stock", "Land"):
+        assert part in overview
     game.priorities(100, "food 5, wood 0, stone 0, ore 0, oil 0, livestock 0")
-    text = game.info(100)
-    assert "food:" in text and "wood: " in text.split("Stock")[1]
-    assert "wood:" not in text.split("Stock")[0]        # nobody works on wood now
+    work = dict((n, v) for n, v, _ in game.info_page(100, "overview")["fields"])["Work"]
+    assert "food" in work and "wood" not in work          # nobody works on wood now
+
+
+def test_priority_buttons_logic(game):
+    assert "now 2" in game.set_priority(100, "food", 2)
+    assert game.world["nations"][0]["priorities"]["food"] == 2
+    with pytest.raises(GameError):
+        game.set_priority(100, "food", 9)
+    with pytest.raises(GameError):
+        game.set_priority(100, "gold", 1)
 
 
 def test_info_matches_what_the_tick_produces(game):
@@ -120,3 +134,116 @@ def test_info_matches_what_the_tick_produces(game):
     tick.produce(game.world, game.rules, n)
     for res, (_, amount) in plan.items():
         assert n["resources"][res] == before[res] + amount
+
+
+def test_orders_are_checked_with_helpful_messages(game):
+    from population import advice
+    w = game.world
+    free = sorted(advice.free_frontier(w, 0))[0]
+    far = next(k for k, t in w["tiles"].items() if t["owner"] is None and k not in advice.free_frontier(w, 0)
+               and t["terrain"] != "water")
+    with pytest.raises(GameError, match="isn't on the map"):
+        game.claim(100, "99,99")
+    with pytest.raises(GameError, match="doesn't touch your land"):
+        game.claim(100, far)
+    with pytest.raises(GameError, match="already yours"):
+        game.claim(100, w["nations"][0]["capital"])
+    assert "queued" in game.claim(100, free)
+    other = sorted(advice.free_frontier(w, 0) - {free})[0]
+    with pytest.raises(GameError, match="already have a claim queued"):
+        game.claim(100, other)
+    assert "Cleared 1" in game.cancel(100)
+    assert "no queued" in game.cancel(100)
+    with pytest.raises(GameError, match="isn't yours"):
+        game.build(100, far, "home")
+    with pytest.raises(GameError, match="Unknown building"):
+        game.build(100, free, "castle")
+    with pytest.raises(GameError, match="You have no army"):
+        game.move(100, 99, free)
+    with pytest.raises(GameError, match="isn't on the map"):
+        game.move(100, 1, "99,99")
+
+
+def test_second_order_counts_what_the_first_costs(game):
+    from population import advice
+    w = game.world
+    mine = next(k for k in w["tiles"] if w["tiles"][k]["owner"] == 0 and w["tiles"][k]["building"] is None)
+    w["nations"][0]["resources"].update(wood=12, stone=6)
+    game.build(100, mine, "home")                          # costs 10 wood, 5 stone
+    other = next(k for k in w["tiles"] if w["tiles"][k]["owner"] == 0 and w["tiles"][k]["building"] is None and k != mine)
+    with pytest.raises(GameError, match="Not enough"):
+        game.build(100, other, "home")
+
+
+def test_training_limits_are_explained(game):
+    game.world["nations"][0]["resources"]["ore"] = 0
+    with pytest.raises(GameError, match="short of"):
+        game.train(100, 3)
+    game.world["nations"][0]["resources"]["ore"] = 50
+    assert "queued" in game.train(100, 2)
+
+
+def test_advice_names_real_problems(game):
+    from population import advice
+    w = game.world
+    w["nations"][0]["resources"]["food"] = 0
+    w["nations"][0]["priorities"]["food"] = 0
+    text = " ".join(advice.advice(w, game.rules, 0, limit=10))
+    assert "Food runs out" in text
+    w["nations"][0]["workers"] = W.housing(w, game.rules, 0)[0]
+    assert "Homes are full" in " ".join(advice.advice(w, game.rules, 0, limit=10))
+
+
+def test_report_and_history_after_a_night(game):
+    from population import advice
+    assert "No night has passed" in game.report(100)
+    game.run_tick()
+    game.run_tick()
+    text = game.report(100)
+    assert "night 2" in text and "Stock:" in text
+    rows = advice.history(game.world, 0)
+    assert [r["t"] for r in rows] == [1, 2]
+    assert len(advice.sparkline([1, 2, 3, 2])) == 4
+
+
+def test_race_line_and_public_events(game):
+    standings = game.standings()
+    assert "To win:" in standings and "Leader" in standings
+    game.run_tick()
+    assert isinstance(game.public_events(), list)
+    quiet = game.run_tick(split_log=True)
+    assert "Tick 2" in quiet and "To win" in quiet
+
+
+def test_help_pages_and_welcome(game):
+    from population import guide
+    for tab in guide.HELP_TABS:
+        text = game.help(tab)
+        assert 0 < len(text) < 1800                        # fits in one Discord message
+    assert "peasant" in game.help("basics") and "Emperor" in game.help("winning")
+    assert "Aldmere" in game.welcome("Aldmere")
+    msgs = game.start_messages()
+    assert set(msgs) == {"100", "101", "102", "103"} and "/zoom" in msgs["100"]
+
+
+def test_tutorial_walks_through_the_basics():
+    from population import advice
+    from population.tutorial import Tutorial
+    t = Tutorial(555, seed=3)
+    g = t.game
+    assert "Step 1" in t.hint()
+    g.claim(555, sorted(advice.free_frontier(g.world, 0))[0])
+    assert "Orders queued" in t.hint()
+    t.night()
+    assert "Step 2" in t.hint()
+    mine = next(k for k in t.land() if g.world["tiles"][k]["building"] is None)
+    g.world["nations"][0]["resources"].update(wood=50, stone=50)
+    g.build(555, mine, "home")
+    t.night()
+    assert "Step 3" in t.hint()
+    g.set_priority(555, "wood", 4)
+    assert "Step 4" in t.hint()
+    t.night()
+    t.night()
+    assert "Tutorial complete" in t.hint()
+    assert g.world["tick"] == 4 and t.game.world["nations"][1]["alive"]

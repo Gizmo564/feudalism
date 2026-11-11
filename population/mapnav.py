@@ -1,6 +1,6 @@
 """Logic behind the interactive map: panning, which tiles to offer, and what you can do on a tile.
 No Discord code here, so it can be tested on its own."""
-from . import views, world as W
+from . import advice, views, world as W
 from .hexes import parse, neighbors, distance, within
 from .tick import claim_cost, foreign_army_on
 
@@ -47,13 +47,16 @@ def pick_options(world, rules, nid, center, radius, limit=25):
 
 
 def tile_card(world, rules, nid, k):
-    """What a tile is and what you can do there: {"text", "can_claim", "builds", "can_move"}."""
+    """What a tile is and what you can do there: {"text", "can_claim", "builds", "can_move", "claim_cost",
+    "claim_missing", "claim_queued", "build_cost", "build_missing"}. "missing" is what you can't pay yet."""
     info = {v["k"]: v for v in views.map_view(world, rules, nid)}
     v = info.get(k)
     if v is None:
-        return {"text": "No such tile.", "can_claim": False, "builds": [], "can_move": False}
+        return {"text": "No such tile.", "can_claim": False, "builds": [], "can_move": False,
+                "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}}
     if not v["visible"]:
-        return {"text": "**%s** - fogged, you can't see it." % k, "can_claim": False, "builds": [], "can_move": False}
+        return {"text": "**%s** - fogged, you can't see it." % k, "can_claim": False, "builds": [], "can_move": False,
+                "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}}
     lines = ["**%s** - %s" % (k, v["terrain"])]
     if v["oil"]:
         lines[0] += ", oil deposit"
@@ -64,15 +67,20 @@ def tile_card(world, rules, nid, k):
     if v["building"]:
         lines.append("Building: %s." % v["building"])
     can_claim = k in claimable(world, nid)
+    have = advice.available(world, rules, nid)
+    cost = claim_cost(world, rules, nid)
     if can_claim:
-        cost = claim_cost(world, rules, nid)
-        lines.append("Claim cost: " + ", ".join("%d %s" % (n, r) for r, n in cost.items() if n) + ".")
+        lines.append("Claim cost: " + advice.fmt(cost) + ".")
     builds = []
     if v["owner"] == nid and v["building"] is None and not foreign_army_on(world, k, nid):
         builds = list(rules["buildings"])
         lines.append("Build: " + "; ".join("%s (%s)" % (b, ", ".join("%d %s" % (n, r) for r, n in rules["buildings"][b]["cost"].items()))
                                             for b in builds) + ".")
-    return {"text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water"}
+    return {"text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water",
+            "claim_cost": cost, "claim_missing": advice.shortfall(have, cost),
+            "claim_queued": advice.claim_queued(world, nid) >= rules["claim"]["per_tick"],
+            "build_cost": {b: rules["buildings"][b]["cost"] for b in builds},
+            "build_missing": {b: advice.shortfall(have, rules["buildings"][b]["cost"]) for b in builds}}
 
 
 def my_armies(world, nid):
