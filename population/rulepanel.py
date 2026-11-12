@@ -38,10 +38,9 @@ def label(key):
 
 
 def current(world, rules, key):
-    if key == "fog":
-        return bool(world["settings"]["fog"])
-    if key == "hidden_oil":
-        return bool(world["settings"]["hidden_oil"])
+    """The value now. Before the game starts there is no world yet, so the ruleset is the only source."""
+    if world is not None and key in ("fog", "hidden_oil"):
+        return bool(world["settings"][key])
     node = rules
     for step in BY_KEY[key][3][:-1]:
         node = node[step]
@@ -66,6 +65,8 @@ def apply(world, rules, key, value):
     for step in BY_KEY[key][3][:-1]:
         node = node[step]
     node[BY_KEY[key][3][-1]] = value
+    if world is None:
+        return
     if key == "fog":
         world["settings"]["fog"] = value
     elif key == "hidden_oil":

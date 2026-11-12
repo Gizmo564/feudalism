@@ -336,3 +336,22 @@ def test_rules_panel(bot, game):
         assert game.pending_rules == {"scarcity": game.rules["claim"]["scarcity_percent"] + 50}
         assert await view.interaction_check(click(999)) is False
     asyncio.run(go())
+
+
+def test_rules_panel_before_the_game_starts(bot, tmp_path):
+    from population.game import Game
+    from population.store import Store
+
+    async def go():
+        g = Game(Store(str(tmp_path / "p.db")))
+        try:
+            bot.RulesView(100, g)
+            assert False, "no game set up yet"
+        except bot.GameError:
+            pass
+        g.open_signup("feudalism")
+        view = bot.RulesView(100, g)
+        assert "hasn't started" in view.text()
+        await find(view, "Turn on").callback(click(100))
+        assert g.rules["fog_of_war"] is True and g.pending_rules == {} and find(view, "Turn off") is not None
+    asyncio.run(go())

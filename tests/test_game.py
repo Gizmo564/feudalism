@@ -365,3 +365,18 @@ def test_economy_lists_only_what_your_land_makes(game):
     land = dict((a, b) for a, b, _ in game.info_page(100, "land")["fields"])
     assert "What your land can make" in land and "Stock" in land
     assert "food" in land["What your land can make"] and "wood" not in land["What your land can make"]
+
+
+def test_rules_can_be_changed_after_open_before_start(tmp_path):
+    g = Game(Store(str(tmp_path / "s.db")))
+    with pytest.raises(GameError, match="admin open"):
+        g.rule_rows()
+    g.open_signup("feudalism")
+    assert "right away" in g.queue_rule("fog", True)
+    g.queue_rule("scarcity", 300)
+    assert g.pending_rules == {} and g.rules["claim"]["scarcity_percent"] == 300
+    for i, name in enumerate(["Aldmere", "Brask", "Corvain", "Dunmore"]):
+        g.join(100 + i, name)
+    g.start(6, seed=5)
+    assert g.world["settings"]["fog"] is True               # the new game starts with the rules you set
+    assert g.rules["claim"]["scarcity_percent"] == 300

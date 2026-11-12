@@ -86,7 +86,7 @@ class Game:
 
     def rule_rows(self):
         """One dict per changeable rule: key, label, kind, current value, pending value (or None), limits, note."""
-        self.need_running()
+        self.need_rules()
         rows = []
         for key in rulepanel.keys(self.rules):
             _, label, kind, _, _, limits, note = rulepanel.BY_KEY[key]
@@ -96,13 +96,19 @@ class Game:
         return rows
 
     def queue_rule(self, key, value):
-        """Ask for a rule change at the next tick. Setting it back to the current value cancels the request."""
-        self.need_running()
+        """Running game: ask for a change at the next tick (setting it back to the current value cancels the
+        request). Sign-up phase: nothing is running yet, so the change happens right away."""
+        self.need_rules()
         try:
             value = rulepanel.check(self.rules, key, value)
         except ValueError as e:
             raise GameError(str(e))
         now = rulepanel.current(self.world, self.rules, key)
+        if self.phase == "signup":
+            rulepanel.apply(None, self.rules, key, value)
+            self.save()
+            return "%s is now %s (the game hasn't started, so it takes effect right away)." % (
+                rulepanel.label(key), rulepanel.show(value))
         if value == now:
             self.pending_rules.pop(key, None)
             text = "%s stays %s." % (rulepanel.label(key), rulepanel.show(now))
@@ -112,6 +118,10 @@ class Game:
                                                                   rulepanel.show(value))
         self.save()
         return text
+
+    def need_rules(self):
+        if self.phase not in ("signup", "running"):
+            raise GameError("No game is set up yet. Use /admin open first")
 
     def apply_pending_rules(self):
         """Put the queued rule changes into effect. Returns one line per change for the announcement."""

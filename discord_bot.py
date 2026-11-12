@@ -883,6 +883,7 @@ class RulesView(discord.ui.View):
     def __init__(self, uid, g):
         super().__init__(timeout=900)
         self.uid, self.g = uid, g
+        g.need_rules()
         self.key = rulepanel.keys(g.rules)[0]
         self.layout()
 
@@ -893,7 +894,10 @@ class RulesView(discord.ui.View):
         return {r["key"]: r for r in self.g.rule_rows()}
 
     def text(self):
-        lines = ["**Game rules** - changes apply at the next tick and are announced.", ""]
+        if self.g.phase == "signup":
+            lines = ["**Game rules** - the game hasn't started yet, so changes apply right away.", ""]
+        else:
+            lines = ["**Game rules** - changes apply at the next tick and are announced.", ""]
         for r in self.rows().values():
             now = rulepanel.show(r["now"])
             value = "%s -> **%s** (next tick)" % (now, rulepanel.show(r["next"])) if r["next"] is not None else "**%s**" % now
@@ -955,9 +959,10 @@ class RulesView(discord.ui.View):
 async def admin_rules(interaction: discord.Interaction):
     if not is_admin(interaction):
         return await say(interaction, deny(interaction))
-    if game.phase != "running":
-        return await say(interaction, "Can't do that: there is no game running")
-    view = RulesView(interaction.user.id, game)
+    try:
+        view = RulesView(interaction.user.id, game)
+    except GameError as e:
+        return await say(interaction, "Can't do that: %s" % e)
     await interaction.response.send_message(view.text(), view=view, ephemeral=True)
 
 
