@@ -123,7 +123,10 @@ class Game:
     def reset_stock(self):
         """Admin: put every living nation's stockpile back to the starting amounts, right now."""
         self.need_running()
-        start = self.rules["start"]["resources"]
+        start = dict(self.rules["start"]["resources"])
+        for r in self.rules["resources"]:                       # use the amounts waiting for the next tick, if any
+            if "start_" + r in self.pending_rules:
+                start[r] = self.pending_rules["start_" + r]
         alive = [n for n in self.world["nations"] if n["alive"]]
         for n in alive:
             n["resources"] = {r: start.get(r, 0) for r in self.rules["resources"]}

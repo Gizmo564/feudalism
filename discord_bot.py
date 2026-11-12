@@ -995,6 +995,8 @@ class RulesView(discord.ui.View):
         lines += ["", r["note"]]
         if r["risky"]:
             lines.append("Careful: this changes the whole economy.")
+        if self.tab == "start":
+            lines.append("These only change nations created afterwards. Nobody's current stock changes unless you press the reset button.")
         return "\n".join(lines)
 
     def layout(self):
@@ -1026,8 +1028,11 @@ class RulesView(discord.ui.View):
             self.add_item(self.button("Type a number", self.type_number(r["label"], lo, hi)))
         self.add_item(self.button("Undo change", self.set_to(r["now"]), disabled=r["next"] is None))
         if self.tab == "start" and self.g.phase == "running":
+            keep = discord.ui.Button(row=3, label="Save, keep everyone's current stock", style=discord.ButtonStyle.success)
+            keep.callback = self.save_only
+            self.add_item(keep)
             b = discord.ui.Button(row=3, label="Really reset? This wipes everyone's stockpile" if self.sure
-                                  else "Set everyone's stock to the start amounts",
+                                  else "Save and set everyone's stock to the start amounts",
                                   style=discord.ButtonStyle.danger if self.sure else discord.ButtonStyle.secondary)
             b.callback = self.reset_stock
             self.add_item(b)
@@ -1069,6 +1074,15 @@ class RulesView(discord.ui.View):
                 return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
             await self.refresh(interaction)
         return cb
+
+    async def save_only(self, interaction):
+        """Changes are already saved as you make them; this says so and leaves every stockpile alone."""
+        waiting = [r for r in self.g.rule_rows() if r["tab"] == "start" and r["next"] is not None]
+        self.sure = False
+        self.layout()
+        text = ("Saved: %d start rule%s will apply at the next tick. Nobody's current stock was changed." % (
+            len(waiting), "" if len(waiting) == 1 else "s")) if waiting else "Nothing to save: no start rule has changed. Nobody's stock was changed."
+        await interaction.response.edit_message(content=self.text() + "\n\n" + text, view=self)
 
     async def reset_stock(self, interaction):
         if not self.sure:                    # the first press only asks; the second one does it
