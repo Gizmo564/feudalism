@@ -64,7 +64,7 @@ def _font(size, bold=True):
             return ImageFont.truetype(path, max(1, int(size)))
         except OSError:
             continue
-    return ImageFont.load_default()
+    return ImageFont.load_default(max(1, int(size)))  # Pillow's built-in scalable font
 
 
 def _mix(a, b, t):
