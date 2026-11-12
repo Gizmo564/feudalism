@@ -1,6 +1,7 @@
 """The Discord bot. Run with:  python3 discord_bot.py   (reads settings from .env)
 All game rules live in the population/ package; this file only talks to Discord."""
 import io
+import logging
 import os
 import time
 from datetime import datetime
@@ -48,6 +49,21 @@ admin = app_commands.Group(name="admin", description="Admin commands")
 # ---------- small helpers ----------
 
 tutorials = {}      # discord user id -> Tutorial. Practice games live in memory only.
+
+
+@tree.error
+async def command_failed(interaction, error):
+    """Log any crash (so `feudalism logs` shows it) and tell the player instead of leaving them hanging."""
+    logging.getLogger("feudalism").error("Command failed: %s", getattr(interaction.command, "qualified_name", "?"),
+                                         exc_info=error)
+    text = "Something went wrong on my side. The admin can see the details in the log."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(text, ephemeral=True)
+        else:
+            await interaction.response.send_message(text, ephemeral=True)
+    except discord.HTTPException:
+        pass
 
 
 def game_for(user_id):
@@ -939,10 +955,9 @@ class RulesView(discord.ui.View):
 async def admin_rules(interaction: discord.Interaction):
     if not is_admin(interaction):
         return await say(interaction, deny(interaction))
-    try:
-        view = RulesView(interaction.user.id, game)
-    except GameError as e:
-        return await say(interaction, "Can't do that: %s" % e)
+    if game.phase != "running":
+        return await say(interaction, "Can't do that: there is no game running")
+    view = RulesView(interaction.user.id, game)
     await interaction.response.send_message(view.text(), view=view, ephemeral=True)
 
 
