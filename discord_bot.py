@@ -5,6 +5,9 @@ import logging
 import os
 import time
 import traceback
+import sys
+
+sys.stdout.reconfigure(line_buffering=True)    # show print() lines in the service log right away
 
 import discord
 from discord import app_commands
