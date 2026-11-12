@@ -3,9 +3,18 @@ import {DiscordSDK} from "@discord/embedded-app-sdk";
 
 const $ = (id) => document.getElementById(id);
 const say = (text) => { $("status").textContent = text; };
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+// make an element; text always goes in as text (nation names come from players)
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) { if (k === "style") e.style.cssText = v; else e[k] = v; }
+  for (const k of kids) e.append(k);
+  return e;
+}
 
 const TERRAIN = {field: "#e2e8c8", forest: "#bed2aa", hills: "#e2d4b0", mountain: "#c8c6c2", water: "#dcebf7"};
 const NEUTRAL = "#ede9e0", FOG = "#c4c2ba";
+const RES_COLOUR = {food: "#8fc46b", wood: "#c28a4a", stone: "#a9a7a1", ore: "#7fa3c7", oil: "#6b5a50", livestock: "#e0a1a1"};
 const SQRT3 = Math.sqrt(3);
 // the same little line icons the Discord map uses (drawn about 14 units wide)
 const ICON = {
@@ -15,26 +24,86 @@ const ICON = {
   mountain: "M-7 5L-2 -5L2 1L4 -2L7 5",
   water: "M-7 -2Q-3.5 -6 0 -2T7 -2M-7 3Q-3.5 -1 0 3T7 3",
 };
-const CART = new Path2D("M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3");
+const CART_D = "M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3";
+const CART = new Path2D(CART_D);
+const SHIELD = new Path2D("M0 -10L8 -7V1Q8 8 0 11Q-8 8 -8 1V-7Z");
 const PATH = Object.fromEntries(Object.entries(ICON).map(([k, d]) => [k, new Path2D(d)]));
 // for each hex side: the neighbour across it and the two corners it joins (corner i is at angle 60*i - 30 degrees)
 const EDGES = [[1, 0, 0, 1], [0, 1, 1, 2], [-1, 1, 2, 3], [-1, 0, 3, 4], [0, -1, 4, 5], [1, -1, 5, 0]];
 
 const dark = (hex) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(hex.substr(i, 2), 16) * 0.6).toString(16).padStart(2, "0")).join("");
+const svgIcon = (d) => {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("width", 16); s.setAttribute("height", 16); s.setAttribute("viewBox", "-8 -8 16 16");
+  s.setAttribute("fill", "none"); s.setAttribute("stroke", "#f2f3f5"); s.setAttribute("stroke-width", 1.4);
+  s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round");
+  const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", d); s.append(p);
+  return s;
+};
+const swatch = (colour) => el("i", {className: "sw", style: "background:" + colour + ";border-color:" + dark(colour)});
 
-// show a card of text; **word** is bold
-function showCard(text) {
-  const card = $("card");
-  card.textContent = "";
-  text.split("**").forEach((part, i) => {
-    const el = document.createElement(i % 2 ? "b" : "span");
-    el.textContent = part;
-    card.appendChild(el);
-  });
-  card.style.display = "block";
+// ---- the bars above the map: your name, your stock, what you hold ----
+function showBars(data, name) {
+  const mine = data.nations.find((n) => n.id === data.me);
+  $("who").append(swatch(mine ? mine.color : "#888"), name);
+  $("pills").replaceChildren(...data.resources.map(([r, n]) =>
+    el("div", {className: "pill"}, el("i", {style: "background:" + (RES_COLOUR[r] || "#888")}), el("span", {textContent: cap(r)}), el("b", {textContent: n}))));
+  const chip = (icon, label, n) => {
+    const c = el("div", {className: "hchip" + (n ? "" : " zero")}, ...(icon ? [svgIcon(ICON[icon])] : []),
+                 el("span", {textContent: cap(label)}), el("b", {textContent: n}));
+    return c;
+  };
+  const label = (t) => el("span", {className: "hlabel", textContent: t});
+  const {land, buildings, building_types: types} = data.holdings;
+  const total = Object.values(land).reduce((a, b) => a + b, 0);
+  const owned = Object.values(buildings).reduce((a, b) => a + b, 0);
+  $("hold").replaceChildren(
+    label("Land " + total), ...["field", "forest", "hills", "mountain"].map((t) => chip(t, t, land[t] || 0)),
+    el("span", {className: "hsep"}), label("Buildings " + owned),
+    ...["capital", ...types].map((b) => chip("", b, buildings[b] || 0)));
 }
 
-// ---- the map view: pan by dragging, zoom with the wheel, pinch or the + / - buttons, click a tile ----
+// ---- the side panel (a bottom sheet on a phone) ----
+function showTile(t, data, card) {
+  const names = Object.fromEntries(data.nations.map((n) => [n.id, n]));
+  const stock = Object.fromEntries(data.resources);
+  const out = [];
+  out.push(el("div", {className: "eyebrow", textContent: "Tile " + t.k}), el("h2", {textContent: cap(t.terrain)}));
+  const tags = el("div", {className: "tags"});
+  if (!t.visible) {
+    out.push(tags, el("p", {className: "hint", textContent: "You cannot see this tile. Land and armies near yours are visible."}));
+  } else {
+    if (t.owner === null) tags.append(el("span", {className: "tag", textContent: t.terrain === "water" ? "Water" : "Free land"}));
+    else {
+      const n = names[t.owner];
+      tags.append(el("span", {className: "tag"}, swatch(n ? n.color : "#888"), (n ? n.name : "Unknown") + (t.owner === data.me ? " (you)" : "")));
+    }
+    tags.append(el("span", {className: "tag", textContent: t.building ? cap(t.building) : "No building"}));
+    if (t.oil) tags.append(el("span", {className: "tag", textContent: "Oil deposit"}));
+    out.push(tags);
+    for (const line of card.text.split("\n").filter((l) => l.startsWith("Caravan:")))
+      out.push(el("p", {className: "hint", style: "margin:12px 0 0", textContent: line}));
+    const row = (res, need, short) => el("div", {className: "row"}, el("span", {textContent: cap(res)}),
+      el("span", {className: short ? "short" : "", textContent: need + " of " + (stock[res] || 0) + " you have"}));
+    if (card.can_claim) {
+      out.push(el("div", {className: "box"}, el("h3", {textContent: "Claim this tile"}),
+        ...Object.entries(card.claim_cost).map(([r, n]) => row(r, n, r in card.claim_missing)),
+        el("div", {className: "note", textContent: card.claim_queued ? "A claim is already queued for this tick."
+          : Object.keys(card.claim_missing).length ? "You cannot pay for this yet." : "You can pay for this now."})));
+    }
+    if (card.builds.length) {
+      out.push(el("div", {className: "box"}, el("h3", {textContent: "Build here"}),
+        ...card.builds.map((b) => el("div", {className: "build" + (Object.keys(card.build_missing[b] || {}).length ? " off" : "")},
+          el("b", {textContent: cap(b)}), el("span", {textContent: Object.entries(card.build_cost[b]).map(([r, n]) => n + " " + r).join(", ")}))),
+        el("div", {className: "note", textContent: "Greyed out: you cannot pay for it yet."})));
+    }
+    if (out.length === 3) out.push(el("p", {className: "hint", textContent: "Nothing to do on this tile right now."}));
+    out.push(el("p", {className: "note", style: "margin-top:16px", textContent: "Orders are still placed in Discord."}));
+  }
+  $("card").replaceChildren(...out);
+}
+
+// ---- the map view: pan by dragging, zoom with the wheel, pinch or the buttons, click a tile ----
 function showMap(data, headers) {
   const canvas = $("map"), ctx = canvas.getContext("2d");
   const color = Object.fromEntries(data.nations.map((n) => [n.id, n.color]));
@@ -43,14 +112,16 @@ function showMap(data, headers) {
     return {...t, q, r, x: SQRT3 * (q + r / 2), y: 1.5 * r};      // position in units of one hex size
   });
   const at = Object.fromEntries(tiles.map((t) => [t.k, t]));
-  let size = 34, cx = 0, cy = 0, coords = false, selected = null;   // (cx, cy): the map point at the screen centre
+  const armyAt = Object.fromEntries(data.armies.map((a) => [a.tile, a]));
+  let size = 34, cx = 0, cy = 0, coords = false, terrain = true, selected = null, W = 0, H = 0;   // (cx, cy): the map point at the centre
 
   const centreOn = (k) => { const t = at[k]; if (t) { cx = t.x; cy = t.y; } };
   centreOn(data.capital);
 
   function resize() {
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = innerWidth * dpr; canvas.height = innerHeight * dpr;
+    const box = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    W = box.width; H = box.height;
+    canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     draw();
   }
@@ -70,12 +141,31 @@ function showMap(data, headers) {
     ctx.stroke(PATH[name]); ctx.restore();
   }
 
+  // army: the nation's dark colour with a white outline, the soldier count inside (a "?" for other nations' armies)
+  function shield(x, y, k, owner, label) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+    ctx.fillStyle = dark(color[owner] || "#888888"); ctx.fill(SHIELD);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke(SHIELD);
+    ctx.fillStyle = "#fff"; ctx.font = "bold 10px Inter, system-ui, sans-serif"; ctx.fillText(label, 0, 1);
+    ctx.restore();
+  }
+
+  // caravan: a cart in the same colours (dark nation colour, white outline)
+  function cart(x, y, k, owner) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.fillStyle = "#fff"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 4.2; ctx.fill(CART); ctx.stroke(CART);
+    const c = dark(color[owner] || "#888888");
+    ctx.fillStyle = c; ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.fill(CART); ctx.stroke(CART);
+    ctx.restore();
+  }
+
   function draw() {
-    ctx.fillStyle = "#2b2d31"; ctx.fillRect(0, 0, innerWidth, innerHeight);
-    const sx = (t) => innerWidth / 2 + (t.x - cx) * size, sy = (t) => innerHeight / 2 + (t.y - cy) * size;
+    ctx.fillStyle = "#2b2d31"; ctx.fillRect(0, 0, W, H);
+    const sx = (t) => W / 2 + (t.x - cx) * size, sy = (t) => H / 2 + (t.y - cy) * size;
     const seen = tiles.filter((t) => {
       const x = sx(t), y = sy(t);
-      return !(x < -size * 2 || y < -size * 2 || x > innerWidth + size * 2 || y > innerHeight + size * 2);
+      return !(x < -size * 2 || y < -size * 2 || x > W + size * 2 || y > H + size * 2);
     });
     ctx.lineJoin = "round"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const t of seen) {                                          // 1. tile colours, terrain icons, buildings
@@ -88,14 +178,14 @@ function showMap(data, headers) {
       if (!t.visible) continue;
       if (t.building) {
         ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, size * 0.36, 0, 7); ctx.fill();
-        ctx.fillStyle = "#2c2c2a"; ctx.font = "bold " + Math.round(size * 0.42) + "px system-ui";
+        ctx.fillStyle = "#2c2c2a"; ctx.font = "bold " + Math.round(size * 0.42) + "px Inter, system-ui, sans-serif";
         ctx.fillText(t.building[0].toUpperCase(), x, y + 1);
-      } else {
+      } else if (terrain) {
         icon(t.terrain, x, y, mine ? "rgba(255,255,255,.75)" : t.terrain === "water" ? "rgba(70,110,150,.55)" : "rgba(44,44,42,.5)");
       }
       if (t.oil) { ctx.fillStyle = "#342c28"; ctx.beginPath(); ctx.arc(x + size * 0.5, y - size * 0.45, size * 0.14, 0, 7); ctx.fill(); }
       if (coords && size >= 26) {
-        ctx.fillStyle = "rgba(44,44,42,.8)"; ctx.font = Math.round(size * 0.28) + "px system-ui";
+        ctx.fillStyle = "rgba(44,44,42,.8)"; ctx.font = Math.round(size * 0.28) + "px Inter, system-ui, sans-serif";
         ctx.fillText(t.q + "," + t.r, x, y + size * 0.62);
       }
     }
@@ -110,23 +200,27 @@ function showMap(data, headers) {
         ctx.beginPath(); ctx.moveTo(...corner(x, y, size, a)); ctx.lineTo(...corner(x, y, size, b)); ctx.stroke();
       }
     }
-    for (const a of data.armies) {                                   // 3. armies
-      const t = at[a.tile]; if (!t) continue;
-      const x = sx(t) - size * 0.45, y = sy(t) + size * 0.4;
-      ctx.beginPath(); ctx.arc(x, y, size * 0.26, 0, 7); ctx.fillStyle = color[a.owner] || "#888"; ctx.fill();
-      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.font = "bold " + Math.round(size * 0.3) + "px system-ui"; ctx.fillText(a.n, x, y + 1);
+    for (const t of seen) {                                          // 3. nation names under their capitals
+      if (!t.visible || t.building !== "capital" || t.owner === null) continue;
+      const n = data.nations.find((m) => m.id === t.owner); if (!n) continue;
+      const x = sx(t), y = sy(t) + size * 0.98, w = n.name.length * size * 0.26 + size * 0.5, h = size * 0.42;
+      ctx.beginPath(); ctx.roundRect(x - w / 2, y - h / 2, w, h, h / 2);
+      ctx.fillStyle = dark(n.color); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = "bold " + Math.round(size * 0.26) + "px Inter, system-ui, sans-serif"; ctx.fillText(n.name, x, y + 0.5);
     }
-    for (const c of data.caravans || []) {                           // 3b. caravans: a cart badge on their tile
-      const t = at[c.tile]; if (!t) continue;
-      const x = sx(t) - size * 0.45, y = sy(t) - size * 0.42, r = size * 0.27;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = "#fff"; ctx.fill();
-      ctx.strokeStyle = dark(color[c.from] || "#888888"); ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.save(); ctx.translate(x, y); ctx.scale(r / 8.5, r / 8.5);
-      ctx.strokeStyle = "#2c2c2a"; ctx.lineWidth = 1.6; ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.stroke(CART); ctx.restore();
+    for (const a of data.armies) {                                   // 4. armies: shields (the middle, or a corner if there is a building)
+      const t = at[a.tile]; if (!t || !seen.includes(t)) continue;
+      let x = sx(t), y = sy(t), k = size / 21;
+      if (t.building) { x -= size * 0.5; y += size * 0.45; k *= 0.8; }
+      shield(x, y, k, a.owner, a.owner === data.me ? String(a.n) : "?");
     }
-    if (selected && at[selected]) {                                  // 4. the selected tile
+    for (const c of data.caravans || []) {                           // 5. caravans: carts, moved to the top-left corner if something else is there
+      const t = at[c.tile]; if (!t || !seen.includes(t)) continue;
+      let x = sx(t), y = sy(t), k = size / 21 * 1.5;
+      if (t.building || armyAt[c.tile]) { x -= size * 0.5; y -= size * 0.4; k *= 0.7; } else x -= 0.5 * k;
+      cart(x, y, k, c.from);
+    }
+    if (selected && at[selected]) {                                  // 6. the selected tile
       hex(sx(at[selected]), sy(at[selected]), size * 0.95); ctx.strokeStyle = "#5865f2"; ctx.lineWidth = 3; ctx.stroke();
     }
   }
@@ -136,13 +230,15 @@ function showMap(data, headers) {
   async function pick(px, py) {
     let best = null, bestD = size * 0.95;
     for (const t of tiles) {
-      const d = Math.hypot(innerWidth / 2 + (t.x - cx) * size - px, innerHeight / 2 + (t.y - cy) * size - py);
+      const d = Math.hypot(W / 2 + (t.x - cx) * size - px, H / 2 + (t.y - cy) * size - py);
       if (d < bestD) { best = t; bestD = d; }
     }
-    if (!best) { selected = null; $("card").style.display = "none"; return draw(); }
+    if (!best) { selected = null; $("card").replaceChildren(el("p", {className: "hint", textContent: "Click a tile to see what is there."})); return draw(); }
     selected = best.k; draw();
     const got = await fetch("/.proxy/api/tile?k=" + encodeURIComponent(best.k), {headers});
-    if (selected === best.k) showCard(got.ok ? (await got.json()).text : "Could not load that tile.");
+    if (selected !== best.k) return;
+    if (got.ok) showTile(best, data, await got.json());
+    else $("card").replaceChildren(el("p", {className: "hint", textContent: "Could not load that tile."}));
   }
 
   const pointers = new Map();
@@ -152,7 +248,8 @@ function showMap(data, headers) {
     down = pointers.size === 1 ? [e.clientX, e.clientY] : null;
   });
   canvas.addEventListener("pointerup", (e) => {
-    if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 6) pick(e.clientX, e.clientY);   // a click, not a drag
+    const box = canvas.getBoundingClientRect();
+    if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 6) pick(e.clientX - box.left, e.clientY - box.top);   // a click, not a drag
     down = null; pointers.delete(e.pointerId); pinch = 0;
   });
   canvas.addEventListener("pointercancel", (e) => { down = null; pointers.delete(e.pointerId); pinch = 0; });
@@ -172,10 +269,32 @@ function showMap(data, headers) {
   $("zout").onclick = () => zoom(0.8);
   $("home").onclick = () => { centreOn(data.capital); draw(); };
   $("coords").onclick = () => { coords = !coords; $("coords").classList.toggle("on", coords); draw(); };
+  $("terrain").onclick = () => { terrain = !terrain; $("terrain").classList.toggle("on", terrain); draw(); };
   addEventListener("resize", resize);
 
+  // the key: your nation, the others on the map, free land, water, and the two kinds of piece
+  const key = (mark, text) => el("span", {}, mark, text);
+  const marker = (d, colour, outlined) => {      // a small copy of a piece for the key
+    const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    s.setAttribute("width", 16); s.setAttribute("height", 16); s.setAttribute("viewBox", "-9 -11 18 22");
+    const path = (fill, stroke, w) => {
+      const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      for (const [k, v] of Object.entries({d, fill, stroke, "stroke-width": w, "stroke-linejoin": "round", "stroke-linecap": "round"})) p.setAttribute(k, v);
+      s.append(p);
+    };
+    if (outlined) path("#fff", "#fff", 4.2);       // the cart: a white outline under the coloured cart
+    path(colour, outlined ? colour : "#fff", 2);   // the shield: coloured, with its white outline
+    return s;
+  };
+  const mine = data.nations.find((n) => n.id === data.me);
+  const myDark = dark(mine ? mine.color : "#888888");
+  $("legend").replaceChildren(
+    ...data.nations.map((n) => key(swatch(n.color), n.name + (n.id === data.me ? " (you)" : ""))),
+    key(swatch(NEUTRAL), "Free land"), key(swatch(TERRAIN.water), "Water"),
+    key(marker(CART_D, myDark, true), "Caravan"), key(marker("M0 -10L8 -7V1Q8 8 0 11Q-8 8 -8 1V-7Z", myDark, false), "Army"));
+
   $("status").style.display = "none";
-  canvas.style.display = "block"; $("bar").style.display = "flex";
+  $("app").style.display = "flex";
   resize();
 }
 
@@ -194,8 +313,9 @@ async function main() {
   const headers = {Authorization: "Bearer " + access_token};
   const me = await (await fetch("/.proxy/api/me", {headers})).json();
   if (!me.nation) return say("Hello " + me.name + ". You are not in a running game.");
-  $("who").textContent = me.nation;
-  showMap(await (await fetch("/.proxy/api/map", {headers})).json(), headers);
+  const data = await (await fetch("/.proxy/api/map", {headers})).json();
+  showBars(data, me.nation);
+  showMap(data, headers);
 }
 
 main().catch((e) => say("Something went wrong: " + (e && e.message ? e.message : e)));

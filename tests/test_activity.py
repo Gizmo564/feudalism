@@ -87,6 +87,9 @@ def test_map_data_follows_the_players_view(tmp_path):
         assert data["capital"] in [t["k"] for t in data["tiles"] if t["owner"] == 0]
         assert {"k", "terrain", "owner", "building", "oil", "visible"} <= set(data["tiles"][0])
         assert any(n["id"] == 0 and n["color"].startswith("#") for n in data["nations"])
+        assert dict(data["resources"])["wood"] >= 0 and [r for r, _ in data["resources"]][:2] == ["food", "wood"]
+        assert data["holdings"]["land"] and "capital" in data["holdings"]["buildings"]
+        assert sum(data["holdings"]["land"].values()) == len([t for t in data["tiles"] if t["owner"] == 0])
     run(tmp_path, steps)
 
 
@@ -123,7 +126,7 @@ def test_tile_card(tmp_path):
         got = await client.get("/.proxy/api/tile?k=" + cap, headers={"Authorization": "Bearer tok"})
         card = await got.json()
         assert got.status == 200 and cap in card["text"] and "Aldmere" in card["text"]
-        assert set(card) == {"text", "can_claim", "builds", "can_move"}
+        assert {"text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "build_cost"} <= set(card)
         nowhere = await (await client.get("/api/tile?k=99,99", headers={"Authorization": "Bearer tok"})).json()
         assert nowhere["text"] == "No such tile."
     run(tmp_path, steps)

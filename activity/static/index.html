@@ -5,28 +5,97 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <title>Feudalism map</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #2b2d31; color: #f2f3f5;
-                 font-family: system-ui, sans-serif; }
+    :root { --bg: #1e1f22; --panel: #2b2d31; --line: #3a3c42; --text: #f2f3f5; --muted: #b5bac1; --accent: #5865f2; --chip: #2f3136; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+                 font-family: Inter, system-ui, sans-serif; }
+    button { font: inherit; color: inherit; cursor: pointer; }
     #status { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 1em; }
-    #map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; display: none; }
-    #bar { position: absolute; top: 8px; left: 8px; display: none; gap: 6px; align-items: center; }
-    #bar span, #bar button { background: #1e1f22; color: #f2f3f5; border: 0; border-radius: 6px; padding: 6px 10px;
-                             font: inherit; }
-    #bar button { cursor: pointer; }
-    #bar button.on { background: #5865f2; }
-    #card { position: absolute; left: 8px; bottom: 8px; max-width: 320px; display: none; background: #1e1f22;
-            border-radius: 8px; padding: 10px 12px; line-height: 1.4; white-space: pre-line; }
+    #app { display: none; height: 100%; flex-direction: column; }
+    #top { height: 56px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--bg);
+           border-bottom: 1px solid var(--line); }
+    #who { display: flex; align-items: center; gap: 10px; flex: none; font-size: 16px; font-weight: 700; }
+    #pills { display: flex; gap: 8px; flex: 1; overflow-x: auto; }
+    .pill { display: flex; align-items: center; gap: 8px; background: var(--panel); border-radius: 8px; padding: 7px 12px;
+            white-space: nowrap; flex: none; }
+    .pill i { width: 10px; height: 10px; border-radius: 50%; display: block; }
+    .pill span { color: var(--muted); font-size: 13px; }
+    .pill b { font-size: 14px; }
+    #hold { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; overflow-x: auto;
+            border-bottom: 1px solid var(--line); box-sizing: border-box; }
+    .hlabel { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; flex: none; }
+    .hchip { display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: 8px; padding: 4px 10px;
+             white-space: nowrap; flex: none; }
+    .hchip span { color: var(--muted); font-size: 12px; }
+    .hchip b { font-size: 13px; }
+    .hchip.zero b { color: #8a8f98; }
+    .hsep { width: 1px; height: 20px; background: var(--line); flex: none; margin: 0 4px; }
+    #main { flex: 1; display: flex; min-height: 0; }
+    #mapwrap { flex: 1; position: relative; min-width: 0; min-height: 0; }
+    #map { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+    .overlay { position: absolute; display: flex; gap: 8px; }
+    #chips { top: 12px; left: 12px; }
+    .chip { display: flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; padding: 0 12px; height: 36px;
+            font-size: 13px; font-weight: 500; background: #1e1f22cc; }
+    .chip.on { background: var(--accent); }
+    #zoom { right: 12px; bottom: 12px; flex-direction: column; gap: 6px; }
+    #zoom button { width: 40px; height: 40px; border: 0; border-radius: 8px; background: #1e1f22e6; display: grid; place-items: center; font-size: 20px; }
+    #legend { left: 12px; bottom: 12px; gap: 14px; background: #1e1f22e6; border-radius: 8px; padding: 8px 12px; font-size: 12px;
+              flex-wrap: wrap; max-width: calc(100% - 90px); }
+    #legend span { display: flex; align-items: center; gap: 6px; }
+    .sw { width: 14px; height: 14px; border-radius: 4px; box-sizing: border-box; border: 2px solid; display: block; flex: none; }
+    #panel { width: 340px; flex: none; box-sizing: border-box; background: var(--panel); border-left: 1px solid var(--line);
+             padding: 20px; overflow-y: auto; }
+    #panel .grip { display: none; }
+    .eyebrow { font-size: 12px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+    h2 { margin: 4px 0 0; font-size: 22px; font-weight: 700; }
+    .tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .tag { display: flex; align-items: center; gap: 6px; background: var(--chip); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+    .box { background: var(--bg); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+    .box h3 { margin: 0; font-size: 13px; font-weight: 600; }
+    .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+    .row span:first-child { color: var(--muted); }
+    .row .short { color: #f0877a; }
+    .note { font-size: 12px; color: var(--muted); }
+    .build { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-radius: 8px; padding: 10px 12px;
+             background: #3a3c42; font-size: 14px; }
+    .build b { font-weight: 600; }
+    .build span { font-size: 12px; color: var(--muted); }
+    .build.off { background: var(--chip); color: #8a8f98; }
+    .hint { color: var(--muted); font-size: 14px; line-height: 1.45; }
+    @media (max-width: 700px) {
+      #top { height: 52px; gap: 12px; }
+      #main { flex-direction: column; }
+      #legend { display: none; }
+      #zoom button { width: 44px; height: 44px; }
+      #panel { width: auto; flex: 0 0 38%; border-left: 0; border-radius: 16px 16px 0 0; margin-top: -12px; position: relative;
+               padding: 10px 16px 16px; }
+      #panel .grip { display: block; width: 40px; height: 4px; border-radius: 2px; background: #5a5d66; margin: 0 auto 12px; }
+      h2 { font-size: 20px; }
+    }
   </style>
 </head>
 <body>
   <p id="status">Connecting to Discord...</p>
-  <canvas id="map"></canvas>
-  <div id="bar">
-    <span id="who"></span>
-    <button id="zin">+</button><button id="zout">&minus;</button>
-    <button id="coords">Coords</button><button id="home">Capital</button>
+  <div id="app">
+    <div id="top"><div id="who"></div><div id="pills"></div></div>
+    <div id="hold"></div>
+    <div id="main">
+      <div id="mapwrap">
+        <canvas id="map"></canvas>
+        <div id="chips" class="overlay">
+          <button class="chip on" id="terrain">Terrain</button>
+          <button class="chip" id="coords">Coordinates</button>
+        </div>
+        <div id="zoom" class="overlay">
+          <button id="zin" aria-label="Zoom in">+</button>
+          <button id="zout" aria-label="Zoom out">&minus;</button>
+          <button id="home" aria-label="Back to my capital">&#9678;</button>
+        </div>
+        <div id="legend" class="overlay"></div>
+      </div>
+      <aside id="panel"><div class="grip"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
+    </div>
   </div>
-  <div id="card"></div>
-  <script src="/static/app.js?v=4"></script>
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>

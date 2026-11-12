@@ -75,8 +75,18 @@ def make_app(client_id, client_secret, game, call=discord_request):
         shown |= {c["from"] for c in caravans} | {c["to"] for c in caravans}
         nations = [{"id": n["id"], "name": n["name"], "color": "#%02x%02x%02x" % render.nation_color(n["id"])}
                    for n in world["nations"] if n["id"] in shown]
+        mine = [t for t in world["tiles"].values() if t["owner"] == nid]
+        land = {}
+        buildings = {}
+        for t in mine:
+            land[t["terrain"]] = land.get(t["terrain"], 0) + 1
+            if t["building"]:
+                buildings[t["building"]] = buildings.get(t["building"], 0) + 1
+        stock = world["nations"][nid]["resources"]
         return web.json_response({
             "me": nid, "capital": world["nations"][nid]["capital"], "nations": nations,
+            "resources": [[r, stock.get(r, 0)] for r in rules["resources"]],
+            "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
                        "oil": bool(t["oil"]), "visible": t["visible"]} for t in tiles],
             "armies": [{"owner": a["owner"], "tile": a["tile"], "n": a["n"]} for a in armies],
@@ -91,7 +101,8 @@ def make_app(client_id, client_secret, game, call=discord_request):
         if game.phase != "running" or nid is None:
             return web.json_response({"error": "not in a running game"}, status=404)
         card = mapnav.tile_card(game.world, game.rules, nid, request.query.get("k", ""))
-        return web.json_response({k: card[k] for k in ("text", "can_claim", "builds", "can_move")})
+        keys = ("text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "claim_queued", "build_cost", "build_missing")
+        return web.json_response({k: card[k] for k in keys})
 
     async def index(request):
         return web.FileResponse(os.path.join(STATIC, "index.html"))
