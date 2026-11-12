@@ -19,7 +19,14 @@ async def discord_request(method, path, **kwargs):
 
 
 def make_app(client_id, client_secret, game, call=discord_request):
-    app = web.Application()
+    @web.middleware
+    async def no_cache(request, handler):
+        """Cloudflare and Discord would otherwise keep serving an old copy of the page after an update."""
+        resp = await handler(request)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    app = web.Application(middlewares=[no_cache])
 
     async def config(request):
         return web.json_response({"clientId": client_id})

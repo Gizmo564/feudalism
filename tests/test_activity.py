@@ -106,3 +106,10 @@ def test_map_data_hides_fogged_tiles_and_players_not_in_the_game(tmp_path):
         finally:
             await c.close()
     asyncio.run(go())
+
+
+def test_pages_are_never_cached(tmp_path):
+    async def steps(client, calls):
+        for path in ("/", "/static/app.js", "/api/config"):
+            assert (await client.get(path)).headers["Cache-Control"] == "no-store"
+    run(tmp_path, steps)
