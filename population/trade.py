@@ -82,17 +82,95 @@ def accept(world, rules, tid, by):
     speed = rules["movement"]["trade_tiles_per_tick"]
     dist = distance(world["nations"][o["from"]]["capital"], world["nations"][o["to"]]["capital"])
     travel = max(1, math.ceil(dist / speed))
-    for sender, receiver, side in ((o["from"], o["to"], o["give"]), (o["to"], o["from"], o["get"])):
+    caravans = rules["trade"].get("caravans", False)
+    sides = ((o["from"], o["to"], o["give"]), (o["to"], o["from"], o["get"]))
+    if caravans and any(side.get("resources") for _, _, side in sides) and not land_route(world, o["from"], o["to"]):
+        raise ValueError("there is no land route between the two capitals, so caravans cannot carry the goods")
+    for sender, receiver, side in sides:
         res = {r: n for r, n in side.get("resources", {}).items() if n > 0}
         for r, n in res.items():
             world["nations"][sender]["resources"][r] -= n
-        if res:
+        if res and caravans:
+            send_caravan(world, sender, receiver, res)
+        elif res:
             world["shipments"].append({"to": receiver, "res": res, "arrive": world["tick"] + travel - 1})
         for k in side.get("tiles", []):
             world["tiles"][k]["owner"] = receiver
     o["status"] = "accepted"
-    W.ev(world, o["from"], "Trade %d accepted. Resources arrive in %d tick(s)." % (tid, travel))
-    W.ev(world, o["to"], "Trade %d done. Resources arrive in %d tick(s)." % (tid, travel))
+    how = "A caravan carries the resources (%d tile(s) a tick)." % speed if caravans else "Resources arrive in %d tick(s)." % travel
+    W.ev(world, o["from"], "Trade %d accepted. %s" % (tid, how))
+    W.ev(world, o["to"], "Trade %d done. %s" % (tid, how))
+
+
+# ---------- caravans: goods that walk from one capital to the other and can be captured ----------
+
+def land_route(world, a, b):
+    from .tick import next_step                       # tick imports this module, so import it late
+    start, dest = world["nations"][a]["capital"], world["nations"][b]["capital"]
+    return start == dest or next_step(world, start, dest) is not None
+
+
+def send_caravan(world, sender, receiver, res):
+    cid = world.get("next_caravan_id", 1)
+    world["next_caravan_id"] = cid + 1
+    world.setdefault("caravans", []).append({
+        "id": cid, "from": sender, "to": receiver, "res": res,
+        "tile": world["nations"][sender]["capital"], "dest": world["nations"][receiver]["capital"]})
+
+
+def cargo(res):
+    return ", ".join("%d %s" % (v, r) for r, v in res.items())
+
+
+def raider(world, c):
+    """The nation of a foreign army standing on the caravan's tile, if any (not either side of the trade)."""
+    for a in world["armies"]:
+        if a["tile"] == c["tile"] and a["owner"] not in (c["from"], c["to"]) and world["nations"][a["owner"]]["alive"]:
+            return a["owner"]
+    return None
+
+
+def capture(world, c, nid):
+    for r, v in c["res"].items():
+        world["nations"][nid]["resources"][r] += v
+    W.ev(world, nid, "Your army captured a caravan at %s carrying %s." % (c["tile"], cargo(c["res"])))
+    for side in (c["from"], c["to"]):
+        W.ev(world, side, "A caravan carrying %s was captured at %s by %s." % (cargo(c["res"]), c["tile"], world["nations"][nid]["name"]))
+
+
+def move_caravans(world, rules):
+    """Run after the armies have moved. Each caravan walks up to the trade speed along the land path;
+    an enemy army on a tile it reaches captures it. Reaching the other capital delivers the goods."""
+    from .tick import next_step
+    speed = rules["movement"]["trade_tiles_per_tick"]
+    left = []
+    for c in world.get("caravans", []):
+        nid = raider(world, c)
+        steps = 0
+        while nid is None and c["tile"] != c["dest"] and steps < speed:
+            step = next_step(world, c["tile"], c["dest"])
+            if step is None:
+                break
+            c["tile"] = step
+            steps += 1
+            nid = raider(world, c)
+        if nid is not None:
+            capture(world, c, nid)
+        elif c["tile"] == c["dest"]:
+            n = world["nations"][c["to"]]
+            if n["alive"]:
+                for r, v in c["res"].items():
+                    n["resources"][r] += v
+                W.ev(world, c["to"], "A caravan arrived carrying %s." % cargo(c["res"]))
+            W.ev(world, c["from"], "Your caravan reached %s." % n["name"])
+        elif steps == 0:                              # no way forward: hand the goods back
+            n = world["nations"][c["from"]]
+            for r, v in c["res"].items():
+                n["resources"][r] += v
+            W.ev(world, c["from"], "Your caravan could not reach its goal and came home with %s." % cargo(c["res"]))
+        else:
+            left.append(c)
+    world["caravans"] = left
 
 
 def decline(world, tid, by):

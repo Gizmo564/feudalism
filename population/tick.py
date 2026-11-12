@@ -450,6 +450,7 @@ def run_tick(world, rules):
         n["claims_this_tick"] = 0
     apply_orders(world, rules, rng)
     move_armies(world, rules, rng)
+    trade.move_caravans(world, rules)
     oil_upkeep(world, rules)
     for n in world["nations"]:
         if n["alive"]:

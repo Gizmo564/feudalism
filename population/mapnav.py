@@ -1,6 +1,6 @@
 """Logic behind the interactive map: panning, which tiles to offer, and what you can do on a tile.
 No Discord code here, so it can be tested on its own."""
-from . import advice, views, world as W
+from . import advice, trade, views, world as W
 from .hexes import parse, neighbors, distance, within
 from .tick import claim_cost, foreign_army_on
 
@@ -66,6 +66,11 @@ def tile_card(world, rules, nid, k):
         lines.append("Owned by %s%s." % (world["nations"][v["owner"]]["name"], " (you)" if v["owner"] == nid else ""))
     if v["building"]:
         lines.append("Building: %s." % v["building"])
+    for c in views.caravans_view(world, rules, nid):
+        if c["tile"] == k:
+            names = world["nations"]
+            lines.append("Caravan: %s to %s%s." % (names[c["from"]]["name"], names[c["to"]]["name"],
+                                                    ", carrying " + trade.cargo(c["res"]) if "res" in c else ""))
     can_claim = k in claimable(world, nid)
     have = advice.available(world, rules, nid)
     cost = claim_cost(world, rules, nid)

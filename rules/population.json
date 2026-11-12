@@ -169,7 +169,7 @@
     "shortfall_loss_percent": 20
   },
   "trade": {
-    "requires_market": true,
+    "requires_market": true, "caravans": false,
     "offer_expires_ticks": 3
   },
   "vision_radius": 2,
