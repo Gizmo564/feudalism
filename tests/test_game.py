@@ -403,3 +403,23 @@ def test_close_reopen_and_clear_signups(tmp_path):
     assert [x["name"] for x in g.signups] == ["Corvain"]
     g.open_signup("feudalism")                                              # a fresh /admin open starts over, open
     assert g.signups == [] and g.signups_closed is False
+
+
+def test_tick_schedule(rules):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from population import schedule
+    tz = "America/Denver"
+    at = lambda d, h, m=0: datetime(2026, 11, d, h, m, tzinfo=ZoneInfo(tz)).timestamp()
+    # 24 = daily at 02:00
+    assert not schedule.is_due(at(12, 1, 59), at(11, 2, 1), 24, "02:00", tz)
+    assert schedule.is_due(at(12, 2, 1), at(11, 2, 1), 24, "02:00", tz)
+    assert not schedule.is_due(at(12, 5), at(12, 2, 1), 24, "02:00", tz)          # already ran today
+    # any other number = hours after the last tick
+    assert not schedule.is_due(at(12, 7, 59), at(12, 2), 6, "02:00", tz)
+    assert schedule.is_due(at(12, 8, 1), at(12, 2), 6, "02:00", tz)
+    # playtest minutes win only while the rule is at 24
+    assert schedule.is_due(at(12, 5, 10), at(12, 5, 4), 24, "02:00", tz, "5")
+    assert not schedule.is_due(at(12, 5, 10), at(12, 5, 4), 6, "02:00", tz, "5")
+    from population import rulepanel
+    assert "tick_hours" in rulepanel.keys(rules)                                 # and the admin can change it

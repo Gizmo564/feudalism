@@ -4,14 +4,12 @@ import io
 import logging
 import os
 import time
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from population import guide, infopage, mapnav, render, rulepanel, ruleset
+from population import guide, infopage, mapnav, render, rulepanel, ruleset, schedule
 from population.game import Game, GameError
 from population.store import Store
 from population.tutorial import Tutorial
@@ -1050,14 +1048,8 @@ async def do_tick():
 
 
 def tick_is_due():
-    last = store.get("last_tick", 0)
-    now = time.time()
-    if TICK_MINUTES:
-        return now - last >= float(TICK_MINUTES) * 60
-    tz = ZoneInfo(TICK_TZ)
-    hour, minute = (int(x) for x in TICK_TIME.split(":"))
-    today = datetime.now(tz).replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return now >= today.timestamp() > last
+    hours = (game.rules or {}).get("tick_hours", 24)
+    return schedule.is_due(time.time(), store.get("last_tick", 0), hours, TICK_TIME, TICK_TZ, TICK_MINUTES)
 
 
 @tasks.loop(seconds=30)

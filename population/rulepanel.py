@@ -16,6 +16,8 @@ RULES = [
      "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off)."),
     ("expiry", "Trade offer expiry (nights)", "number", ("trade", "offer_expires_ticks"), 3, (1, 10, 1),
      "How long an offer stays open."),
+    ("tick_hours", "Hours between ticks", "number", ("tick_hours",), 24, (1, 48, 1),
+     "24 means once a day at the usual time. Any other number means that many hours after the last tick."),
     ("workers", "Workers per tile", "number", ("workers_per_tile",), 5, (1, 10, 1),
      "How many workers one tile holds. Changes the whole economy, so change it with care."),
 ]
