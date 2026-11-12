@@ -1,5 +1,6 @@
 """The Discord bot. Run with:  python3 discord_bot.py   (reads settings from .env)
 All game rules live in the population/ package; this file only talks to Discord."""
+import asyncio
 import io
 import logging
 import os
@@ -13,7 +14,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from population import guide, infopage, mapnav, render, rulepanel, ruleset, schedule
+from population import guide, infopage, mapnav, notify, render, rulepanel, ruleset, schedule
 from population.game import Game, GameError
 from population.store import Store
 from population.tutorial import Tutorial
@@ -43,6 +44,7 @@ ACTIVITY_PORT = os.environ.get("ACTIVITY_PORT", "").strip()           # set to t
 ACTIVITY_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "").strip()
 DM_REPORTS = os.environ.get("DM_REPORTS", "1").strip().lower() not in ("0", "false", "no", "off")
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 store = Store(os.environ.get("DB_PATH", "game.db"))
 game = Game(store)
 client = discord.Client(intents=discord.Intents.default())   # no privileged intents needed
@@ -1199,10 +1201,21 @@ def tick_is_due():
     return schedule.is_due(time.time(), store.get("last_tick", 0), hours, TICK_TIME, TICK_TZ, TICK_MINUTES)
 
 
+async def tell_phone(title, message, priority="default"):
+    await asyncio.to_thread(notify.send, APP_DIR, title, message, priority)
+
+
 @tasks.loop(seconds=30)
 async def ticker():
     if game.phase == "running" and not store.get("paused", False) and tick_is_due():
-        await do_tick()
+        try:
+            await do_tick()
+            store.set("tick_failure_sent", False)
+        except Exception as e:                      # keep the loop alive; try again in 30 seconds
+            logging.getLogger("feudalism").exception("tick failed")
+            if not store.get("tick_failure_sent", False):      # one message per failure streak, not one per retry
+                store.set("tick_failure_sent", True)
+                await tell_phone("The tick failed", "%s: %s" % (type(e).__name__, str(e)[:200]), "high")
 
 
 def keep_launch_command():
@@ -1253,6 +1266,9 @@ async def on_ready():
                                                                  ACTIVITY_SECRET, game)
             print("Activity server listening on port %s" % ACTIVITY_PORT)
     print("Logged in as %s" % client.user)
+    if not getattr(client, "start_told", False):
+        client.start_told = True
+        await tell_phone("Bot is online", "Logged in as %s" % client.user)
 
 
 if __name__ == "__main__":

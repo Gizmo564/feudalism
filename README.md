@@ -49,6 +49,8 @@ The repo is private, so when git asks for a password, paste a GitHub token with 
 
 **Automatic updates (optional):** `~/feudalism/install.sh --auto` adds a timer that checks GitHub every 15 minutes. When there is a new commit it first waits for a quiet moment (nobody has used the bot for `AUTO_UPDATE_QUIET_MINUTES`, default 10, and no tick ran or is due within 10 minutes; it just checks again 15 minutes later), then pulls, runs the tests, and restarts the bot. `feudalism update` by hand never waits. If the tests fail it puts the old version back and does not retry that commit. Turn it off with `install.sh --no-auto`. Logs: `journalctl -u feudalism-autoupdate`.
 
+**Phone notifications (optional):** the bot can send messages to your phone through [ntfy](https://ntfy.sh): an automatic update (or one that failed its tests and was rolled back), the bot coming online, the bot stopping unexpectedly, and a failed tick. Install the ntfy app, subscribe to a hard-to-guess topic name, and put it in `.env` as `NTFY_TOPIC=your-topic` (anyone who knows the topic name can read the messages, so don't use a guessable one). Blank means off. `NTFY_SERVER` (default `https://ntfy.sh`) can point at your own ntfy server, and `NTFY_NAME` (default Crownfall) is the title prefix. Then run `feudalism update` once so the service picks up the crash alert. Test it with `.venv/bin/python -m population.notify "Test" "Hello"`.
+
 ## The `feudalism` command
 
 On the server, `feudalism help` lists everything:

@@ -10,6 +10,7 @@ SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 OWNER="$(stat -c %U "$APP_DIR")"
 as_owner() { if [ -n "${RUN_AS-x}" ] && [ "$(id -u)" -eq 0 ]; then runuser -u "$OWNER" -- "$@"; else "$@"; fi; }
 log() { echo "[auto-update] $*"; }
+tell() { as_owner .venv/bin/python -m population.notify "$@" >/dev/null 2>&1 || true; }   # phone message; never stops an update
 
 cd "$APP_DIR"
 as_owner git fetch -q origin || { log "could not reach GitHub, will try again later"; exit 0; }
@@ -24,17 +25,20 @@ fi
 
 log "updating $old -> $new"
 if ! as_owner git merge --ff-only -q "$new"; then
-  log "cannot fast-forward (local changes?), leaving things alone"; exit 1
+  log "cannot fast-forward (local changes?), leaving things alone"
+  tell "Update could not run" "Could not fast-forward to ${new:0:7}. Local changes on the box?" high; exit 1
 fi
 as_owner .venv/bin/pip install -q -r requirements.txt
 if as_owner .venv/bin/python -m pytest -q tests >/tmp/feudalism-tests.log 2>&1; then
   $SYSTEMCTL restart "$SERVICE"
   rm -f .auto-update-failed
   log "updated to $(as_owner git rev-parse --short HEAD) and restarted"
+  tell "Updated" "${old:0:7} -> ${new:0:7} (tests passed, bot restarted)"
 else
   log "tests failed on $new, putting $old back. See /tmp/feudalism-tests.log"
   as_owner git reset -q --hard "$old"
   as_owner .venv/bin/pip install -q -r requirements.txt
   echo "$new" > .auto-update-failed
+  tell "Update failed its tests" "${new:0:7} was rolled back to ${old:0:7}. See /tmp/feudalism-tests.log" high
   exit 1
 fi
