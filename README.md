@@ -47,7 +47,7 @@ git clone https://github.com/Gizmo564/feudalism.git ~/feudalism && ~/feudalism/i
 
 The repo is private, so when git asks for a password, paste a GitHub token with read access. The script installs packages, sets up a virtual environment, asks for your bot token once, runs the tests, and installs a systemd service. Update later with `feudalism-update`, which pulls from GitHub, retests, and restarts. `.env` and `game.db` stay on the machine and are never committed.
 
-**Automatic updates (optional):** `~/feudalism/install.sh --auto` adds a timer that checks GitHub every 15 minutes. When there is a new commit it pulls, runs the tests, and restarts the bot. If the tests fail it puts the old version back and does not retry that commit. Turn it off with `install.sh --no-auto`. Logs: `journalctl -u feudalism-autoupdate`.
+**Automatic updates (optional):** `~/feudalism/install.sh --auto` adds a timer that checks GitHub every 15 minutes. When there is a new commit it first waits for a quiet moment (nobody has used the bot for `AUTO_UPDATE_QUIET_MINUTES`, default 10, and no tick ran or is due within 10 minutes; it just checks again 15 minutes later), then pulls, runs the tests, and restarts the bot. `feudalism update` by hand never waits. If the tests fail it puts the old version back and does not retry that commit. Turn it off with `install.sh --no-auto`. Logs: `journalctl -u feudalism-autoupdate`.
 
 ## The `feudalism` command
 

@@ -1,6 +1,7 @@
 """The web side of the Discord Activity: serves the page and a few JSON endpoints.
 Discord loads the page in an iframe and sends the page's requests through its proxy, as /.proxy/<path>."""
 import os
+import time
 
 import aiohttp
 from aiohttp import web
@@ -144,6 +145,7 @@ def make_app(client_id, client_secret, game, call=discord_request):
                 return web.json_response({"ok": False, "message": "Unknown order."}, status=400)
         except (GameError, ValueError, TypeError) as e:
             return web.json_response({"ok": False, "message": str(e)}, status=400)
+        game.store.set("last_activity", time.time())        # automatic updates wait while people are playing
         return web.json_response({"ok": True, "message": message})
 
     async def index(request):

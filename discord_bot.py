@@ -1222,6 +1222,12 @@ def keep_launch_command():
 
 
 @client.event
+async def on_interaction(interaction: discord.Interaction):
+    """Remember when someone last used the bot, so automatic updates wait for a quiet moment."""
+    store.set("last_activity", time.time())
+
+
+@client.event
 async def on_ready():
     client.add_dynamic_items(TradeButton)
     if not getattr(client, "commands_synced", False):       # on_ready can fire again after a reconnect

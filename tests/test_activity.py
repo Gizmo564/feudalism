@@ -184,6 +184,7 @@ def test_claim_then_cancel(tmp_path):
             free = sorted(mapnav.claimable(g.world, 0))[0]
             ok = await (await c.post("/api/order", json={"action": "claim", "tile": free}, headers=h)).json()
             assert ok["ok"] and free in ok["message"]
+            assert g.store.get("last_activity")
             data = await (await c.get("/api/map", headers=h)).json()
             assert data["orders"] == ["Claim " + free]
             again = await c.post("/api/order", json={"action": "claim", "tile": free}, headers=h)   # one claim a night
