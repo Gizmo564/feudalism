@@ -15,6 +15,7 @@ case "$DB" in /*) ;; *) DB="$APP_DIR/$DB" ;; esac
 
 mkdir -p "$DEST"
 OUT="$DEST/game-$(date +%Y-%m-%d-%H%M%S).db"
+[ -e "$OUT" ] && OUT="${OUT%.db}-2.db"      # two backups in the same second
 "$APP_DIR/.venv/bin/python" - "$DB" "$OUT" <<'PY'
 import sqlite3, sys
 src, dst = sqlite3.connect(sys.argv[1]), sqlite3.connect(sys.argv[2])

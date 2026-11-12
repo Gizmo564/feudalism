@@ -46,8 +46,15 @@ The repo is private, so when git asks for a password, paste a GitHub token with 
 
 **Automatic updates (optional):** `~/feudalism/install.sh --auto` adds a timer that checks GitHub every 15 minutes. When there is a new commit it pulls, runs the tests, and restarts the bot. If the tests fail it puts the old version back and does not retry that commit. Turn it off with `install.sh --no-auto`. Logs: `journalctl -u feudalism-autoupdate`.
 
-## Backups
+## The `feudalism` command
 
-`feudalism-backup` saves a copy of `game.db` to `~/feudalism-backups` (the newest 30 are kept), and it is safe to run while the bot is up. Give it a folder to save somewhere else: `feudalism-backup /media/usb`.
+On the server, `feudalism help` lists everything:
 
-To restore: `sudo systemctl stop feudalism-bot`, copy the backup over `~/feudalism/game.db`, then `sudo systemctl start feudalism-bot`.
+- `feudalism status | start | stop | restart | logs [-f]` – look after the bot.
+- `feudalism update`, `feudalism auto on|off` – get the latest code, or turn automatic updates on or off.
+- `feudalism env` – edit the settings file (`.env`) and offer to restart.
+- `feudalism backup [folder]` – save `game.db` (default `~/feudalism-backups`, newest 30 kept; safe while the bot runs).
+- `feudalism backups` (or `listbkp`) – list backups. `feudalism backup rm <name>` deletes one.
+- `feudalism restore <name>` – put a backup back. It asks first, saves the current game as a backup, stops the bot, restores, and starts it again.
+
+`feudalism-update` and `feudalism-backup` still work too.
