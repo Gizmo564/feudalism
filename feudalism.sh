@@ -35,6 +35,7 @@ feudalism <command>
   env                  edit the settings file (.env), then offer to restart
 
   backup [folder]      save game.db (default folder ~/feudalism-backups)
+  backup -n <name>     same, but called <name>.db (never deleted automatically)
   backups              list backups (also: listbkp)
   backup rm <name>     delete one backup
   restore <name>       put a backup back (stops the bot, keeps a safety copy first)
@@ -66,8 +67,8 @@ case "$cmd" in
       "$APP_DIR/backup.sh" "$@"
     fi ;;
   backups|listbkp)
-    [ -d "$BACKUPS" ] && ls -1t "$BACKUPS"/game-*.db >/dev/null 2>&1 || { echo "No backups yet. Run: feudalism backup"; exit 0; }
-    for f in $(ls -1t "$BACKUPS"/game-*.db); do printf '%s  %s\n' "$(du -h "$f" | cut -f1)" "$(basename "$f")"; done ;;
+    [ -d "$BACKUPS" ] && ls -1t "$BACKUPS"/*.db >/dev/null 2>&1 || { echo "No backups yet. Run: feudalism backup"; exit 0; }
+    for f in $(ls -1t "$BACKUPS"/*.db); do printf '%s  %s\n' "$(du -h "$f" | cut -f1)" "$(basename "$f")"; done ;;
   restore)
     f="$(backup_file "${1:-}")"; db="$(db_path)"
     read -r -p "Replace the current game with $(basename "$f")? [y/N] " yn

@@ -54,6 +54,7 @@ On the server, `feudalism help` lists everything:
 - `feudalism update`, `feudalism auto on|off` – get the latest code, or turn automatic updates on or off.
 - `feudalism env` – edit the settings file (`.env`) and offer to restart.
 - `feudalism backup [folder]` – save `game.db` (default `~/feudalism-backups`, newest 30 kept; safe while the bot runs).
+- `feudalism backup -n <name>` – same, but saved as `<name>.db`. Named backups are never deleted automatically. Handy before a risky change: `feudalism backup -n before-war`.
 - `feudalism backups` (or `listbkp`) – list backups. `feudalism backup rm <name>` deletes one.
 - `feudalism restore <name>` – put a backup back. It asks first, saves the current game as a backup, stops the bot, restores, and starts it again.
 
