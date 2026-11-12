@@ -147,7 +147,7 @@
     "share_per_tile": 1,
     "share_min": {
       "wood": 3,
-      "stone": 1
+      "stone": 0
     },
     "scarcity_percent": 200
   },
