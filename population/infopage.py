@@ -33,6 +33,33 @@ def stacked(plan, workers):
     return out + "\u2591" * (WIDTH - sum(cells.values()))
 
 
+def tile_output(world, rules, k):
+    """Most a tile can give in a night per resource it could make: full workforce on it, one resource."""
+    cap = rules["workers_per_tile"]
+    out = {}
+    for r in tick.candidates(world, rules, k):
+        out[r] = cap * rules["yield_per_worker"][r] + (cap * rules["coastal_food_bonus"] if r == "food" and tick.is_coastal(world, k) else 0)
+    return out
+
+
+def makeable(world, rules, nid):
+    """{resource: (tiles that can make it, most a night)} for your tiles with no building on them."""
+    found = {}
+    for k in W.owned(world, nid):
+        if world["tiles"][k]["building"] is not None:
+            continue
+        for r, amount in tile_output(world, rules, k).items():
+            tiles, best = found.get(r, (0, 0))
+            found[r] = (tiles + 1, best + amount)
+    return found
+
+
+def available(world, rules, nid):
+    """Resources your land can make now, in ruleset order (all of them if you own nothing workable yet)."""
+    found = makeable(world, rules, nid)
+    return [r for r in rules["resources"] if r in found] or list(rules["resources"])
+
+
 def pct(part, whole):
     return "%d%%" % (100 * part // whole) if whole else "0%"
 
@@ -70,6 +97,7 @@ def page(world, rules, nid, tab="overview", resource="food"):
     people = n["workers"] + soldiers
     need = people * rules["eat_per_person"]
     plan = tick.work_plan(world, rules, n)
+    can = available(world, rules, nid)
     income = {r: plan.get(r, (0, 0))[1] for r in rules["resources"]}
     mine = W.owned(world, nid)
     land_total = sum(1 for t in world["tiles"].values() if t["terrain"] != "water")
@@ -100,7 +128,8 @@ def page(world, rules, nid, tab="overview", resource="food"):
                               "(0 turns it off, 5 is top). Only the proportions matter." % worker)
         out["fields"] = [
             ("Priorities", "\n".join("%s %s `%s` %d%s" % (icon(r), r, dots(n["priorities"][r]), n["priorities"][r],
-                                                        "  ◀" if r == resource else "") for r in rules["resources"]), True),
+                                                        "  ◀" if r == resource else "") for r in can)
+             + ("\nOther resources need land that makes them." if len(can) < len(rules["resources"]) else ""), True),
             ("Output tonight", "\n".join("%s %s +%d (%d %ss)" % (icon(r), r, income[r], plan[r][0], worker)
                                           for r in rules["resources"] if r in plan) or "Nothing.", True),
         ]
@@ -120,10 +149,19 @@ def page(world, rules, nid, tab="overview", resource="food"):
         cost = tick.claim_cost(world, rules, nid)
         out["description"] = "**%d** tiles = %s of all land. To win you need %s." % (
             len(mine), pct(len(mine), land_total), "%d%%" % threshold if threshold else "n/a")
+        made = makeable(world, rules, nid)
         out["fields"] = [
-            ("Terrain", "\n".join("%s: %d" % (k, v) for k, v in sorted(terrain.items(), key=lambda x: -x[1])), True),
+            ("Terrain", "\n".join("%s: %d (%s)" % (k, v, ", ".join(rules["terrain"][k]["produces"]) or "nothing")
+                                  for k, v in sorted(terrain.items(), key=lambda x: -x[1])), True),
             ("Buildings", "\n".join("%s: %d" % (k, v) for k, v in sorted(buildings.items())) or "none", True),
+            ("What your land can make", "\n".join(
+                "%s %s: %d tile%s, up to +%d a night%s" % (icon(r), r, made[r][0], "" if made[r][0] == 1 else "s", made[r][1],
+                                                          " (+%d tonight)" % income[r] if income[r] else "")
+                for r in rules["resources"] if r in made)
+                + "\nOne tile holds %d %ss, so a tile makes one resource at a time. Tiles with buildings make nothing." % (
+                    rules["workers_per_tile"], worker), False),
             ("Housing", "%ss %d/%d\n%ss %d/%d" % (worker, n["workers"], hw, soldier, soldiers, hs), True),
+            ("Stock", stock_lines(), True),
             ("Claiming", "Next claim: %s\nFree tiles you can claim: %d\nOil deposits found: %d" % (
                 advice.fmt(cost), len(advice.free_frontier(world, nid)), oil), False),
         ]

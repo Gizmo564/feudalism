@@ -310,3 +310,26 @@ def test_private_offer_needs_a_named_nation(game):
     assert "(private)" in game.offer_line(trade_find(game, tid))
     assert "Offer %d from Aldmere" % tid in game.status(101)
     assert "Offer %d from" % tid not in game.status(102)
+
+
+def test_help_works_before_any_game(tmp_path):
+    from population.game import Game
+    from population.store import Store
+    fresh = Game(Store(str(tmp_path / "x.db")))
+    assert fresh.rules is None and "peasant" in fresh.help("basics")
+
+
+def test_economy_lists_only_what_your_land_makes(game):
+    from population import infopage
+    n = game.world["nations"][0]
+    mine = [k for k in game.world["tiles"] if game.world["tiles"][k]["owner"] == 0]
+    for k in mine:                                           # make everything you own plain field
+        if not game.world["tiles"][k]["building"]:
+            game.world["tiles"][k].update(terrain="field", oil=False)
+    can = infopage.available(game.world, game.rules, 0)
+    assert set(can) == {"food", "livestock"}
+    eco = dict((a, b) for a, b, _ in game.info_page(100, "economy")["fields"])["Priorities"]
+    assert "food" in eco and "wood" not in eco
+    land = dict((a, b) for a, b, _ in game.info_page(100, "land")["fields"])
+    assert "What your land can make" in land and "Stock" in land
+    assert "food" in land["What your land can make"] and "wood" not in land["What your land can make"]

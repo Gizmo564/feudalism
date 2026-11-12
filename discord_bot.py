@@ -261,9 +261,12 @@ class InfoView(discord.ui.View):
         if self.tab != "economy":
             return
         prios = self.g.world["nations"][self.g.nid(self.uid)]["priorities"]
+        can = infopage.available(self.g.world, self.g.rules, self.g.nid(self.uid))
+        if self.resource not in can:
+            self.resource = can[0]
         menu = discord.ui.Select(placeholder="Pick a resource...", row=1, options=[
             discord.SelectOption(label=r.capitalize(), value=r, description="priority %d of 5" % prios[r],
-                                 default=r == self.resource) for r in self.g.rules["resources"]])
+                                 default=r == self.resource) for r in can])
         menu.callback = self.pick(menu)
         self.add_item(menu)
         value = prios[self.resource]

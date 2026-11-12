@@ -449,9 +449,8 @@ class Game:
         return guide.report(self.world, self.rules, nid, row, self.world.get("last_events", {}).get(str(nid), []))
 
     def help(self, tab="basics"):
-        if self.rules is None:
-            raise GameError("No game has been set up yet.")
-        return guide.help_page(self.rules, tab)
+        rules = self.rules or ruleset.load(os.path.join(RULES_DIR, "feudalism.json"))
+        return guide.help_page(rules, tab)
 
     def standings(self):
         self.need_running()
