@@ -123,8 +123,11 @@ def test_view_full_walkthrough(bot, game):
         assert "workers" in view.text()
         layers._values = ["icons", "people"]
         await view.set_layers(layers)(click(100))
-        assert view.layers == {"icons": True, "buildings": False, "people": True, "production": False}
+        assert view.layers == {"icons": True, "buildings": False, "people": True, "production": False, "coords": False}
         assert "Housing:" in i.edit_original_response.await_args.kwargs["content"]
+        layers._values = ["coords"]
+        await view.set_layers(layers)(click(100))
+        assert view.layers["coords"] and view.image()
         layers._values = ["icons", "buildings", "people"]
         await view.set_layers(layers)(click(100))
         # pick a claimable tile, claim it

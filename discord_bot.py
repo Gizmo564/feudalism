@@ -330,7 +330,8 @@ DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u2190", "e": "\u2192", "sw
 LAYERS = (("icons", "Terrain icons", "Draw a small picture on each tile"),
           ("buildings", "Buildings", "Show homes, barracks, markets and walls"),
           ("people", "Housing numbers", "Label buildings with how many people they house"),
-          ("production", "Production", "Show what each of your tiles makes tonight"))
+          ("production", "Production", "Show what each of your tiles makes tonight"),
+          ("coords", "Coordinates", "Label every tile with its number"))
 LETTER = {"food": "F", "livestock": "L", "wood": "W", "stone": "S", "ore": "O", "oil": "Oi"}
 
 
@@ -341,7 +342,7 @@ class MapView(discord.ui.View):
         super().__init__(timeout=900)
         self.uid, self.nid, self.radius, self.g = uid, nid, radius, g or game
         self.practice = uid in tutorials
-        self.layers = {"icons": False, "buildings": True, "people": False, "production": False}
+        self.layers = {"icons": False, "buildings": True, "people": False, "production": False, "coords": False}
         self.center = self.g.world["nations"][nid]["capital"]
         self.selected = None
         self.choosing_army = False
@@ -352,7 +353,7 @@ class MapView(discord.ui.View):
 
     def image(self):
         return render.render(self.g.world, self.g.rules, nid=self.nid, center=self.center, radius=self.radius, tile=48,
-                             legend=False, coords="claim", tint=True, icons=self.layers["icons"], claim=True,
+                             legend=False, coords=True if self.layers["coords"] else "claim", tint=True, icons=self.layers["icons"], claim=True,
                              tidy=True, mark=self.selected, buildings=self.layers["buildings"],
                              people=self.layers["people"], production=self.production())
 
