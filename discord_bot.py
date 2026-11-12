@@ -946,20 +946,26 @@ class NumberModal(discord.ui.Modal):
 
 
 class RulesView(discord.ui.View):
-    """The admin's rules panel: pick a rule, then flip it or step it. Changes wait for the next tick."""
+    """The admin's rules panel: a tab for each kind of rule, pick a rule, then flip it or step it.
+    Changes wait for the next tick."""
 
     def __init__(self, uid, g):
         super().__init__(timeout=900)
         self.uid, self.g = uid, g
         g.need_rules()
-        self.key = rulepanel.keys(g.rules)[0]
+        self.tab = rulepanel.TABS[0][0]
+        self.sure = False                    # the "reset everyone's stock" button has been pressed once
+        self.pick_first()
         self.layout()
 
     async def interaction_check(self, interaction):
         return interaction.user.id == self.uid
 
+    def pick_first(self):
+        self.key = rulepanel.keys(self.g.rules, self.tab)[0]
+
     def rows(self):
-        return {r["key"]: r for r in self.g.rule_rows()}
+        return {r["key"]: r for r in self.g.rule_rows() if r["tab"] == self.tab}
 
     def text(self):
         if self.g.phase == "signup":
@@ -978,8 +984,15 @@ class RulesView(discord.ui.View):
 
     def layout(self):
         self.clear_items()
+        every = self.g.rule_rows()
+        for name, title in rulepanel.TABS:
+            waiting = sum(1 for r in every if r["tab"] == name and r["next"] is not None)
+            b = discord.ui.Button(label=title + (" (%d)" % waiting if waiting else ""), row=0,
+                                  style=discord.ButtonStyle.primary if name == self.tab else discord.ButtonStyle.secondary)
+            b.callback = self.go_tab(name)
+            self.add_item(b)
         rows = self.rows()
-        menu = discord.ui.Select(placeholder="Pick a rule...", row=0, options=[
+        menu = discord.ui.Select(placeholder="Pick a rule...", row=1, options=[
             discord.SelectOption(label=r["label"], value=k, default=k == self.key,
                                  description="now %s%s" % (rulepanel.show(r["now"]),
                                                            "" if r["next"] is None else ", next %s" % rulepanel.show(r["next"])))
@@ -997,16 +1010,30 @@ class RulesView(discord.ui.View):
             self.add_item(self.button("+%d" % step, self.set_to(target + step), disabled=target + step > hi))
             self.add_item(self.button("Type a number", self.type_number(r["label"], lo, hi)))
         self.add_item(self.button("Undo change", self.set_to(r["now"]), disabled=r["next"] is None))
+        if self.tab == "start" and self.g.phase == "running":
+            b = discord.ui.Button(row=3, label="Really reset? This wipes everyone's stockpile" if self.sure
+                                  else "Set everyone's stock to the start amounts",
+                                  style=discord.ButtonStyle.danger if self.sure else discord.ButtonStyle.secondary)
+            b.callback = self.reset_stock
+            self.add_item(b)
 
     def button(self, label, callback, disabled=False):
-        b = discord.ui.Button(label=label, row=1, disabled=disabled)
+        b = discord.ui.Button(label=label, row=2, disabled=disabled)
         if callback:
             b.callback = callback
         return b
 
     async def refresh(self, interaction):
+        self.sure = False
         self.layout()
         await interaction.response.edit_message(content=self.text(), view=self)
+
+    def go_tab(self, name):
+        async def cb(interaction):
+            self.tab = name
+            self.pick_first()
+            await self.refresh(interaction)
+        return cb
 
     def pick(self, menu):
         async def cb(interaction):
@@ -1027,6 +1054,19 @@ class RulesView(discord.ui.View):
                 return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
             await self.refresh(interaction)
         return cb
+
+    async def reset_stock(self, interaction):
+        if not self.sure:                    # the first press only asks; the second one does it
+            self.sure = True
+            self.layout()
+            return await interaction.response.edit_message(content=self.text(), view=self)
+        try:
+            text = self.g.reset_stock()
+        except GameError as e:
+            text = "Can't do that: %s" % e
+        self.sure = False
+        self.layout()
+        await interaction.response.edit_message(content=self.text() + "\n\n" + text, view=self)
 
 
 @admin.command(name="rules", description="Change game rules (switches and key numbers) at the next tick")
