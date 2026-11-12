@@ -80,6 +80,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE" >/dev/null
 sudo systemctl restart "$SERVICE"
 sudo ln -sf "${APP_DIR}/install.sh" /usr/local/bin/feudalism-update
+sudo ln -sf "${APP_DIR}/backup.sh" /usr/local/bin/feudalism-backup
 
 if [ "$AUTO" = on ]; then
   say "Turning on automatic updates (every 15 minutes)"
@@ -116,6 +117,7 @@ cat <<DONE
 
 Done. Useful commands:
   feudalism-update                        pull the latest code from GitHub and restart
+  feudalism-backup                        save a copy of game.db to ~/feudalism-backups
   journalctl -u ${SERVICE} -f             watch the bot's log
   journalctl -u feudalism-autoupdate      what automatic updates did (if turned on)
   sudo systemctl restart ${SERVICE}       restart it
