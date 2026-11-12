@@ -407,3 +407,18 @@ def test_errors_are_recorded_and_listed(bot, game, monkeypatch):
             bot.record_error("/x", click(7), err)
         assert len(bot.store.get("error_log")) == 20              # capped
     asyncio.run(go())
+
+
+def test_unseen_channel_gets_a_clear_message(bot):
+    import discord
+    from discord import app_commands
+
+    async def go():
+        i = click(7)
+        i.command = None
+        err = app_commands.TransformerError("announcements", discord.AppCommandOptionType.channel,
+                                            app_commands.transformers.BaseChannelTransformer([discord.TextChannel]))
+        await bot.command_failed(i, err)
+        assert "View Channel" in i.response.send_message.await_args.args[0]
+        assert bot.store.get("error_log", []) == []              # a user-side problem, not a bot crash
+    asyncio.run(go())

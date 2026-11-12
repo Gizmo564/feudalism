@@ -81,6 +81,9 @@ async def tell_failure(interaction, error, cause):
 
 @tree.error
 async def command_failed(interaction, error):
+    if isinstance(error, app_commands.TransformerError):       # a channel the bot can't see, or the wrong kind
+        return await say(interaction, "I can't use that channel: either I can't see it, or it isn't a text channel. "
+                                      "Give my role View Channel and Send Messages there, then try again.")
     where = "/" + getattr(interaction.command, "qualified_name", "?")
     await tell_failure(interaction, error, record_error(where, interaction, error))
 
