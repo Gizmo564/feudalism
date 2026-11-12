@@ -1138,6 +1138,19 @@ async def ticker():
         await do_tick()
 
 
+async def ensure_launch_command():
+    """Syncing commands wipes Discord's automatic Activity "Launch" command, so put it back."""
+    if not ACTIVITY_PORT:
+        return
+    try:
+        from discord.http import Route
+        await client.http.request(
+            Route("POST", "/applications/{application_id}/commands", application_id=client.application_id),
+            json={"name": "launch", "description": "Open the map", "type": 4, "handler": 2})
+    except Exception as e:
+        print("Could not create the Activity launch command: %s" % e)
+
+
 @client.event
 async def on_ready():
     client.add_dynamic_items(TradeButton)
@@ -1151,6 +1164,7 @@ async def on_ready():
             await tree.sync()
         else:
             await tree.sync()
+        await ensure_launch_command()
     if not ticker.is_running():
         ticker.start()
     if ACTIVITY_PORT and not getattr(client, "activity_runner", None):
