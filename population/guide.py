@@ -8,7 +8,7 @@ HELP_TABS = ("basics", "resources", "war", "winning", "commands")
 def claim_text(rules):
     c = rules["claim"]
     if c.get("share_percent"):
-        least = ", ".join("%d %s" % (v, k) for k, v in c["share_min"].items())
+        least = ", ".join("%d %s" % (v, k) for k, v in c["share_min"].items() if v)
         return ("Claiming land: %d%% of the wood and stone you hold (and %d%% more for each tile you own), never less than %s. "
                 "Land gets dearer as the map fills up and cheaper when it grows." % (c["share_percent"], c.get("share_per_tile", 0), least))
     cost = lambda d: ", ".join("%d %s" % (v, k) for k, v in d.items())
