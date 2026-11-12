@@ -20,6 +20,8 @@ RULES = [
      "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off).", "land"),
     ("share_percent", "Claim price (% of your stock)", "number", ("claim", "share_percent"), 0, (0, 90, 5),
      "Claiming costs this share of the wood and stone you hold, so a nation with little stone still pays little. 0 means the old fixed price.", "land"),
+    ("share_stone_percent", "Claim price: stone (% of stock)", "number", ("claim", "share_stone_percent"), 10, (0, 90, 5),
+     "Like the claim price share, but for stone only, so stone can be priced lower than wood.", "land"),
     ("share_per_tile", "Extra % per tile owned", "number", ("claim", "share_per_tile"), 0, (0, 10, 1),
      "The share rises by this much for every tile you own (the total never passes 90%). Only used when the claim price share is on.", "land"),
     ("share_min_wood", "Cheapest claim: wood", "number", ("claim", "share_min", "wood"), 3, (1, 20, 1),

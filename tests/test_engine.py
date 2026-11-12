@@ -661,7 +661,7 @@ def test_claim_price_rises_with_scarcity_and_falls_when_map_grows(rules):
 
 def test_share_price_follows_your_stock_with_a_floor(rules):
     c = rules["claim"]
-    c.update(share_percent=20, share_per_tile=0, share_min={"wood": 3, "stone": 0}, scarcity_percent=0)
+    c.update(share_percent=20, share_stone_percent=20, share_per_tile=0, share_min={"wood": 3, "stone": 0}, scarcity_percent=0)
     w = two_nations(rules)
     res = w["nations"][0]["resources"]
     res.update(wood=100, stone=50)
@@ -669,6 +669,9 @@ def test_share_price_follows_your_stock_with_a_floor(rules):
     res.update(wood=5, stone=0)                       # no stone: the claim must be payable, and wood is never free
     cost = tick.claim_cost(w, rules, 0)
     assert cost == {"wood": 3, "stone": 0} and tick.can_pay(res, cost)
+    c.update(share_stone_percent=10)                  # stone has its own, lower share
+    res.update(wood=100, stone=100)
+    assert tick.claim_cost(w, rules, 0) == {"wood": 20, "stone": 10}
     c.update(share_per_tile=5)                        # the share grows with land, up to 90%
     res.update(wood=100, stone=100)
     owned = len(W.owned(w, 0))
