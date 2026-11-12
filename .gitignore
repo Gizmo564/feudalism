@@ -5,3 +5,4 @@ __pycache__/
 .auto-update-failed
 activity/node_modules/
 activity/package*.json
+.DS_Store
