@@ -2,29 +2,39 @@
 No Discord code here. Rules are stored in the game's ruleset, so they survive restarts and rollbacks."""
 from . import world as W
 
-# key, label, kind, path into the ruleset, default if missing, (lo, hi, step), what it does
+# key, label, kind, path into the ruleset, default if missing, (lo, hi, step), what it does, tab it is shown on
 RULES = [
     ("fog", "Fog of war", "switch", ("fog_of_war",), False, None,
-     "Players only see land and armies near them."),
+     "Players only see land and armies near them.", "game"),
     ("hidden_oil", "Hidden oil", "switch", ("hidden_oil",), True, None,
-     "Oil stays hidden until someone claims the tile."),
+     "Oil stays hidden until someone claims the tile.", "game"),
     ("market", "Market needed to trade", "switch", ("trade", "requires_market"), True, None,
-     "Both sides of a trade need a market."),
+     "Both sides of a trade need a market.", "trade"),
     ("caravans", "Caravans", "switch", ("trade", "caravans"), False, None,
-     "Traded resources walk between the capitals as caravans that enemy armies can capture. Off: goods arrive safely after a delay."),
+     "Traded resources walk between the capitals as caravans that enemy armies can capture. Off: goods arrive safely after a delay.", "trade"),
     ("trade_speed", "Trade speed (tiles per tick)", "number", ("movement", "trade_tiles_per_tick"), 2, (1, 6, 1),
-     "How fast traded goods (or caravans) travel between capitals."),
+     "How fast traded goods (or caravans) travel between capitals.", "trade"),
     ("win_share", "Win share (% of land)", "number", ("victory", "land_share_percent"), 40, (5, 100, 5),
-     "Land an empire needs to win (it can still fall later in the game)."),
+     "Land an empire needs to win (it can still fall later in the game).", "game"),
     ("scarcity", "Land price rise (%)", "number", ("claim", "scarcity_percent"), 0, (0, 1000, 50),
-     "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off)."),
+     "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off).", "game"),
     ("expiry", "Trade offer expiry (nights)", "number", ("trade", "offer_expires_ticks"), 3, (1, 10, 1),
-     "How long an offer stays open."),
+     "How long an offer stays open.", "trade"),
     ("tick_hours", "Hours between ticks", "number", ("tick_hours",), 24, (1, 48, 1),
-     "24 means once a day at the usual time. Any other number means that many hours after the last tick."),
+     "24 means once a day at the usual time. Any other number means that many hours after the last tick.", "game"),
     ("workers", "Workers per tile", "number", ("workers_per_tile",), 5, (1, 10, 1),
-     "How many workers one tile holds. Changes the whole economy, so change it with care."),
+     "How many workers one tile holds. Changes the whole economy, so change it with care.", "game"),
+    ("start_workers", "Starting workers", "number", ("start", "workers"), 12, (1, 100, 1),
+     "Workers a new nation starts with. Only nations created after the change are affected.", "start"),
+    ("start_soldiers", "Starting soldiers", "number", ("start", "soldiers"), 6, (0, 50, 1),
+     "Soldiers a new nation starts with. Only nations created after the change are affected.", "start"),
 ]
+# starting stock: one rule per resource
+for _res in ("food", "wood", "stone", "ore", "oil", "livestock"):
+    RULES.append(("start_" + _res, "Starting " + _res, "number", ("start", "resources", _res), 0, (0, 1000, 5),
+                  "How much %s a new nation starts with. Only nations created after the change are affected." % _res, "start"))
+# the tabs of the admin's panel, in order
+TABS = [("game", "Game"), ("trade", "Trade"), ("start", "Start")]
 BY_KEY = {r[0]: r for r in RULES}
 RISKY = {"workers"}
 
@@ -35,8 +45,12 @@ def applies(rules, key):
     return True
 
 
-def keys(rules):
-    return [r[0] for r in RULES if applies(rules, r[0])]
+def keys(rules, tab=None):
+    return [r[0] for r in RULES if applies(rules, r[0]) and (tab is None or r[7] == tab)]
+
+
+def tab_of(key):
+    return BY_KEY[key][7]
 
 
 def label(key):

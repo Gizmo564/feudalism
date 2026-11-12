@@ -90,8 +90,8 @@ class Game:
         self.need_rules()
         rows = []
         for key in rulepanel.keys(self.rules):
-            _, label, kind, _, _, limits, note = rulepanel.BY_KEY[key]
-            rows.append({"key": key, "label": label, "kind": kind, "limits": limits, "note": note,
+            _, label, kind, _, _, limits, note, tab = rulepanel.BY_KEY[key]
+            rows.append({"key": key, "label": label, "kind": kind, "limits": limits, "note": note, "tab": tab,
                          "risky": key in rulepanel.RISKY, "now": rulepanel.current(self.world, self.rules, key),
                          "next": self.pending_rules.get(key)})
         return rows
@@ -119,6 +119,17 @@ class Game:
                                                                   rulepanel.show(value))
         self.save()
         return text
+
+    def reset_stock(self):
+        """Admin: put every living nation's stockpile back to the starting amounts, right now."""
+        self.need_running()
+        start = self.rules["start"]["resources"]
+        alive = [n for n in self.world["nations"] if n["alive"]]
+        for n in alive:
+            n["resources"] = {r: start.get(r, 0) for r in self.rules["resources"]}
+            W.ev(self.world, n["id"], "The admin reset your stockpile to the starting amounts")
+        self.save()
+        return "Reset the stockpile of %d nation%s to the starting amounts." % (len(alive), "" if len(alive) == 1 else "s")
 
     def reset_rules(self):
         """Ask for every changeable rule to go back to the mode's own ruleset file."""

@@ -473,3 +473,32 @@ def test_help_mentions_caravans_only_when_on(game):
     assert "caravan" not in pages()
     apply_now(game, "caravans", True)
     assert "caravan" in pages()
+
+
+def test_rules_are_grouped_into_tabs(game):
+    from population import rulepanel
+    names = [t for t, _ in rulepanel.TABS]
+    rows = game.rule_rows()
+    assert {r["tab"] for r in rows} == set(names)                       # every tab has rules, none is stray
+    assert sorted(rulepanel.keys(game.rules)) == sorted(k for t in names for k in rulepanel.keys(game.rules, t))
+    assert "start_wood" in rulepanel.keys(game.rules, "start") and "caravans" in rulepanel.keys(game.rules, "trade")
+
+
+def test_starting_stock_rule_changes_new_nations_only(game):
+    old = dict(game.world["nations"][0]["resources"])
+    apply_now(game, "start_wood", 55)
+    assert game.rules["start"]["resources"]["wood"] == 55
+    assert game.world["nations"][0]["resources"]["wood"] != 55          # the nations already playing keep their stock
+    game.add_player(556, "Latecomer")
+    assert game.world["nations"][game.nid(556)]["resources"]["wood"] >= 55 and old
+    with pytest.raises(GameError):
+        game.queue_rule("start_wood", 5000)
+
+
+def test_reset_stock_gives_everyone_the_start_amounts(game):
+    game.world["nations"][1]["resources"]["wood"] = 999
+    text = game.reset_stock()
+    assert "4 nations" in text
+    start = game.rules["start"]["resources"]
+    assert all(n["resources"] == {r: start.get(r, 0) for r in game.rules["resources"]} for n in game.world["nations"])
+    assert any("reset your stockpile" in e for e in game.world["events"]["1"])
