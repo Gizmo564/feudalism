@@ -380,3 +380,20 @@ def test_rules_can_be_changed_after_open_before_start(tmp_path):
     g.start(6, seed=5)
     assert g.world["settings"]["fog"] is True               # the new game starts with the rules you set
     assert g.rules["claim"]["scarcity_percent"] == 300
+
+
+def test_close_and_reopen_signups(tmp_path):
+    g = Game(Store(str(tmp_path / "c.db")))
+    with pytest.raises(GameError):
+        g.set_signups_closed(True)
+    g.open_signup("feudalism")
+    g.join(1, "Aldmere")
+    assert "closed (1 joined)" in g.set_signups_closed(True)
+    with pytest.raises(GameError, match="closed"):
+        g.join(2, "Brask")
+    assert Game(Store(str(tmp_path / "c.db"))).signups_closed is True      # survives a restart
+    assert "open again" in g.set_signups_closed(False)
+    g.join(2, "Brask")
+    g.set_signups_closed(True)
+    g.open_signup("feudalism")                                              # a fresh /admin open starts over, open
+    assert g.signups == [] and g.signups_closed is False

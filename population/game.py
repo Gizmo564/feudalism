@@ -36,10 +36,11 @@ class Game:
         self.players = store.get("players", {})          # discord user id -> nation id
         self.world = store.get("world")
         self.rules = store.get("rules")
+        self.signups_closed = store.get("signups_closed", False)
         self.pending_rules = store.get("pending_rules", {})   # {rule key: new value}, applied at the next tick
 
     def save(self):
-        for k in ("phase", "signups", "players", "world", "rules", "pending_rules"):
+        for k in ("phase", "signups", "players", "world", "rules", "pending_rules", "signups_closed"):
             self.store.set(k, getattr(self, k))
 
     # ---------- setup (admin) ----------
@@ -51,7 +52,7 @@ class Game:
         if self.phase == "running":
             raise GameError("A game is already running")
         self.rules = ruleset.load(path)
-        self.pending_rules = {}
+        self.pending_rules, self.signups_closed = {}, False
         self.phase, self.signups, self.players, self.world = "signup", [], {}, None
         self.save()
         return "Sign-ups are open for **%s**. Players use /join." % self.rules["name"]
@@ -172,12 +173,24 @@ class Game:
         uid = str(uid)
         if self.phase != "signup":
             raise GameError("Sign-ups are not open. Ask an admin to add you.")
+        if self.signups_closed:
+            raise GameError("Sign-ups are closed. Ask an admin to add you.")
         if any(s["uid"] == uid for s in self.signups):
             raise GameError("You have already joined")
         self.check_name(name)
         self.signups.append({"uid": uid, "name": name})
         self.save()
         return "Welcome, **%s**! (%d joined)" % (name, len(self.signups))
+
+    def set_signups_closed(self, closed):
+        """Stop (or resume) taking /join without starting the game. Names already joined are kept."""
+        if self.phase != "signup":
+            raise GameError("Sign-ups are not open. Use /admin open first")
+        self.signups_closed = bool(closed)
+        self.save()
+        if closed:
+            return "Sign-ups are closed (%d joined). Use /admin start when you are ready." % len(self.signups)
+        return "Sign-ups are open again (%d joined so far)." % len(self.signups)
 
     def need_running(self):
         if self.phase != "running":

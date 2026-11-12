@@ -813,6 +813,11 @@ async def admin_open(interaction: discord.Interaction, mode: app_commands.Choice
     await admin_run(interaction, game.open_signup, mode.value, public=True)
 
 
+@admin.command(name="close", description="Close sign-ups without starting (use closed=False to reopen)")
+async def admin_close(interaction: discord.Interaction, closed: bool = True):
+    await admin_run(interaction, game.set_signups_closed, closed, public=True)
+
+
 @admin.command(name="start", description="Start the game with everyone who joined. Reports post in this channel.")
 async def admin_start(interaction: discord.Interaction, radius: app_commands.Range[int, 3, 15] = 8):
     if is_admin(interaction):
