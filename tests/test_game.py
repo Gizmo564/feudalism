@@ -382,18 +382,24 @@ def test_rules_can_be_changed_after_open_before_start(tmp_path):
     assert g.rules["claim"]["scarcity_percent"] == 300
 
 
-def test_close_and_reopen_signups(tmp_path):
+def test_close_reopen_and_clear_signups(tmp_path):
     g = Game(Store(str(tmp_path / "c.db")))
     with pytest.raises(GameError):
-        g.set_signups_closed(True)
+        g.close_signups()
     g.open_signup("feudalism")
     g.join(1, "Aldmere")
-    assert "closed (1 joined)" in g.set_signups_closed(True)
+    assert "closed (1 joined)" in g.close_signups()
     with pytest.raises(GameError, match="closed"):
         g.join(2, "Brask")
     assert Game(Store(str(tmp_path / "c.db"))).signups_closed is True      # survives a restart
-    assert "open again" in g.set_signups_closed(False)
+    assert "open again (1 joined" in g.reopen_signups()
     g.join(2, "Brask")
-    g.set_signups_closed(True)
+    assert "cleared" in g.clear_signups()
+    assert g.signups == [] and g.signups_closed is True
+    with pytest.raises(GameError, match="closed"):
+        g.join(3, "Corvain")
+    g.reopen_signups()
+    g.join(3, "Corvain")
+    assert [x["name"] for x in g.signups] == ["Corvain"]
     g.open_signup("feudalism")                                              # a fresh /admin open starts over, open
     assert g.signups == [] and g.signups_closed is False

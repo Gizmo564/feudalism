@@ -182,15 +182,29 @@ class Game:
         self.save()
         return "Welcome, **%s**! (%d joined)" % (name, len(self.signups))
 
-    def set_signups_closed(self, closed):
-        """Stop (or resume) taking /join without starting the game. Names already joined are kept."""
+    def need_signup(self):
         if self.phase != "signup":
             raise GameError("Sign-ups are not open. Use /admin open first")
-        self.signups_closed = bool(closed)
+
+    def close_signups(self):
+        """Stop taking /join without starting the game. Names already joined are kept."""
+        self.need_signup()
+        self.signups_closed = True
         self.save()
-        if closed:
-            return "Sign-ups are closed (%d joined). Use /admin start when you are ready." % len(self.signups)
+        return "Sign-ups are closed (%d joined). Use /admin start when you are ready." % len(self.signups)
+
+    def reopen_signups(self):
+        self.need_signup()
+        self.signups_closed = False
+        self.save()
         return "Sign-ups are open again (%d joined so far)." % len(self.signups)
+
+    def clear_signups(self):
+        """Wipe the list of names. Sign-ups stay closed until /admin reopen."""
+        self.need_signup()
+        self.signups, self.signups_closed = [], True
+        self.save()
+        return "The sign-up list is cleared and sign-ups are closed. Use /admin reopen to let people join again."
 
     def need_running(self):
         if self.phase != "running":

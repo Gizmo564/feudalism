@@ -813,9 +813,19 @@ async def admin_open(interaction: discord.Interaction, mode: app_commands.Choice
     await admin_run(interaction, game.open_signup, mode.value, public=True)
 
 
-@admin.command(name="close", description="Close sign-ups without starting (use closed=False to reopen)")
-async def admin_close(interaction: discord.Interaction, closed: bool = True):
-    await admin_run(interaction, game.set_signups_closed, closed, public=True)
+@admin.command(name="close", description="Close sign-ups without starting (names so far are kept)")
+async def admin_close(interaction: discord.Interaction):
+    await admin_run(interaction, game.close_signups, public=True)
+
+
+@admin.command(name="reopen", description="Open sign-ups again after closing them (names so far are kept)")
+async def admin_reopen(interaction: discord.Interaction):
+    await admin_run(interaction, game.reopen_signups, public=True)
+
+
+@admin.command(name="clear", description="Wipe the sign-up list (sign-ups stay closed until /admin reopen)")
+async def admin_clear(interaction: discord.Interaction):
+    await admin_run(interaction, game.clear_signups, public=True)
 
 
 @admin.command(name="start", description="Start the game with everyone who joined. Reports post in this channel.")
