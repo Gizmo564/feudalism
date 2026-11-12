@@ -1141,17 +1141,20 @@ async def ticker():
         await do_tick()
 
 
-async def ensure_launch_command():
-    """Syncing commands wipes Discord's automatic Activity "Launch" command, so put it back."""
-    if not ACTIVITY_PORT:
-        return
-    try:
-        from discord.http import Route
-        await client.http.request(
-            Route("POST", "/applications/{application_id}/commands", application_id=client.application_id),
-            json={"name": "launch", "description": "Open the map", "type": 4, "handler": 2})
-    except Exception as e:
-        print("Could not create the Activity launch command: %s" % e)
+def keep_launch_command():
+    """Discord refuses a global command sync that leaves out the Activity's Launch command,
+    so add it back into every one."""
+    original = client.http.bulk_upsert_global_commands
+
+    async def with_launch(application_id, payload):
+        payload = list(payload)
+        if not any(c.get("type") == 4 for c in payload):
+            for c in await client.http.get_global_commands(application_id):
+                if c.get("type") == 4:
+                    payload.append({k: c[k] for k in ("id", "name", "description", "type", "handler") if k in c})
+        return await original(application_id, payload=payload)
+
+    client.http.bulk_upsert_global_commands = with_launch
 
 
 @client.event
@@ -1159,6 +1162,8 @@ async def on_ready():
     client.add_dynamic_items(TradeButton)
     if not getattr(client, "commands_synced", False):       # on_ready can fire again after a reconnect
         client.commands_synced = True
+        if ACTIVITY_PORT:
+            keep_launch_command()
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
             tree.copy_global_to(guild=guild)
@@ -1167,7 +1172,6 @@ async def on_ready():
             await tree.sync()
         else:
             await tree.sync()
-        await ensure_launch_command()
     if not ticker.is_running():
         ticker.start()
     if ACTIVITY_PORT and not getattr(client, "activity_runner", None):

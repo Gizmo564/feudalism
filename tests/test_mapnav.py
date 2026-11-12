@@ -422,3 +422,27 @@ def test_unseen_channel_gets_a_clear_message(bot):
         assert "View Channel" in i.response.send_message.await_args.args[0]
         assert bot.store.get("error_log", []) == []              # a user-side problem, not a bot crash
     asyncio.run(go())
+
+
+def test_global_sync_keeps_the_activity_launch_command(bot):
+    sent = []
+
+    async def fake_put(app_id, payload):
+        sent.append(payload)
+        return payload
+
+    async def fake_get(app_id):
+        return [{"id": "9", "name": "Launch", "description": "", "type": 4, "handler": 2, "version": "1"},
+                {"id": "1", "name": "info", "type": 1}]
+
+    bot.client.http.bulk_upsert_global_commands = fake_put
+    bot.client.http.get_global_commands = fake_get
+    bot.keep_launch_command()
+
+    async def go():
+        await bot.client.http.bulk_upsert_global_commands("5", payload=[{"name": "map", "type": 1}])
+        await bot.client.http.bulk_upsert_global_commands("5", payload=[{"name": "x", "type": 1}, {"name": "L", "type": 4}])
+    asyncio.run(go())
+    assert [c["name"] for c in sent[0]] == ["map", "Launch"]
+    assert "version" not in sent[0][1]
+    assert [c["name"] for c in sent[1]] == ["x", "L"]          # already there: left alone
