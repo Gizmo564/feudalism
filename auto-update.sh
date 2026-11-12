@@ -18,6 +18,10 @@ new="$(as_owner git rev-parse "@{u}")"
 [ "$old" = "$new" ] && exit 0
 [ "$(cat .auto-update-failed 2>/dev/null)" = "$new" ] && exit 0      # already tried this one and it failed
 
+if ! busy="$(as_owner .venv/bin/python -m population.quiet)"; then       # restarting would interrupt someone
+  log "update waiting, $busy"; exit 0
+fi
+
 log "updating $old -> $new"
 if ! as_owner git merge --ff-only -q "$new"; then
   log "cannot fast-forward (local changes?), leaving things alone"; exit 1
