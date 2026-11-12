@@ -36,6 +36,8 @@ ADMIN_ROLE = os.environ.get("ADMIN_ROLE", "admin")
 TICK_TIME = os.environ.get("TICK_TIME", "02:00")
 TICK_TZ = os.environ.get("TICK_TZ", "America/Denver")
 TICK_MINUTES = os.environ.get("TICK_MINUTES", "").strip()
+ACTIVITY_PORT = os.environ.get("ACTIVITY_PORT", "").strip()           # set to turn the Discord Activity web server on
+ACTIVITY_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "").strip()
 DM_REPORTS = os.environ.get("DM_REPORTS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 store = Store(os.environ.get("DB_PATH", "game.db"))
@@ -1151,6 +1153,14 @@ async def on_ready():
             await tree.sync()
     if not ticker.is_running():
         ticker.start()
+    if ACTIVITY_PORT and not getattr(client, "activity_runner", None):
+        if not ACTIVITY_SECRET:
+            print("ACTIVITY_PORT is set but DISCORD_CLIENT_SECRET is missing, so the Activity server is off.")
+        else:
+            from activity import server as activity_server
+            client.activity_runner = await activity_server.start(int(ACTIVITY_PORT), str(client.application_id),
+                                                                 ACTIVITY_SECRET, game)
+            print("Activity server listening on port %s" % ACTIVITY_PORT)
     print("Logged in as %s" % client.user)
 
 
