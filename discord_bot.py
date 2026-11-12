@@ -960,12 +960,16 @@ async def ticker():
 @client.event
 async def on_ready():
     client.add_dynamic_items(TradeButton)
-    if GUILD_ID:
-        guild = discord.Object(id=int(GUILD_ID))
-        tree.copy_global_to(guild=guild)
-        await tree.sync(guild=guild)
-    else:
-        await tree.sync()
+    if not getattr(client, "commands_synced", False):       # on_ready can fire again after a reconnect
+        client.commands_synced = True
+        if GUILD_ID:
+            guild = discord.Object(id=int(GUILD_ID))
+            tree.copy_global_to(guild=guild)
+            await tree.sync(guild=guild)
+            tree.clear_commands(guild=None)    # remove any older global copies so each command shows once
+            await tree.sync()
+        else:
+            await tree.sync()
     if not ticker.is_running():
         ticker.start()
     print("Logged in as %s" % client.user)
