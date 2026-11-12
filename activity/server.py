@@ -70,14 +70,17 @@ def make_app(client_id, client_secret, game, call=discord_request):
         world, rules = game.world, game.rules
         tiles = views.map_view(world, rules, nid)
         armies = views.armies_view(world, rules, nid)
+        caravans = views.caravans_view(world, rules, nid)
         shown = {t["owner"] for t in tiles if t["owner"] is not None} | {a["owner"] for a in armies} | {nid}
+        shown |= {c["from"] for c in caravans} | {c["to"] for c in caravans}
         nations = [{"id": n["id"], "name": n["name"], "color": "#%02x%02x%02x" % render.nation_color(n["id"])}
                    for n in world["nations"] if n["id"] in shown]
         return web.json_response({
             "me": nid, "capital": world["nations"][nid]["capital"], "nations": nations,
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
                        "oil": bool(t["oil"]), "visible": t["visible"]} for t in tiles],
-            "armies": [{"owner": a["owner"], "tile": a["tile"], "n": a["n"]} for a in armies]})
+            "armies": [{"owner": a["owner"], "tile": a["tile"], "n": a["n"]} for a in armies],
+            "caravans": [{"from": c["from"], "to": c["to"], "tile": c["tile"], "dest": c["dest"]} for c in caravans]})
 
     async def tile_data(request):
         """What one tile is and what this player could do there (the same card the Discord map shows)."""

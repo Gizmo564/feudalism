@@ -15,6 +15,7 @@ const ICON = {
   mountain: "M-7 5L-2 -5L2 1L4 -2L7 5",
   water: "M-7 -2Q-3.5 -6 0 -2T7 -2M-7 3Q-3.5 -1 0 3T7 3",
 };
+const CART = new Path2D("M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3");
 const PATH = Object.fromEntries(Object.entries(ICON).map(([k, d]) => [k, new Path2D(d)]));
 // for each hex side: the neighbour across it and the two corners it joins (corner i is at angle 60*i - 30 degrees)
 const EDGES = [[1, 0, 0, 1], [0, 1, 1, 2], [-1, 1, 2, 3], [-1, 0, 3, 4], [0, -1, 4, 5], [1, -1, 5, 0]];
@@ -115,6 +116,15 @@ function showMap(data, headers) {
       ctx.beginPath(); ctx.arc(x, y, size * 0.26, 0, 7); ctx.fillStyle = color[a.owner] || "#888"; ctx.fill();
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = "#fff"; ctx.font = "bold " + Math.round(size * 0.3) + "px system-ui"; ctx.fillText(a.n, x, y + 1);
+    }
+    for (const c of data.caravans || []) {                           // 3b. caravans: a cart badge on their tile
+      const t = at[c.tile]; if (!t) continue;
+      const x = sx(t) - size * 0.45, y = sy(t) - size * 0.42, r = size * 0.27;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fillStyle = "#fff"; ctx.fill();
+      ctx.strokeStyle = dark(color[c.from] || "#888888"); ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.save(); ctx.translate(x, y); ctx.scale(r / 8.5, r / 8.5);
+      ctx.strokeStyle = "#2c2c2a"; ctx.lineWidth = 1.6; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.stroke(CART); ctx.restore();
     }
     if (selected && at[selected]) {                                  // 4. the selected tile
       hex(sx(at[selected]), sy(at[selected]), size * 0.95); ctx.strokeStyle = "#5865f2"; ctx.lineWidth = 3; ctx.stroke();

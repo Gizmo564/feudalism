@@ -127,3 +127,24 @@ def test_tile_card(tmp_path):
         nowhere = await (await client.get("/api/tile?k=99,99", headers={"Authorization": "Bearer tok"})).json()
         assert nowhere["text"] == "No such tile."
     run(tmp_path, steps)
+
+
+def test_map_data_includes_caravans_for_their_traders(tmp_path):
+    from population import trade
+    async def steps(client, calls):
+        pass
+    g = make_game(tmp_path)
+    trade.send_caravan(g.world, 0, 1, {"wood": 5})
+
+    async def go():
+        async def asker(method, path, **kw):
+            return 200, {"id": kw["headers"]["Authorization"][7:], "username": "u"}
+        c = TestClient(TestServer(server.make_app("1", "s", g, asker)))
+        await c.start_server()
+        try:
+            data = await (await c.get("/api/map", headers={"Authorization": "Bearer 100"})).json()
+            assert data["caravans"][0]["from"] == 0 and data["caravans"][0]["to"] == 1 and "res" not in data["caravans"][0]
+            assert {n["id"] for n in data["nations"]} >= {0, 1}
+        finally:
+            await c.close()
+    asyncio.run(go())
