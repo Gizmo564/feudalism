@@ -45,7 +45,7 @@ const swatch = (colour) => el("i", {className: "sw", style: "background:" + colo
 // ---- the bars above the map: your name, your stock, what you hold ----
 function showBars(data, name) {
   const mine = data.nations.find((n) => n.id === data.me);
-  $("who").append(swatch(mine ? mine.color : "#888"), name);
+  $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name);
   $("pills").replaceChildren(...data.resources.map(([r, n]) =>
     el("div", {className: "pill"}, el("i", {style: "background:" + (RES_COLOUR[r] || "#888")}), el("span", {textContent: cap(r)}), el("b", {textContent: n}))));
   const chip = (icon, label, n) => {
@@ -64,10 +64,25 @@ function showBars(data, name) {
 }
 
 // ---- the side panel (a bottom sheet on a phone) ----
-function showTile(t, data, card) {
+const button = (text, onclick, kind = "primary") => {
+  const b = el("button", {className: "btn " + kind, textContent: text, disabled: kind === "off"});
+  b.onclick = onclick;
+  return b;
+};
+
+// what the panel can do: act(body) places an order and shows the result, cancel() clears them
+function ordersBox(data, act) {
+  if (!data.orders.length) return [];
+  return [el("div", {className: "box"}, el("h3", {textContent: "Queued for tonight"}),
+    ...data.orders.map((o) => el("div", {className: "row"}, el("span", {textContent: o}))),
+    button("Cancel all orders", () => act({action: "cancel"}), "plain"))];
+}
+
+function showTile(t, data, card, act, msg) {
   const names = Object.fromEntries(data.nations.map((n) => [n.id, n]));
   const stock = Object.fromEntries(data.resources);
   const out = [];
+  if (msg) out.push(el("div", {className: "msg " + (msg.ok ? "ok" : "bad"), textContent: msg.message}));
   out.push(el("div", {className: "eyebrow", textContent: "Tile " + t.k}), el("h2", {textContent: cap(t.terrain)}));
   const tags = el("div", {className: "tags"});
   if (!t.visible) {
@@ -85,21 +100,34 @@ function showTile(t, data, card) {
       out.push(el("p", {className: "hint", style: "margin:12px 0 0", textContent: line}));
     const row = (res, need, short) => el("div", {className: "row"}, el("span", {textContent: cap(res)}),
       el("span", {className: short ? "short" : "", textContent: need + " of " + (stock[res] || 0) + " you have"}));
+    const things = [];
     if (card.can_claim) {
-      out.push(el("div", {className: "box"}, el("h3", {textContent: "Claim this tile"}),
+      const short = Object.keys(card.claim_missing).length > 0;
+      things.push(el("div", {className: "box"}, el("h3", {textContent: "Claim this tile"}),
         ...Object.entries(card.claim_cost).map(([r, n]) => row(r, n, r in card.claim_missing)),
-        el("div", {className: "note", textContent: card.claim_queued ? "A claim is already queued for this tick."
-          : Object.keys(card.claim_missing).length ? "You cannot pay for this yet." : "You can pay for this now."})));
+        button(card.claim_queued ? "A claim is already queued" : short ? "You cannot pay for this yet" : "Claim this tile",
+               () => act({action: "claim", tile: t.k}), card.claim_queued || short ? "off" : "primary")));
     }
     if (card.builds.length) {
-      out.push(el("div", {className: "box"}, el("h3", {textContent: "Build here"}),
-        ...card.builds.map((b) => el("div", {className: "build" + (Object.keys(card.build_missing[b] || {}).length ? " off" : "")},
-          el("b", {textContent: cap(b)}), el("span", {textContent: Object.entries(card.build_cost[b]).map(([r, n]) => n + " " + r).join(", ")}))),
+      things.push(el("div", {className: "box"}, el("h3", {textContent: "Build here"}),
+        ...card.builds.map((b) => {
+          const short = Object.keys(card.build_missing[b] || {}).length > 0;
+          const cost = Object.entries(card.build_cost[b]).map(([r, n]) => n + " " + r).join(", ");
+          return button(cap(b) + " - " + cost, () => act({action: "build", tile: t.k, building: b}), short ? "off" : "plain");
+        }),
         el("div", {className: "note", textContent: "Greyed out: you cannot pay for it yet."})));
     }
-    if (out.length === 3) out.push(el("p", {className: "hint", textContent: "Nothing to do on this tile right now."}));
-    out.push(el("p", {className: "note", style: "margin-top:16px", textContent: "Orders are still placed in Discord."}));
+    const armies = data.armies.filter((a) => a.owner === data.me && a.tile !== t.k);
+    if (card.can_move && armies.length) {
+      things.push(el("div", {className: "box"}, el("h3", {textContent: "Send an army here"}),
+        ...armies.map((a) => button("Army " + a.id + " (" + a.n + " " + data.soldier + "s) from " + a.tile,
+                                    () => act({action: "move", army: a.id, tile: t.k}), "plain")),
+        el("div", {className: "note", textContent: "It marches one tile a night."})));
+    }
+    out.push(...things);
+    if (!things.length) out.push(el("p", {className: "hint", textContent: "Nothing to do on this tile right now."}));
   }
+  out.push(...ordersBox(data, act));
   $("card").replaceChildren(...out);
 }
 
@@ -112,7 +140,6 @@ function showMap(data, headers) {
     return {...t, q, r, x: SQRT3 * (q + r / 2), y: 1.5 * r};      // position in units of one hex size
   });
   const at = Object.fromEntries(tiles.map((t) => [t.k, t]));
-  const armyAt = Object.fromEntries(data.armies.map((a) => [a.tile, a]));
   let size = 34, cx = 0, cy = 0, coords = false, terrain = true, selected = null, W = 0, H = 0;   // (cx, cy): the map point at the centre
 
   const centreOn = (k) => { const t = at[k]; if (t) { cx = t.x; cy = t.y; } };
@@ -208,6 +235,19 @@ function showMap(data, headers) {
       ctx.fillStyle = dark(n.color); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = "#fff"; ctx.font = "bold " + Math.round(size * 0.26) + "px Inter, system-ui, sans-serif"; ctx.fillText(n.name, x, y + 0.5);
     }
+    for (const a of data.armies) {                                   // 4a. a dotted line to where one of your armies is marching
+      const from = at[a.tile], to = a.dest && at[a.dest];
+      if (!from || !to || a.dest === a.tile) continue;
+      const x1 = sx(from), y1 = sy(from), x2 = sx(to), y2 = sy(to), ang = Math.atan2(y2 - y1, x2 - x1);
+      const ex = x2 - Math.cos(ang) * size * 0.45, ey = y2 - Math.sin(ang) * size * 0.45;
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = size * 0.12; ctx.setLineDash([1, size * 0.2]);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(ex, ey); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#fff"; ctx.beginPath();
+      ctx.moveTo(ex + Math.cos(ang) * size * 0.06, ey + Math.sin(ang) * size * 0.06);
+      ctx.lineTo(ex - Math.cos(ang - 0.5) * size * 0.22, ey - Math.sin(ang - 0.5) * size * 0.22);
+      ctx.lineTo(ex - Math.cos(ang + 0.5) * size * 0.22, ey - Math.sin(ang + 0.5) * size * 0.22);
+      ctx.fill();
+    }
     for (const a of data.armies) {                                   // 4. armies: shields (the middle, or a corner if there is a building)
       const t = at[a.tile]; if (!t || !seen.includes(t)) continue;
       let x = sx(t), y = sy(t), k = size / 21;
@@ -217,7 +257,7 @@ function showMap(data, headers) {
     for (const c of data.caravans || []) {                           // 5. caravans: carts, moved to the top-left corner if something else is there
       const t = at[c.tile]; if (!t || !seen.includes(t)) continue;
       let x = sx(t), y = sy(t), k = size / 21 * 1.5;
-      if (t.building || armyAt[c.tile]) { x -= size * 0.5; y -= size * 0.4; k *= 0.7; } else x -= 0.5 * k;
+      if (t.building || data.armies.some((a) => a.tile === c.tile)) { x -= size * 0.5; y -= size * 0.4; k *= 0.7; } else x -= 0.5 * k;
       cart(x, y, k, c.from);
     }
     if (selected && at[selected]) {                                  // 6. the selected tile
@@ -227,18 +267,43 @@ function showMap(data, headers) {
 
   function zoom(factor) { size = Math.min(90, Math.max(10, size * factor)); draw(); }
 
+  const hint = () => $("card").replaceChildren(el("p", {className: "hint", textContent: "Click a tile to see what is there."}));
+
+  // show the card for a tile; msg is the result of an order just placed
+  async function open(t, msg) {
+    const got = await fetch("/.proxy/api/tile?k=" + encodeURIComponent(t.k), {headers});
+    if (selected !== t.k) return;
+    if (got.ok) showTile(t, data, await got.json(), (body) => act(t, body), msg);
+    else $("card").replaceChildren(el("p", {className: "hint", textContent: "Could not load that tile."}));
+  }
+
+  // place an order, then reload what changed (stock, armies, queue) and show the answer
+  async function act(t, body) {
+    let msg;
+    try {
+      const got = await fetch("/.proxy/api/order", {method: "POST", headers: {...headers, "Content-Type": "application/json"}, body: JSON.stringify(body)});
+      msg = await got.json();
+      if (!msg.message) msg = {ok: false, message: "That did not work."};
+    } catch (e) { msg = {ok: false, message: "Could not reach the game."}; }
+    const fresh = await fetch("/.proxy/api/map", {headers});
+    if (fresh.ok) {
+      const d = await fresh.json();
+      for (const k of ["resources", "holdings", "armies", "caravans", "orders"]) data[k] = d[k];
+      showBars(data, data.name);
+      draw();
+    }
+    return open(t, msg);
+  }
+
   async function pick(px, py) {
     let best = null, bestD = size * 0.95;
     for (const t of tiles) {
       const d = Math.hypot(W / 2 + (t.x - cx) * size - px, H / 2 + (t.y - cy) * size - py);
       if (d < bestD) { best = t; bestD = d; }
     }
-    if (!best) { selected = null; $("card").replaceChildren(el("p", {className: "hint", textContent: "Click a tile to see what is there."})); return draw(); }
+    if (!best) { selected = null; hint(); return draw(); }
     selected = best.k; draw();
-    const got = await fetch("/.proxy/api/tile?k=" + encodeURIComponent(best.k), {headers});
-    if (selected !== best.k) return;
-    if (got.ok) showTile(best, data, await got.json());
-    else $("card").replaceChildren(el("p", {className: "hint", textContent: "Could not load that tile."}));
+    return open(best);
   }
 
   const pointers = new Map();
@@ -314,6 +379,7 @@ async function main() {
   const me = await (await fetch("/.proxy/api/me", {headers})).json();
   if (!me.nation) return say("Hello " + me.name + ". You are not in a running game.");
   const data = await (await fetch("/.proxy/api/map", {headers})).json();
+  data.name = me.nation;
   showBars(data, me.nation);
   showMap(data, headers);
 }

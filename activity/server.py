@@ -6,6 +6,7 @@ import aiohttp
 from aiohttp import web
 
 from population import mapnav, render, views
+from population.game import GameError
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 DISCORD_API = "https://discord.com/api"
@@ -16,6 +17,20 @@ async def discord_request(method, path, **kwargs):
     async with aiohttp.ClientSession() as session:
         async with session.request(method, DISCORD_API + path, **kwargs) as resp:
             return resp.status, await resp.json(content_type=None)
+
+
+def describe(o):
+    """One line for a queued order."""
+    kind = o["type"]
+    if kind == "claim":
+        return "Claim " + o["tile"]
+    if kind == "build":
+        return "Build %s on %s" % (o["building"], o["tile"])
+    if kind == "move":
+        return "Army %d to %s" % (o["army"], o["dest"])
+    if kind == "train":
+        return "Train %d" % o["n"]
+    return kind
 
 
 def make_app(client_id, client_secret, game, call=discord_request):
@@ -89,7 +104,10 @@ def make_app(client_id, client_secret, game, call=discord_request):
             "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
                        "oil": bool(t["oil"]), "visible": t["visible"]} for t in tiles],
-            "armies": [{"owner": a["owner"], "tile": a["tile"], "n": a["n"]} for a in armies],
+            "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"],
+                        "dest": a["dest"] if a["owner"] == nid else None} for a in armies],
+            "orders": [describe(o) for o in world["orders"] if o["nation"] == nid],
+            "soldier": game.word("soldier"),
             "caravans": [{"from": c["from"], "to": c["to"], "tile": c["tile"], "dest": c["dest"]} for c in caravans]})
 
     async def tile_data(request):
@@ -104,6 +122,30 @@ def make_app(client_id, client_secret, game, call=discord_request):
         keys = ("text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "claim_queued", "build_cost", "build_missing")
         return web.json_response({k: card[k] for k in keys})
 
+    async def order(request):
+        """Place or clear an order. The game's own checks decide whether it is allowed, exactly as in Discord."""
+        user = await asker(request)
+        if user is None:
+            return web.json_response({"error": "not logged in"}, status=401)
+        if game.players.get(str(user["id"])) is None or game.phase != "running":
+            return web.json_response({"error": "not in a running game"}, status=404)
+        try:
+            body = await request.json()
+            uid, kind = int(user["id"]), body.get("action")
+            if kind == "claim":
+                message = game.claim(uid, str(body.get("tile", "")))
+            elif kind == "build":
+                message = game.build(uid, str(body.get("tile", "")), str(body.get("building", "")))
+            elif kind == "move":
+                message = game.move(uid, int(body.get("army")), str(body.get("tile", "")))
+            elif kind == "cancel":
+                message = game.cancel(uid)
+            else:
+                return web.json_response({"ok": False, "message": "Unknown order."}, status=400)
+        except (GameError, ValueError, TypeError) as e:
+            return web.json_response({"ok": False, "message": str(e)}, status=400)
+        return web.json_response({"ok": True, "message": message})
+
     async def index(request):
         return web.FileResponse(os.path.join(STATIC, "index.html"))
 
@@ -113,6 +155,7 @@ def make_app(client_id, client_secret, game, call=discord_request):
         app.router.add_get(prefix + "/api/me", me)
         app.router.add_get(prefix + "/api/map", map_data)
         app.router.add_get(prefix + "/api/tile", tile_data)
+        app.router.add_post(prefix + "/api/order", order)
         app.router.add_static(prefix + "/static", STATIC)
     app.router.add_get("/", index)
     return app

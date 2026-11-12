@@ -151,3 +151,50 @@ def test_map_data_includes_caravans_for_their_traders(tmp_path):
         finally:
             await c.close()
     asyncio.run(go())
+
+
+def test_orders_are_refused_when_the_game_says_no(tmp_path):
+    async def steps(client, calls):
+        h = {"Authorization": "Bearer tok"}
+        assert (await client.post("/api/order", json={"action": "cancel"})).status == 401
+        data = await (await client.get("/api/map", headers=h)).json()
+        assert data["orders"] == [] and data["soldier"]
+        bad = await client.post("/.proxy/api/order", json={"action": "claim", "tile": data["capital"]}, headers=h)   # already yours
+        assert bad.status == 400 and not (await bad.json())["ok"]
+        assert (await client.post("/api/order", json={"action": "fly"}, headers=h)).status == 400
+        assert (await client.post("/api/order", json={"action": "move", "army": "x", "tile": data["capital"]}, headers=h)).status == 400
+    run(tmp_path, steps)
+
+
+def test_claim_then_cancel(tmp_path):
+    g = make_game(tmp_path)
+    g.world["nations"][0]["resources"].update(food=999, wood=999, stone=999, ore=999)
+
+    async def go():
+        async def asker(method, path, **kw):
+            return 200, {"id": "100", "username": "u"}
+        c = TestClient(TestServer(server.make_app("1", "s", g, asker)))
+        await c.start_server()
+        h = {"Authorization": "Bearer x"}
+        try:
+            data = await (await c.get("/api/map", headers=h)).json()
+            mine = {t["k"] for t in data["tiles"] if t["owner"] == 0}
+            from population import mapnav
+            free = sorted(mapnav.claimable(g.world, 0))[0]
+            ok = await (await c.post("/api/order", json={"action": "claim", "tile": free}, headers=h)).json()
+            assert ok["ok"] and free in ok["message"]
+            data = await (await c.get("/api/map", headers=h)).json()
+            assert data["orders"] == ["Claim " + free]
+            again = await c.post("/api/order", json={"action": "claim", "tile": free}, headers=h)   # one claim a night
+            assert again.status == 400
+            tile = await (await c.get("/api/tile?k=" + free, headers=h)).json()
+            assert tile["claim_queued"] is True
+            built = await (await c.post("/api/order", json={"action": "build", "tile": sorted(mine)[0], "building": "home"}, headers=h)).json()
+            assert built["ok"] or "already has" in built["message"]
+            cleared = await (await c.post("/api/order", json={"action": "cancel"}, headers=h)).json()
+            assert cleared["ok"] and (await (await c.get("/api/map", headers=h)).json())["orders"] == []
+            stranger = await c.post("/api/order", json={"action": "cancel"}, headers={"Authorization": "Bearer y"})
+            assert stranger.status in (200, 404)
+        finally:
+            await c.close()
+    asyncio.run(go())

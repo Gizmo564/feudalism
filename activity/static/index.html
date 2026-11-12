@@ -56,11 +56,13 @@
     .row span:first-child { color: var(--muted); }
     .row .short { color: #f0877a; }
     .note { font-size: 12px; color: var(--muted); }
-    .build { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-radius: 8px; padding: 10px 12px;
-             background: #3a3c42; font-size: 14px; }
-    .build b { font-weight: 600; }
-    .build span { font-size: 12px; color: var(--muted); }
-    .build.off { background: var(--chip); color: #8a8f98; }
+    .btn { border: 0; border-radius: 8px; height: 44px; padding: 0 14px; font-size: 14px; font-weight: 600; text-align: left; }
+    .btn.primary { background: var(--accent); color: #fff; text-align: center; }
+    .btn.plain { background: #3a3c42; }
+    .btn.off { background: var(--chip); color: #8a8f98; cursor: default; }
+    .msg { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
+    .msg.ok { background: #25412f; }
+    .msg.bad { background: #4a2b2b; }
     .hint { color: var(--muted); font-size: 14px; line-height: 1.45; }
     @media (max-width: 700px) {
       #top { height: 52px; gap: 12px; }
@@ -96,6 +98,6 @@
       <aside id="panel"><div class="grip"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>
