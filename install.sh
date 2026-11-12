@@ -72,6 +72,7 @@ WorkingDirectory=${APP_DIR}
 ExecStart=${APP_DIR}/.venv/bin/python discord_bot.py
 Restart=always
 RestartSec=10
+ExecStopPost=-/bin/sh -c '[ "\$SERVICE_RESULT" = success ] || ${APP_DIR}/.venv/bin/python -m population.notify "Bot stopped unexpectedly" "Result: \$SERVICE_RESULT. systemd will restart it." high'
 
 [Install]
 WantedBy=multi-user.target
