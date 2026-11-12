@@ -390,7 +390,7 @@ async function main() {
   });
   const {access_token} = await login.json();
   await sdk.commands.authenticate({access_token});
-  const headers = {Authorization: "Bearer " + access_token};
+  const headers = {Authorization: "Bearer " + access_token, "X-Guild-Id": sdk.guildId || ""};   // which server this game belongs to
   const me = await (await fetch("/.proxy/api/me", {headers})).json();
   if (!me.nation) return say("Hello " + me.name + ". You are not in a running game.");
   const data = await (await fetch("/.proxy/api/map", {headers})).json();

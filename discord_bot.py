@@ -16,6 +16,8 @@ from discord.ext import tasks
 
 from population import guide, infopage, mapnav, notify, render, rulepanel, ruleset, schedule
 from population.game import Game, GameError
+from population.games import Games, NoGame, SETTINGS, ThisServer, check_setting, current_server, remember_server, settings
+from population import stats
 from population.store import Store
 from population.tutorial import Tutorial
 from population.hexes import neighbors
@@ -45,9 +47,13 @@ ACTIVITY_SECRET = os.environ.get("DISCORD_CLIENT_SECRET", "").strip()
 DM_REPORTS = os.environ.get("DM_REPORTS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
-store = Store(os.environ.get("DB_PATH", "game.db"))
-game = Game(store)
+SETTING_DEFAULTS = {"tick_time": TICK_TIME, "tick_tz": TICK_TZ, "tick_minutes": TICK_MINUTES, "admin_role": ADMIN_ROLE,
+                    "dm_reports": "1" if DM_REPORTS else "0"}      # each server can override these with /admin settings
+games = Games(os.environ.get("GAMES_DIR", "games"), int(os.environ.get("MAX_GAMES", "20") or 20))   # one game per server
+game = ThisServer(games, "game")        # the game of the server the current command came from
+store = ThisServer(games, "store")
 client = discord.Client(intents=discord.Intents.default())   # no privileged intents needed
+remember_server(client._connection)     # so game and store know which server a command came from
 tree = app_commands.CommandTree(client)
 admin = app_commands.Group(name="admin", description="Admin commands")
 
@@ -60,6 +66,8 @@ tutorials = {}      # discord user id -> Tutorial. Practice games live in memory
 def record_error(where, interaction, error):
     """Keep the last 20 crashes for /admin errorlog, and write the full traceback to the log."""
     cause = getattr(error, "original", error)
+    if isinstance(cause, GameError):            # e.g. no game in this server: a message, not a crash
+        return cause
     frames = traceback.extract_tb(cause.__traceback__)
     rows = store.get("error_log", [])
     rows.append({"at": int(time.time()), "where": where, "user": interaction.user.id,
@@ -72,6 +80,8 @@ def record_error(where, interaction, error):
 
 async def tell_failure(interaction, error, cause):
     text = "Something went wrong on my side. The admin can see the details with /admin errorlog."
+    if isinstance(cause, GameError):
+        text = "Can't do that: %s" % cause
     try:
         if is_admin(interaction):                      # admins also get the actual error right here
             text += "\n`%s: %s`" % (type(cause).__name__, str(cause)[:300])
@@ -154,17 +164,23 @@ async def publish(interaction, text):
     await say(interaction, text, public=True)
 
 
+def admin_role():
+    "This server's admin role name (the .env value unless /admin settings changed it)."
+    found = games.get(current_server.get())
+    return settings(found.store, SETTING_DEFAULTS)["admin_role"] if found else ADMIN_ROLE
+
+
 def is_admin(interaction):
     """Has the admin role (name checked ignoring case and spaces), or Discord's Administrator permission."""
     roles = getattr(interaction.user, "roles", [])
-    if any(r.name.strip().lower() == ADMIN_ROLE.strip().lower() for r in roles):
+    if any(r.name.strip().lower() == admin_role().strip().lower() for r in roles):
         return True
     return interaction.permissions.administrator
 
 
 def deny(interaction):
     seen = ", ".join(r.name for r in getattr(interaction.user, "roles", []) if r.name != "@everyone") or "none"
-    return "You need the '%s' role for this. (Roles I can see on you: %s)" % (ADMIN_ROLE, seen)
+    return "You need the '%s' role for this. (Roles I can see on you: %s)" % (admin_role(), seen)
 
 
 def png(data, name="map.png"):
@@ -861,6 +877,14 @@ async def admin_run(interaction, fn, *args, public=False):
 @admin.command(name="open", description="Open sign-ups for a mode")
 @app_commands.choices(mode=[app_commands.Choice(name=m, value=m) for m in Game.modes()])
 async def admin_open(interaction: discord.Interaction, mode: app_commands.Choice[str]):
+    if is_admin(interaction):
+        try:
+            if interaction.guild_id is None:
+                raise GameError("use this in a server")
+            games.create(interaction.guild_id)        # a server's first game is made here
+            store.set("server_name", interaction.guild.name)
+        except GameError as e:
+            return await say(interaction, "Can't do that: %s" % e)
     await admin_run(interaction, game.open_signup, mode.value, public=True)
 
 
@@ -1128,6 +1152,35 @@ async def admin_errorlog(interaction: discord.Interaction):
     await say(interaction, ("**Latest errors** (newest first)\n" + "\n".join(lines))[:1990])
 
 
+@admin.command(name="settings", description="Show or change this server's tick time, timezone, admin role and DM reports")
+@app_commands.choices(name=[app_commands.Choice(name=k, value=k) for k in SETTINGS])
+@app_commands.describe(name="Which setting", value="The new value (for tick_minutes, 'off' goes back to a nightly tick). Leave blank to just look.")
+async def admin_settings(interaction: discord.Interaction, name: app_commands.Choice[str] = None, value: str = None):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    if name and value is not None:
+        try:
+            clean = check_setting(name.value, "" if name.value == "tick_minutes" and value.lower() in ("off", "none", "nightly") else value)
+        except GameError as e:
+            return await say(interaction, "Can't do that: %s" % e)
+        store.set("settings", dict(store.get("settings", {}), **{name.value: clean}))
+    now = settings(store, SETTING_DEFAULTS)
+    await say(interaction, "**Settings for this server**\n" + "\n".join(
+        "`%s` = `%s` (%s)" % (k, now[k] or "off", what) for k, what in SETTINGS.items()))
+
+
+def bot_owner_ids(app):
+    return {m.id for m in app.team.members} if app.team else {app.owner.id}
+
+
+@admin.command(name="botstats", description="Bot owner only: games, servers and how busy the box is")
+async def admin_botstats(interaction: discord.Interaction):
+    if interaction.user.id not in bot_owner_ids(await client.application_info()):
+        return await say(interaction, "Only the bot's owner can see this.")
+    stats.write_bot_file(games.folder, len(client.guilds))
+    await say(interaction, stats.text(stats.gather(games))[:1990])
+
+
 @admin.command(name="expand", description="Add rings of new land to the map")
 async def admin_expand(interaction: discord.Interaction, rings: app_commands.Range[int, 1, 5] = 1):
     await admin_run(interaction, game.expand, rings, public=True)
@@ -1174,9 +1227,13 @@ async def sync_roles(guild):
 
 
 async def do_tick():
+    started = time.time()
     log = log_channel()
     report = game.run_tick(split_log=log is not None)
     store.set("last_tick", time.time())
+    guild = client.get_guild(current_server.get())
+    if guild:
+        store.set("server_name", guild.name)
     channel = announce_channel()
     if channel:
         data = overview()
@@ -1191,14 +1248,21 @@ async def do_tick():
         for i in range(0, len(text), 1900):
             await log.send(text[i:i + 1900])
     await refresh_board()
-    if DM_REPORTS:
+    if setting("dm_reports") == "1":
+        prefix = "**%s**\n" % guild.name if guild else ""        # a player may be in several servers' games
         for uid in game.players:
-            await dm(uid, game.report(uid))
+            await dm(uid, prefix + game.report(uid))
+    store.set("last_tick_seconds", int(time.time() - started))
+
+
+def setting(name):
+    return settings(store, SETTING_DEFAULTS)[name]
 
 
 def tick_is_due():
     hours = (game.rules or {}).get("tick_hours", 24)
-    return schedule.is_due(time.time(), store.get("last_tick", 0), hours, TICK_TIME, TICK_TZ, TICK_MINUTES)
+    return schedule.is_due(time.time(), store.get("last_tick", 0), hours, setting("tick_time"), setting("tick_tz"),
+                           setting("tick_minutes"))
 
 
 async def tell_phone(title, message, priority="default"):
@@ -1207,15 +1271,22 @@ async def tell_phone(title, message, priority="default"):
 
 @tasks.loop(seconds=30)
 async def ticker():
-    if game.phase == "running" and not store.get("paused", False) and tick_is_due():
+    for server_id, g in games.all():            # one server's trouble never stops another's night
+        current_server.set(server_id)
+        if g.phase != "running" or g.store.get("paused", False) or not tick_is_due():
+            continue
         try:
             await do_tick()
             store.set("tick_failure_sent", False)
-        except Exception as e:                      # keep the loop alive; try again in 30 seconds
-            logging.getLogger("feudalism").exception("tick failed")
+        except Exception as e:                  # keep the loop alive; try again in 30 seconds
+            logging.getLogger("feudalism").exception("tick failed in server %s", server_id)
             if not store.get("tick_failure_sent", False):      # one message per failure streak, not one per retry
                 store.set("tick_failure_sent", True)
-                await tell_phone("The tick failed", "%s: %s" % (type(e).__name__, str(e)[:200]), "high")
+                await tell_phone("The tick failed in %s" % store.get("server_name", server_id),
+                                 "%s: %s" % (type(e).__name__, str(e)[:200]), "high")
+    if time.time() - getattr(client, "stats_written", 0) > 300:       # for `feudalism games`
+        client.stats_written = time.time()
+        stats.write_bot_file(games.folder, len(client.guilds))
 
 
 def keep_launch_command():
@@ -1237,7 +1308,8 @@ def keep_launch_command():
 @client.event
 async def on_interaction(interaction: discord.Interaction):
     """Remember when someone last used the bot, so automatic updates wait for a quiet moment."""
-    store.set("last_activity", time.time())
+    if games.get(current_server.get()):
+        store.set("last_activity", time.time())
 
 
 @client.event
@@ -1263,7 +1335,7 @@ async def on_ready():
         else:
             from activity import server as activity_server
             client.activity_runner = await activity_server.start(int(ACTIVITY_PORT), str(client.application_id),
-                                                                 ACTIVITY_SECRET, game)
+                                                                 ACTIVITY_SECRET, games.get)
             print("Activity server listening on port %s" % ACTIVITY_PORT)
     print("Logged in as %s" % client.user)
     if not getattr(client, "start_told", False):

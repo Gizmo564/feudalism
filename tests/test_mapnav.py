@@ -7,6 +7,7 @@ import pytest
 
 from population import mapnav, render
 from population.game import Game
+from population.games import current_server
 from population.store import Store
 
 
@@ -66,16 +67,21 @@ def test_render_options(game):
         assert data[:4] == b"\x89PNG"
 
 
+SERVER = 777        # the pretend Discord server the bot tests run in
+
+
 # ---- the Discord view, driven with pretend clicks ----
 
 @pytest.fixture
 def bot(tmp_path, monkeypatch, game):
-    monkeypatch.setenv("DB_PATH", str(tmp_path / "bot.db"))
+    monkeypatch.setenv("GAMES_DIR", str(tmp_path / "games"))
     monkeypatch.chdir(tmp_path)
     module = importlib.import_module("discord_bot")
     module = importlib.reload(module)
-    module.game = game
-    return module
+    module.games.loaded[SERVER] = game          # the test game is this server's game
+    token = current_server.set(SERVER)
+    yield module
+    current_server.reset(token)
 
 
 def click(uid):
@@ -224,7 +230,7 @@ def test_practice_game_takes_over_commands_until_stopped(bot, game):
         await bot.tutorial_start.callback(i)
         assert "Practice game started" in i.response.send_message.await_args.args[0]
         practice = bot.game_for(uid)
-        assert practice is not game and practice.world["tick"] == 0
+        assert practice is not bot.game and practice.world["tick"] == 0
         i = click(uid)
         await bot.status.callback(i)
         sent = i.response.send_message.await_args
@@ -239,7 +245,7 @@ def test_practice_game_takes_over_commands_until_stopped(bot, game):
         assert practice.world["tick"] == 1 and "night 1" in i.response.send_message.await_args.args[0]
         i = click(uid)
         await bot.tutorial_stop.callback(i)
-        assert bot.game_for(uid) is game
+        assert bot.game_for(uid) is bot.game
         i = click(uid)
         await bot.tutorial_night.callback(i)
         assert "no practice game" in i.response.send_message.await_args.args[0]
@@ -253,7 +259,7 @@ def test_join_is_public_and_welcome_is_private(bot, tmp_path):
     async def go():
         g = Game(Store(str(tmp_path / "j.db")))
         g.open_signup("feudalism")
-        bot.game = g
+        bot.games.loaded[SERVER] = g
         i = click(7)
         await bot.join.callback(i, "Newcomer")
         public = i.response.send_message.await_args
@@ -292,7 +298,7 @@ def test_nightly_tick_posts_report_log_and_private_reports(bot, game, monkeypatc
     assert all("night 1" in text for _, text in sent_dms)
     # with DMs switched off nobody is messaged
     sent_dms.clear()
-    monkeypatch.setattr(bot, "DM_REPORTS", False)
+    bot.store.set("settings", {"dm_reports": "0"})
     asyncio.run(go())
     assert sent_dms == []
 
@@ -465,4 +471,63 @@ def test_play_launches_the_activity(bot, monkeypatch):
         await bot.play.callback(j)
         j.response.launch_activity.assert_not_awaited()
         assert "not turned on" in j.response.send_message.await_args.args[0]
+    asyncio.run(go())
+
+
+# ---- many servers ----
+
+def admin_click(uid, server):
+    i = click(uid)
+    i.guild_id, i.guild, i.channel_id = server, SimpleNamespace(name="Server %d" % server), 5
+    i.permissions = SimpleNamespace(administrator=True)
+    return i
+
+
+def test_admin_open_makes_a_servers_first_game_and_respects_the_cap(bot):
+    from population.game import GameError
+    from population.games import NoGame
+
+    async def go():
+        current_server.set(999)
+        with pytest.raises(NoGame):                                   # a server with no game yet
+            bot.game.phase
+        i = click(1)
+        await bot.tell_failure(i, NoGame("there is no game in this server yet"), NoGame("there is no game in this server yet"))
+        assert "Can't do that: there is no game" in i.followup.send.await_args.args[0]
+        i = admin_click(1, 999)
+        await bot.admin_open.callback(i, SimpleNamespace(value="feudalism"))
+        assert bot.games.get(999).phase == "signup" and bot.store.get("server_name") == "Server 999"
+        assert bot.games.get(SERVER).phase == "running"              # the other server's game is untouched
+        bot.games.max_games = 1                                       # server 999's game already fills it
+        current_server.set(1000)
+        i = admin_click(1, 1000)
+        await bot.admin_open.callback(i, SimpleNamespace(value="feudalism"))
+        assert "limit of 1" in i.response.send_message.await_args.args[0] and bot.games.get(1000) is None
+    asyncio.run(go())
+
+
+def test_settings_are_per_server_and_checked(bot):
+    async def go():
+        i = admin_click(1, SERVER)
+        await bot.admin_settings.callback(i, SimpleNamespace(value="tick_time"), "04:30")
+        assert bot.setting("tick_time") == "04:30" and "`04:30`" in i.response.send_message.await_args.args[0]
+        i = admin_click(1, SERVER)
+        await bot.admin_settings.callback(i, SimpleNamespace(value="tick_time"), "99:99")
+        assert "Can't do that" in i.response.send_message.await_args.args[0] and bot.setting("tick_time") == "04:30"
+        i = admin_click(1, SERVER)
+        await bot.admin_settings.callback(i, SimpleNamespace(value="tick_minutes"), "off")
+        assert bot.setting("tick_minutes") == ""
+    asyncio.run(go())
+
+
+def test_botstats_are_for_the_bot_owner_only(bot, monkeypatch):
+    monkeypatch.setattr(bot.client, "application_info", AsyncMock(return_value=SimpleNamespace(team=None, owner=SimpleNamespace(id=5))))
+
+    async def go():
+        i = admin_click(1, SERVER)
+        await bot.admin_botstats.callback(i)
+        assert "Only the bot's owner" in i.response.send_message.await_args.args[0]
+        i = admin_click(5, SERVER)
+        await bot.admin_botstats.callback(i)
+        assert "of 20 allowed" in i.response.send_message.await_args.args[0]
     asyncio.run(go())

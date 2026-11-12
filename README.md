@@ -16,9 +16,9 @@ Run a mode with `python3 simulate.py --rules rules/feudalism.json`.
 1. Developer Portal -> New Application. On the **Bot** page, Reset Token and copy it (keep it secret, never commit it). No privileged intents are needed.
 2. **Installation** page: enable Guild Install, add scopes `bot` and `applications.commands`, and permissions Send Messages, Attach Files, Manage Roles. Open the install link and add the bot to your server.
 3. In Discord, put the bot's role **above** the title roles (Lord ... Emperor) so it can assign them. Create a role named `admin` for admins (or change ADMIN_ROLE).
-4. `cp .env.example .env`, paste the token, and set GUILD_ID to your server's ID (commands then appear instantly).
+4. `cp .env.example .env` and paste the token. Leave GUILD_ID blank so any server can use the bot (set it only to limit the commands to one test server).
 5. `pip install -r requirements.txt` then `python3 discord_bot.py`. On Ubuntu use `feudalism-bot.service` to keep it running.
-6. In Discord: `/admin open` (pick a mode), players `/join`, then `/admin start`. Use `/admin tick` to advance by hand. For the playtest set TICK_MINUTES=5 in `.env`.
+6. In Discord: `/admin open` (pick a mode; the first time in a server this also creates that server's game), players `/join`, then `/admin start`. Use `/admin tick` to advance by hand. For the playtest set TICK_MINUTES=5 in `.env`.
 
 The bot connects out to Discord, so you do not need a public URL or ngrok (that is only for Discord's webhook-style example app).
 
@@ -45,9 +45,11 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 git clone https://github.com/Gizmo564/feudalism.git ~/feudalism && ~/feudalism/install.sh
 ```
 
-The repo is private, so when git asks for a password, paste a GitHub token with read access. The script installs packages, sets up a virtual environment, asks for your bot token once, runs the tests, and installs a systemd service. Update later with `feudalism-update`, which pulls from GitHub, retests, and restarts. `.env` and `game.db` stay on the machine and are never committed.
+The repo is private, so when git asks for a password, paste a GitHub token with read access. The script installs packages, sets up a virtual environment, asks for your bot token once, runs the tests, and installs a systemd service. Update later with `feudalism-update`, which pulls from GitHub, retests, and restarts. `.env` and the `games/` folder stay on the machine and are never committed.
 
 **Automatic updates (optional):** `~/feudalism/install.sh --auto` adds a timer that checks GitHub every 15 minutes. When there is a new commit it first waits for a quiet moment (nobody has used the bot for `AUTO_UPDATE_QUIET_MINUTES`, default 10, and no tick ran or is due within 10 minutes; it just checks again 15 minutes later), then pulls, runs the tests, and restarts the bot. `feudalism update` by hand never waits. If the tests fail it puts the old version back and does not retry that commit. Turn it off with `install.sh --no-auto`. Logs: `journalctl -u feudalism-autoupdate`.
+
+**Many servers:** the bot runs one separate game per Discord server, all in one process. A server's first `/admin open` creates its game (saved as `games/<server id>.db`); anyone with that server's admin role can run it. `MAX_GAMES` (default 20) limits how many games exist. In my test, 20 games of 30 players needed about 70 MB of memory and about 4 MB of disk each per 60 nights, and no single tick took more than a tenth of a second of game logic; Discord posting at tick time is not included, so watch `feudalism games`. Each server's admins can change their tick time, timezone, admin role and DM reports with `/admin settings` (the `.env` values are the defaults). DM night reports start with the server's name, so a player in several games can tell them apart. A game's file can be deleted (with the bot stopped) to free its slot; the old single `game.db` is no longer used.
 
 **Phone notifications (optional):** the bot can send messages to your phone through [ntfy](https://ntfy.sh): an automatic update (or one that failed its tests and was rolled back), the bot coming online, the bot stopping unexpectedly, and a failed tick. Install the ntfy app, subscribe to a hard-to-guess topic name, and put it in `.env` as `NTFY_TOPIC=your-topic` (anyone who knows the topic name can read the messages, so don't use a guessable one). Blank means off. `NTFY_SERVER` (default `https://ntfy.sh`) can point at your own ntfy server, and `NTFY_NAME` (default Crownfall) is the title prefix. Then run `feudalism update` once so the service picks up the crash alert. Test it with `.venv/bin/python -m population.notify "Test" "Hello"`.
 
@@ -59,9 +61,10 @@ On the server, `feudalism help` lists everything:
 - `feudalism update`, `feudalism auto on|off` – get the latest code, or turn automatic updates on or off.
 - `feudalism try <branch>` – switch the box to a test branch from GitHub and restart; `feudalism try main` goes back. (Automatic updates then follow that branch.)
 - `feudalism env` – edit the settings file (`.env`) and offer to restart.
-- `feudalism backup [folder]` – save `game.db` (default `~/feudalism-backups`, newest 30 kept; safe while the bot runs).
+- `feudalism backup [folder]` – save every game (default `~/feudalism-backups`, newest 30 kept; safe while the bot runs).
 - `feudalism backup -n <name>` – same, but saved as `<name>.db`. Named backups are never deleted automatically. Handy before a risky change: `feudalism backup -n before-war`.
-- `feudalism backups` (or `listbkp`) – list backups. `feudalism backup rm <name>` deletes one.
-- `feudalism restore <name>` – put a backup back. It asks first, saves the current game as a backup, stops the bot, restores, and starts it again.
+- `feudalism backups` (or `listbkp`) – list backups (each is a folder holding one file per game). `feudalism backup rm <name>` deletes one.
+- `feudalism restore <name> [server id]` – put a backup back: every game in it, or only one server's. It asks first, saves the current games as a backup, stops the bot, restores, and starts it again.
+- `feudalism games` – how many games and servers, each game's size and last tick time, and whether the box is getting too busy. The bot owner can see the same in Discord with `/admin botstats`.
 
 `feudalism-update` and `feudalism-backup` still work too.

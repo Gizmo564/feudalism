@@ -50,7 +50,7 @@ say "Running the tests (an update that fails them will not be restarted)"
 if [ ! -f .env ]; then
   say "First-time settings (saved in $APP_DIR/.env, never committed)"
   read -r -s -p "Discord bot token: " TOKEN; echo
-  read -r -p "Discord server (guild) ID, blank for global commands: " GUILD
+  read -r -p "Discord server (guild) ID. Leave blank so ANY server can use the bot (needed for several games): " GUILD
   read -r -p "Timezone for the nightly tick [America/Denver]: " TZ_IN
   cp .env.example .env
   sed -i "s|^DISCORD_TOKEN=.*|DISCORD_TOKEN=${TOKEN}|" .env
@@ -123,5 +123,5 @@ Done. Useful commands:
   journalctl -u ${SERVICE} -f             watch the bot's log
   journalctl -u feudalism-autoupdate      what automatic updates did (if turned on)
   sudo systemctl restart ${SERVICE}       restart it
-Back up ${APP_DIR}/game.db regularly. It holds the whole game.
+Back up regularly with: feudalism backup. Every server's game is saved in ${APP_DIR}/games/.
 DONE

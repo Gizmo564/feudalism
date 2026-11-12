@@ -33,8 +33,9 @@ def test_busy_around_the_tick():
 
 
 def test_the_command_exits_by_whether_it_is_quiet(tmp_path):
-    (tmp_path / ".env").write_text("DB_PATH=g.db\nTICK_TIME=02:00\nTICK_TZ=%s\n" % TZ)
-    store = Store(str(tmp_path / "g.db"))
+    (tmp_path / ".env").write_text("TICK_TIME=02:00\nTICK_TZ=%s\n" % TZ)
+    (tmp_path / "games").mkdir()
+    store = Store(str(tmp_path / "games" / "555.db"))
     store.set("last_tick", time.time() - 3 * 3600)
     store.set("last_activity", time.time())
     assert quiet.main(str(tmp_path)) == 1                              # someone is using it right now

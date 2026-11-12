@@ -7,22 +7,21 @@ SERVICE="feudalism-bot"
 BACKUPS="${FEUDALISM_BACKUPS:-$HOME/feudalism-backups}"
 SYSTEMCTL="${SYSTEMCTL:-sudo systemctl}"
 
-db_path() {
-  local db
-  db="$(grep -E '^DB_PATH=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- || true)"
-  db="${db:-game.db}"
-  case "$db" in /*) echo "$db" ;; *) echo "$APP_DIR/$db" ;; esac
+games_dir() {
+  local d
+  d="$(grep -E '^GAMES_DIR=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2- || true)"
+  d="${d:-games}"
+  case "$d" in /*) echo "$d" ;; *) echo "$APP_DIR/$d" ;; esac
 }
 
 # "main at 1a2b3c4" so it is always clear which version is on the box
 where() { echo "$(git -C "$APP_DIR" branch --show-current) at $(git -C "$APP_DIR" rev-parse --short HEAD)"; }
 
-# A backup name like game-2026-11-11-180623.db (path tricks are refused)
-backup_file() {
+# A backup is a folder of games, like games-2026-11-11-180623 (path tricks are refused)
+backup_dir() {
   local name="${1:-}"
   case "$name" in ""|*/*|*..*) echo "Give a backup name from 'feudalism backups'." >&2; exit 1 ;; esac
-  [[ "$name" == *.db ]] || name="$name.db"
-  [ -f "$BACKUPS/$name" ] || { echo "No backup called $name. See 'feudalism backups'." >&2; exit 1; }
+  [ -d "$BACKUPS/$name" ] || { echo "No backup called $name. See 'feudalism backups'." >&2; exit 1; }
   echo "$BACKUPS/$name"
 }
 
@@ -38,17 +37,21 @@ feudalism <command>
   try <branch>         switch to a test branch from GitHub and restart (back again: feudalism try main)
   env                  edit the settings file (.env), then offer to restart
 
-  backup [folder]      save game.db (default folder ~/feudalism-backups)
-  backup -n <name>     same, but called <name>.db (never deleted automatically)
+  games                how many games and servers, and whether the box needs to be bigger
+  backup [folder]      save every game (default folder ~/feudalism-backups)
+  backup -n <name>     same, but called <name> (never deleted automatically)
   backups              list backups (also: listbkp)
   backup rm <name>     delete one backup
-  restore <name>       put a backup back (stops the bot, keeps a safety copy first)
+  restore <name> [server id]
+                       put a backup back: every game in it, or just one server's (stops the bot,
+                       keeps a safety copy first)
 EOF
 }
 
 cmd="${1:-help}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   help|-h|--help) usage ;;
+  games)   "$APP_DIR/.venv/bin/python" -m population.stats ;;
   status)  echo "Code: $(where)"; $SYSTEMCTL status "$SERVICE" --no-pager -n 5 ;;
   start|stop|restart) $SYSTEMCTL "$cmd" "$SERVICE"; echo "Bot: $cmd done." ;;
   logs)
@@ -75,24 +78,33 @@ case "$cmd" in
     [[ "$yn" =~ ^[Yy] ]] && $SYSTEMCTL restart "$SERVICE" && echo "Restarted." || true ;;
   backup)
     if [ "${1:-}" = "rm" ]; then
-      f="$(backup_file "${2:-}")"; rm -- "$f"; echo "Deleted $(basename "$f")"
+      d="$(backup_dir "${2:-}")"; rm -r -- "$d"; echo "Deleted $(basename "$d")"
     else
       "$APP_DIR/backup.sh" "$@"
     fi ;;
   backups|listbkp)
-    [ -d "$BACKUPS" ] && ls -1t "$BACKUPS"/*.db >/dev/null 2>&1 || { echo "No backups yet. Run: feudalism backup"; exit 0; }
-    for f in $(ls -1t "$BACKUPS"/*.db); do printf '%s  %s\n' "$(du -h "$f" | cut -f1)" "$(basename "$f")"; done ;;
+    ls -1d "$BACKUPS"/*/ >/dev/null 2>&1 || { echo "No backups yet. Run: feudalism backup"; exit 0; }
+    for d in $(ls -1dt "$BACKUPS"/*/); do printf '%s games, %s  %s\n' "$(ls "$d" | wc -l)" "$(du -sh "$d" | cut -f1)" "$(basename "$d")"; done ;;
   restore)
-    f="$(backup_file "${1:-}")"; db="$(db_path)"
-    read -r -p "Replace the current game with $(basename "$f")? [y/N] " yn
+    d="$(backup_dir "${1:-}")"; only="${2:-}"; games="$(games_dir)"
+    if [ -n "$only" ]; then
+      [ -f "$d/$only.db" ] || { echo "That backup has no game for server '$only'."; exit 1; }
+      what="the game of server $only"
+    else
+      what="every game in it (games started after the backup are left alone)"
+    fi
+    read -r -p "Replace $what with $(basename "$d")? [y/N] " yn
     [[ "$yn" =~ ^[Yy] ]] || { echo "Cancelled."; exit 0; }
-    keep="$(mktemp)"; trap 'rm -f "$keep"' EXIT
-    cp -- "$f" "$keep"                                   # hold the chosen backup safe before we make a new one
-    "$APP_DIR/backup.sh" >/dev/null && echo "Saved the current game as a backup first."
+    keep="$(mktemp -d)"; trap 'rm -rf "$keep"' EXIT
+    cp -- "$d"/*.db "$keep"/                              # hold the chosen backup safe before we make a new one
+    "$APP_DIR/backup.sh" >/dev/null && echo "Saved the current games as a backup first." || true
     $SYSTEMCTL stop "$SERVICE"
-    cp -- "$keep" "$db"
-    rm -f -- "$db-wal" "$db-shm"
+    if [ -n "$only" ]; then files="$keep/$only.db"; else files="$keep"/*.db; fi
+    for f in $files; do
+      cp -- "$f" "$games/$(basename "$f")"
+      rm -f -- "$games/$(basename "$f")-wal" "$games/$(basename "$f")-shm"
+    done
     $SYSTEMCTL start "$SERVICE"
-    echo "Restored $(basename "$f")." ;;
+    echo "Restored $(basename "$d")." ;;
   *) echo "Unknown command '$cmd'."; echo; usage; exit 1 ;;
 esac

@@ -8,6 +8,11 @@ from population.game import Game
 from population.store import Store
 
 
+def only(g):
+    "The Activity looks a game up by server; these tests have just one."
+    return lambda server_id: g
+
+
 def make_game(tmp_path):
     g = Game(Store(str(tmp_path / "a.db")))
     g.open_signup("feudalism")
@@ -33,7 +38,7 @@ def fake_discord(calls):
 def run(tmp_path, steps):
     async def go():
         calls = []
-        client = TestClient(TestServer(server.make_app("12345", "secret", make_game(tmp_path), fake_discord(calls))))
+        client = TestClient(TestServer(server.make_app("12345", "secret", only(make_game(tmp_path)), fake_discord(calls))))
         await client.start_server()
         try:
             await steps(client, calls)
@@ -68,7 +73,7 @@ def test_player_without_a_nation(tmp_path):
     async def go():
         async def visitor(method, path, **kw):
             return 200, {"id": "999", "username": "visitor"}
-        c = TestClient(TestServer(server.make_app("1", "s", make_game(tmp_path), visitor)))
+        c = TestClient(TestServer(server.make_app("1", "s", only(make_game(tmp_path)), visitor)))
         await c.start_server()
         try:
             me = await (await c.get("/api/me", headers={"Authorization": "Bearer x"})).json()
@@ -100,7 +105,7 @@ def test_map_data_hides_fogged_tiles_and_players_not_in_the_game(tmp_path):
         game.world["settings"]["fog"] = True
         async def asker(method, path, **kw):
             return 200, {"id": kw["headers"]["Authorization"][7:], "username": "u"}
-        c = TestClient(TestServer(server.make_app("1", "s", game, asker)))
+        c = TestClient(TestServer(server.make_app("1", "s", only(game), asker)))
         await c.start_server()
         try:
             data = await (await c.get("/api/map", headers={"Authorization": "Bearer 100"})).json()
@@ -143,7 +148,7 @@ def test_map_data_includes_caravans_for_their_traders(tmp_path):
     async def go():
         async def asker(method, path, **kw):
             return 200, {"id": kw["headers"]["Authorization"][7:], "username": "u"}
-        c = TestClient(TestServer(server.make_app("1", "s", g, asker)))
+        c = TestClient(TestServer(server.make_app("1", "s", only(g), asker)))
         await c.start_server()
         try:
             data = await (await c.get("/api/map", headers={"Authorization": "Bearer 100"})).json()
@@ -174,7 +179,7 @@ def test_claim_then_cancel(tmp_path):
     async def go():
         async def asker(method, path, **kw):
             return 200, {"id": "100", "username": "u"}
-        c = TestClient(TestServer(server.make_app("1", "s", g, asker)))
+        c = TestClient(TestServer(server.make_app("1", "s", only(g), asker)))
         await c.start_server()
         h = {"Authorization": "Bearer x"}
         try:
@@ -200,3 +205,22 @@ def test_claim_then_cancel(tmp_path):
         finally:
             await c.close()
     asyncio.run(go())
+
+
+def test_each_server_sees_only_its_own_game(tmp_path):
+    a, b = make_game(tmp_path), Game(Store(str(tmp_path / "b.db")))      # b has no game running yet
+    games = {"1": a, "2": b}
+
+    async def asker(method, path, **kwargs):
+        return 200, {"id": "100", "username": "u"}
+
+    async def go():
+        c = TestClient(TestServer(server.make_app("1", "s", lambda sid: games.get(sid), asker)))
+        await c.start_server()
+        auth = {"Authorization": "Bearer tok"}
+        ok = await c.get("/api/map", headers=dict(auth, **{"X-Guild-Id": "1"}))
+        other = await c.get("/api/map", headers=dict(auth, **{"X-Guild-Id": "2"}))
+        nowhere = await c.get("/api/map", headers=dict(auth, **{"X-Guild-Id": "3"}))
+        await c.close()
+        return ok.status, other.status, nowhere.status
+    assert asyncio.run(go()) == (200, 404, 404)

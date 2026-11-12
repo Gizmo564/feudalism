@@ -34,7 +34,8 @@ def describe(o):
     return kind
 
 
-def make_app(client_id, client_secret, game, call=discord_request):
+def make_app(client_id, client_secret, find_game, call=discord_request):
+    "find_game(server id) gives that server's Game, or None. The page sends its server in the X-Guild-Id header."
     @web.middleware
     async def no_cache(request, handler):
         """Cloudflare and Discord would otherwise keep serving an old copy of the page after an update."""
@@ -58,6 +59,9 @@ def make_app(client_id, client_secret, game, call=discord_request):
             return web.json_response({"error": "login failed"}, status=401)
         return web.json_response({"access_token": data["access_token"]})
 
+    def here(request):
+        return find_game(request.headers.get("X-Guild-Id", ""))
+
     async def asker(request):
         """The Discord user making this request (checked with Discord), or None."""
         bearer = request.headers.get("Authorization", "")
@@ -71,8 +75,9 @@ def make_app(client_id, client_secret, game, call=discord_request):
         user = await asker(request)
         if user is None:
             return web.json_response({"error": "not logged in"}, status=401)
-        nid = game.players.get(str(user["id"]))
-        nation = game.world["nations"][nid]["name"] if game.phase == "running" and nid is not None else None
+        game = here(request)
+        nid = game.players.get(str(user["id"])) if game else None
+        nation = game.world["nations"][nid]["name"] if game and game.phase == "running" and nid is not None else None
         return web.json_response({"id": user["id"], "name": user.get("global_name") or user["username"], "nation": nation})
 
     async def map_data(request):
@@ -80,8 +85,9 @@ def make_app(client_id, client_secret, game, call=discord_request):
         user = await asker(request)
         if user is None:
             return web.json_response({"error": "not logged in"}, status=401)
-        nid = game.players.get(str(user["id"]))
-        if game.phase != "running" or nid is None:
+        game = here(request)
+        nid = game.players.get(str(user["id"])) if game else None
+        if game is None or game.phase != "running" or nid is None:
             return web.json_response({"error": "not in a running game"}, status=404)
         world, rules = game.world, game.rules
         tiles = views.map_view(world, rules, nid)
@@ -116,8 +122,9 @@ def make_app(client_id, client_secret, game, call=discord_request):
         user = await asker(request)
         if user is None:
             return web.json_response({"error": "not logged in"}, status=401)
-        nid = game.players.get(str(user["id"]))
-        if game.phase != "running" or nid is None:
+        game = here(request)
+        nid = game.players.get(str(user["id"])) if game else None
+        if game is None or game.phase != "running" or nid is None:
             return web.json_response({"error": "not in a running game"}, status=404)
         card = mapnav.tile_card(game.world, game.rules, nid, request.query.get("k", ""))
         keys = ("text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "claim_queued", "build_cost", "build_missing")
@@ -128,7 +135,8 @@ def make_app(client_id, client_secret, game, call=discord_request):
         user = await asker(request)
         if user is None:
             return web.json_response({"error": "not logged in"}, status=401)
-        if game.players.get(str(user["id"])) is None or game.phase != "running":
+        game = here(request)
+        if game is None or game.players.get(str(user["id"])) is None or game.phase != "running":
             return web.json_response({"error": "not in a running game"}, status=404)
         try:
             body = await request.json()
@@ -163,9 +171,9 @@ def make_app(client_id, client_secret, game, call=discord_request):
     return app
 
 
-async def start(port, client_id, client_secret, game):
+async def start(port, client_id, client_secret, find_game):
     """Run the web server alongside the bot (called once the bot is connected)."""
-    runner = web.AppRunner(make_app(client_id, client_secret, game))
+    runner = web.AppRunner(make_app(client_id, client_secret, find_game))
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", port).start()
     return runner

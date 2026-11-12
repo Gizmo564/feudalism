@@ -5,6 +5,7 @@ import sys
 import time
 
 from . import schedule
+from .games import Games, settings
 from .store import Store
 
 
@@ -32,17 +33,21 @@ def read_env(path):
 
 
 def main(app_dir):
+    "Quiet means every game is quiet: a restart interrupts all of them."
     env = read_env(os.path.join(app_dir, ".env"))
-    db = env.get("DB_PATH", "game.db")
-    store = Store(db if os.path.isabs(db) else os.path.join(app_dir, db))
-    rules = store.get("rules") or {}
-    why = busy_reason(
-        time.time(), store.get("last_activity", 0), store.get("last_tick", 0), rules.get("tick_hours", 24),
-        env.get("TICK_TIME", "02:00"), env.get("TICK_TZ", "America/Denver"), env.get("TICK_MINUTES", "").strip(),
-        int(env.get("AUTO_UPDATE_QUIET_MINUTES", "10") or 10))
-    if why:
-        print("busy: " + why)
-        return 1
+    folder = env.get("GAMES_DIR", "games")
+    games = Games(folder if os.path.isabs(folder) else os.path.join(app_dir, folder))
+    defaults = {"tick_time": env.get("TICK_TIME", "02:00"), "tick_tz": env.get("TICK_TZ", "America/Denver"),
+                "tick_minutes": env.get("TICK_MINUTES", "").strip()}
+    for server_id in games.ids():
+        store = Store(games.path(server_id))
+        mine = settings(store, defaults)             # each server may have its own tick time
+        why = busy_reason(
+            time.time(), store.get("last_activity", 0), store.get("last_tick", 0), (store.get("rules") or {}).get("tick_hours", 24),
+            mine["tick_time"], mine["tick_tz"], mine["tick_minutes"], int(env.get("AUTO_UPDATE_QUIET_MINUTES", "10") or 10))
+        if why:
+            print("busy: %s (server %d)" % (why, server_id))
+            return 1
     return 0
 
 
