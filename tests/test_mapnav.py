@@ -446,3 +446,19 @@ def test_global_sync_keeps_the_activity_launch_command(bot):
     assert [c["name"] for c in sent[0]] == ["map", "Launch"]
     assert "version" not in sent[0][1]
     assert [c["name"] for c in sent[1]] == ["x", "L"]          # already there: left alone
+
+
+def test_play_launches_the_activity(bot, monkeypatch):
+    async def go():
+        i = click(7)
+        i.response.launch_activity = AsyncMock()
+        monkeypatch.setattr(bot, "ACTIVITY_PORT", "8080")
+        await bot.play.callback(i)
+        i.response.launch_activity.assert_awaited_once()
+        j = click(7)
+        j.response.launch_activity = AsyncMock()
+        monkeypatch.setattr(bot, "ACTIVITY_PORT", "")
+        await bot.play.callback(j)
+        j.response.launch_activity.assert_not_awaited()
+        assert "not turned on" in j.response.send_message.await_args.args[0]
+    asyncio.run(go())

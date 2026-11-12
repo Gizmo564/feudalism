@@ -271,6 +271,16 @@ async def map(interaction: discord.Interaction):
     await interaction.followup.send(file=png(overview(g, nid)), ephemeral=True)
 
 
+@tree.command(description="Open the clickable map (Discord Activity)")
+async def play(interaction: discord.Interaction):
+    if not ACTIVITY_PORT:
+        return await say(interaction, "Can't do that: the clickable map is not turned on for this bot")
+    try:
+        await interaction.response.launch_activity()
+    except discord.HTTPException as e:
+        await say(interaction, "Can't do that: Discord would not start the Activity (%s)" % e.text)
+
+
 @tree.command(description="Interactive map around your capital: pan, zoom, click a tile to claim, build or move")
 @app_commands.describe(radius="How many tiles out to show (1-6)")
 async def zoom(interaction: discord.Interaction, radius: app_commands.Range[int, 1, 6] = 3):
