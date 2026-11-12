@@ -51,7 +51,7 @@ def test_card_for_claimable_own_and_water(game):
 
 
 def test_fog_hides_tiles_in_card(game):
-    game.set_fog(True)
+    game.world["settings"]["fog"] = True
     far = next(k for k, t in game.world["tiles"].items() if t["owner"] == 3)
     assert "fogged" in mapnav.tile_card(game.world, game.rules, 0, far)["text"]
 
@@ -318,4 +318,21 @@ def test_trade_board_buttons(bot, game):
         i.response.edit_message.assert_awaited()
         assert o["status"] == "accepted" and o["to"] == 1
         assert "Accepted by" in bot.offer_embed(game, o).description
+    asyncio.run(go())
+
+
+def test_rules_panel(bot, game):
+    async def go():
+        view = bot.RulesView(100, game)
+        menu = selects(view)[0]
+        assert len(menu.options) == len(view.rows()) and "Fog of war" in view.text()
+        await find(view, "Turn on").callback(click(100))           # fog: queue a switch
+        assert game.pending_rules == {"fog": True} and "next tick" in view.text()
+        await find(view, "Undo change").callback(click(100))
+        assert game.pending_rules == {}
+        menu._values = ["scarcity"]
+        await view.pick(menu)(click(100))
+        await find(view, "+50").callback(click(100))
+        assert game.pending_rules == {"scarcity": game.rules["claim"]["scarcity_percent"] + 50}
+        assert await view.interaction_check(click(999)) is False
     asyncio.run(go())

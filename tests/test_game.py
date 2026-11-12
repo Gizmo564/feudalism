@@ -79,10 +79,16 @@ def test_trade_needs_market(game):
         game.trade_offer(100, "Brask", "wood 5", "stone 5")
 
 
+def apply_now(game, key, value):
+    """Queue a rule change and run the tick that puts it in force."""
+    game.queue_rule(key, value)
+    return game.run_tick()
+
+
 def test_admin_actions(game):
-    assert "on" in game.set_fog(True)
+    apply_now(game, "fog", True)
     assert "Standings are hidden" in game.standings()
-    game.set_fog(False)
+    apply_now(game, "fog", False)
     assert "Aldmere" in game.standings()
     assert "radius 7" in game.expand(1)
     assert "joined" in game.add_player(555, "Latecomer")
@@ -91,17 +97,43 @@ def test_admin_actions(game):
     assert game.phase == "over"
 
 
-def test_set_empire(game):
-    assert "30%" in game.set_empire(30)
-    assert game.rules["victory"]["land_share_percent"] == 30
+def test_rule_change_waits_for_the_tick_and_is_announced(game):
+    assert "next tick" in game.queue_rule("scarcity", 400)
+    assert game.rules["claim"]["scarcity_percent"] != 400           # nothing yet
+    row = next(r for r in game.rule_rows() if r["key"] == "scarcity")
+    assert row["next"] == 400 and row["now"] != 400
+    report = game.run_tick()
+    assert "Rule change: Land price rise (%)" in report and game.rules["claim"]["scarcity_percent"] == 400
+    assert game.pending_rules == {}
+
+
+def test_rule_limits_and_cancel(game):
     with pytest.raises(GameError):
-        game.set_empire(1)
+        game.queue_rule("win_share", 1)
+    with pytest.raises(GameError):
+        game.queue_rule("nonsense", 1)
+    game.queue_rule("expiry", 7)
+    assert "stays" in game.queue_rule("expiry", game.rules["trade"]["offer_expires_ticks"])
+    assert game.pending_rules == {}
 
 
-def test_hidden_oil_command(game):
-    assert "hidden" in game.set_hidden_oil(True)
+def test_hidden_oil_and_market_rules(game):
+    apply_now(game, "hidden_oil", True)
     assert game.world["settings"]["hidden_oil"] is True
-    assert "visible" in game.set_hidden_oil(False)
+    apply_now(game, "hidden_oil", False)
+    assert game.world["settings"]["hidden_oil"] is False
+    apply_now(game, "market", False)
+    assert game.rules["trade"]["requires_market"] is False
+
+
+def test_rules_survive_rollback_and_restart(game, tmp_path):
+    apply_now(game, "fog", True)
+    apply_now(game, "workers", 6)
+    game.rollback(0)                                         # the world goes back, the rules stay
+    assert game.world["settings"]["fog"] is True and game.rules["workers_per_tile"] == 6
+    game.queue_rule("expiry", 5)
+    again = Game(Store(str(tmp_path / "g.db")))
+    assert again.rules["workers_per_tile"] == 6 and again.pending_rules == {"expiry": 5}
 
 
 def test_info_pages(game):

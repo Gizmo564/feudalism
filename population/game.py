@@ -4,7 +4,7 @@ import json
 import os
 import random
 
-from . import advice, guide, infopage, pacts, world as W, tick, trade, victory, views, ruleset
+from . import advice, guide, infopage, pacts, rulepanel, world as W, tick, trade, victory, views, ruleset
 from .hexes import neighbors
 
 RULES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rules")
@@ -36,9 +36,10 @@ class Game:
         self.players = store.get("players", {})          # discord user id -> nation id
         self.world = store.get("world")
         self.rules = store.get("rules")
+        self.pending_rules = store.get("pending_rules", {})   # {rule key: new value}, applied at the next tick
 
     def save(self):
-        for k in ("phase", "signups", "players", "world", "rules"):
+        for k in ("phase", "signups", "players", "world", "rules", "pending_rules"):
             self.store.set(k, getattr(self, k))
 
     # ---------- setup (admin) ----------
@@ -50,6 +51,7 @@ class Game:
         if self.phase == "running":
             raise GameError("A game is already running")
         self.rules = ruleset.load(path)
+        self.pending_rules = {}
         self.phase, self.signups, self.players, self.world = "signup", [], {}, None
         self.save()
         return "Sign-ups are open for **%s**. Players use /join." % self.rules["name"]
@@ -80,35 +82,53 @@ class Game:
         self.save()
         return "%s joined as %s." % (name, name)
 
-    def set_fog(self, on):
-        self.need_running()
-        self.world["settings"]["fog"] = bool(on)
-        self.save()
-        return "Fog of war is now %s." % ("on" if on else "off")
+    # ---------- rules the admin can change (applied at the next tick) ----------
 
-    def set_hidden_oil(self, on):
+    def rule_rows(self):
+        """One dict per changeable rule: key, label, kind, current value, pending value (or None), limits, note."""
         self.need_running()
-        self.world["settings"]["hidden_oil"] = bool(on)
-        W.discover_oil(self.world)
+        rows = []
+        for key in rulepanel.keys(self.rules):
+            _, label, kind, _, _, limits, note = rulepanel.BY_KEY[key]
+            rows.append({"key": key, "label": label, "kind": kind, "limits": limits, "note": note,
+                         "risky": key in rulepanel.RISKY, "now": rulepanel.current(self.world, self.rules, key),
+                         "next": self.pending_rules.get(key)})
+        return rows
+
+    def queue_rule(self, key, value):
+        """Ask for a rule change at the next tick. Setting it back to the current value cancels the request."""
+        self.need_running()
+        try:
+            value = rulepanel.check(self.rules, key, value)
+        except ValueError as e:
+            raise GameError(str(e))
+        now = rulepanel.current(self.world, self.rules, key)
+        if value == now:
+            self.pending_rules.pop(key, None)
+            text = "%s stays %s." % (rulepanel.label(key), rulepanel.show(now))
+        else:
+            self.pending_rules[key] = value
+            text = "%s changes from %s to %s at the next tick." % (rulepanel.label(key), rulepanel.show(now),
+                                                                  rulepanel.show(value))
         self.save()
-        return "Oil deposits are now %s." % ("hidden until the land is claimed" if on else "visible to everyone")
+        return text
+
+    def apply_pending_rules(self):
+        """Put the queued rule changes into effect. Returns one line per change for the announcement."""
+        lines = []
+        for key in rulepanel.keys(self.rules):
+            if key in self.pending_rules:
+                old, new = rulepanel.current(self.world, self.rules, key), self.pending_rules[key]
+                rulepanel.apply(self.world, self.rules, key, new)
+                lines.append("Rule change: %s %s -> %s" % (rulepanel.label(key), rulepanel.show(old), rulepanel.show(new)))
+        self.pending_rules = {}
+        return lines
 
     def expand(self, rings):
         self.need_running()
         W.expand_map(self.world, self.rules, rings)
         self.save()
         return "Map expanded to radius %d (%d tiles)." % (self.world["radius"], len(self.world["tiles"]))
-
-    def set_empire(self, percent):
-        """Change the land share needed to win (the starting value; it still decays late in the game)."""
-        self.need_running()
-        if "ranks" not in self.rules or self.rules["victory"].get("land_share_percent") is None:
-            raise GameError("This mode has no land-share win condition")
-        if not 5 <= percent <= 100:
-            raise GameError("Pick a percent from 5 to 100")
-        self.rules["victory"]["land_share_percent"] = percent
-        self.save()
-        return "An empire now needs %d%% of the land (it can fall later in the game)." % percent
 
     def end(self):
         self.need_running()
@@ -122,6 +142,7 @@ class Game:
         if text is None:
             raise GameError("No snapshot for tick %d. Available: %s" % (to_tick, self.store.snapshot_ticks()))
         self.world = W.from_json(text)
+        rulepanel.sync_world(self.world, self.rules)        # rules you set since then stay in force
         self.phase = "running"
         self.save()
         return "Rolled back to tick %d." % to_tick
@@ -490,6 +511,7 @@ class Game:
         """Run one tick. Returns the public report text. With split_log the night's public events are left out
         (the bot posts them in the game-log channel instead; see public_events)."""
         self.need_running()
+        rule_lines = self.apply_pending_rules()
         before = {n["id"]: {"land": len(W.owned(self.world, n["id"])), "workers": n["workers"],
                             "soldiers": W.soldiers(self.world, n["id"]), "res": dict(n["resources"])}
                   for n in self.world["nations"] if n["alive"]}
@@ -502,7 +524,7 @@ class Game:
         self.world["last_events"] = events
         self.world["events"] = {}
         self.store.snapshot(self.world["tick"], W.to_json(self.world))
-        lines = ["**Tick %d**" % self.world["tick"]]
+        lines = ["**Tick %d**" % self.world["tick"]] + rule_lines
         if not split_log:
             shown = events.get("pacts", []) + ([] if self.world["settings"]["fog"] else events.get("public", []))
             lines += ["- " + e for e in shown[:15]]

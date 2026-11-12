@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from population import guide, infopage, mapnav, render, ruleset
+from population import guide, infopage, mapnav, render, rulepanel, ruleset
 from population.game import Game, GameError
 from population.store import Store
 from population.tutorial import Tutorial
@@ -861,24 +861,94 @@ async def admin_pause(interaction: discord.Interaction, paused: bool):
     await say(interaction, "Paused." if paused else "Resumed.")
 
 
-@admin.command(name="fog", description="Turn fog of war on or off")
-async def admin_fog(interaction: discord.Interaction, on: bool):
-    await admin_run(interaction, game.set_fog, on, public=True)
+class RulesView(discord.ui.View):
+    """The admin's rules panel: pick a rule, then flip it or step it. Changes wait for the next tick."""
+
+    def __init__(self, uid, g):
+        super().__init__(timeout=900)
+        self.uid, self.g = uid, g
+        self.key = rulepanel.keys(g.rules)[0]
+        self.layout()
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    def rows(self):
+        return {r["key"]: r for r in self.g.rule_rows()}
+
+    def text(self):
+        lines = ["**Game rules** - changes apply at the next tick and are announced.", ""]
+        for r in self.rows().values():
+            now = rulepanel.show(r["now"])
+            value = "%s -> **%s** (next tick)" % (now, rulepanel.show(r["next"])) if r["next"] is not None else "**%s**" % now
+            lines.append("%s%s: %s" % ("\u25b6 " if r["key"] == self.key else "", r["label"], value))
+        r = self.rows()[self.key]
+        lines += ["", r["note"]]
+        if r["risky"]:
+            lines.append("Careful: this changes the whole economy.")
+        return "\n".join(lines)
+
+    def layout(self):
+        self.clear_items()
+        rows = self.rows()
+        menu = discord.ui.Select(placeholder="Pick a rule...", row=0, options=[
+            discord.SelectOption(label=r["label"], value=k, default=k == self.key,
+                                 description="now %s%s" % (rulepanel.show(r["now"]),
+                                                           "" if r["next"] is None else ", next %s" % rulepanel.show(r["next"])))
+            for k, r in rows.items()])
+        menu.callback = self.pick(menu)
+        self.add_item(menu)
+        r = rows[self.key]
+        target = r["now"] if r["next"] is None else r["next"]
+        if r["kind"] == "switch":
+            self.add_item(self.button("Turn %s" % ("off" if target else "on"), self.set_to(not target)))
+        else:
+            lo, hi, step = r["limits"]
+            self.add_item(self.button("-%d" % step, self.set_to(target - step), disabled=target - step < lo))
+            self.add_item(self.button("%s" % target, None, disabled=True))
+            self.add_item(self.button("+%d" % step, self.set_to(target + step), disabled=target + step > hi))
+        self.add_item(self.button("Undo change", self.set_to(r["now"]), disabled=r["next"] is None))
+
+    def button(self, label, callback, disabled=False):
+        b = discord.ui.Button(label=label, row=1, disabled=disabled)
+        if callback:
+            b.callback = callback
+        return b
+
+    async def refresh(self, interaction):
+        self.layout()
+        await interaction.response.edit_message(content=self.text(), view=self)
+
+    def pick(self, menu):
+        async def cb(interaction):
+            self.key = menu.values[0]
+            await self.refresh(interaction)
+        return cb
+
+    def set_to(self, value):
+        async def cb(interaction):
+            try:
+                self.g.queue_rule(self.key, value)
+            except GameError as e:
+                return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+            await self.refresh(interaction)
+        return cb
 
 
-@admin.command(name="hiddenoil", description="Hide oil deposits until someone claims the land")
-async def admin_hiddenoil(interaction: discord.Interaction, on: bool):
-    await admin_run(interaction, game.set_hidden_oil, on, public=True)
+@admin.command(name="rules", description="Change game rules (switches and key numbers) at the next tick")
+async def admin_rules(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    try:
+        view = RulesView(interaction.user.id, game)
+    except GameError as e:
+        return await say(interaction, "Can't do that: %s" % e)
+    await interaction.response.send_message(view.text(), view=view, ephemeral=True)
 
 
 @admin.command(name="expand", description="Add rings of new land to the map")
 async def admin_expand(interaction: discord.Interaction, rings: app_commands.Range[int, 1, 5] = 1):
     await admin_run(interaction, game.expand, rings, public=True)
-
-
-@admin.command(name="empire", description="Set the land percent needed to win (Feudalism)")
-async def admin_empire(interaction: discord.Interaction, percent: int):
-    await admin_run(interaction, game.set_empire, percent, public=True)
 
 
 @admin.command(name="addplayer", description="Add a late joiner to a running game")
