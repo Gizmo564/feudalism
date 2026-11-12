@@ -282,7 +282,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             cv.oil(x + 8 * K, y - 8 * K, 0.85 * K)
         if t["building"] == "capital":
             cv.circle(x, y, 10 * K, (255, 255, 255), dark, 2 * (0.7 + 0.3 * K))
-            cv.icon(CROWN_ICON, x, y, 1.5 * K, dark, 1.3)
+            cv.icon(CROWN_ICON, x, y, 1.2 * K, dark, 1.3)
             if people and owner == nid:
                 housing_tag(cv, rules, "capital", x, y + 10 * K + s * 0.2, s)
             continue
@@ -290,7 +290,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         icon_col = _mix((24, 95, 165) if t["terrain"] == "water" else MUTED, base, 0.5)
         b = t["building"] if buildings else None
         if b:  # a building takes the place of the terrain icon
-            by, br, bs = y, 9 * K, 9 / 6.5 * K
+            by, br, bs = y, 9 * K, 9 / 6.5 * 0.8 * K
         elif show_icon:
             cv.icon(TERRAIN_ICON[t["terrain"]], x, y, K, icon_col)
         if b:
@@ -358,7 +358,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         for name, path in list(TERRAIN_ICON.items()) + list(BUILDING_ICON.items()) + [("capital", CROWN_ICON)]:
             if name in BUILDING_ICON or name == "capital":
                 cv.circle(x0 + 9, y, 9, (255, 255, 255), MUTED, 1.2)
-                cv.icon(path, x0 + 9, y, 1.25, INK, 1.2)
+                cv.icon(path, x0 + 9, y, 1.0, INK, 1.2)
             elif tint and not icons:
                 cv.rect(x0, y - 8, x0 + 18, y + 8, TINT[name], MUTED, 1)
             else:

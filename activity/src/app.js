@@ -353,7 +353,7 @@ function showMap(data, headers) {
         const ink = crown ? dark(color[t.owner] || "#888888") : "#2c2c2a";
         ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
         if (crown) { ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.stroke(); }
-        icon(t.building, x, y, ink, crown ? 1.4 : 1);
+        icon(t.building, x, y, ink, crown ? 0.85 : 0.8);
         for (let i = 1; i < (t.level || 1); i++) {                    // one dot per upgrade
           ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(x + (i - (t.level - 1) / 2 - 0.5) * size * 0.12, y + r - size * 0.07, size * 0.045, 0, 7); ctx.fill();
         }
