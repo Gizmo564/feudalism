@@ -45,7 +45,7 @@ const swatch = (colour) => el("i", {className: "sw", style: "background:" + colo
 // ---- the bars above the map: your name, your stock, what you hold ----
 function showBars(data, name) {
   const mine = data.nations.find((n) => n.id === data.me);
-  $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name);
+  $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name, el("span", {className: "night", textContent: "Night " + data.tick}));
   $("pills").replaceChildren(...data.resources.map(([r, n]) =>
     el("div", {className: "pill"}, el("i", {style: "background:" + (RES_COLOUR[r] || "#888")}), el("span", {textContent: cap(r)}), el("b", {textContent: n}))));
   const chip = (icon, label, n) => {
@@ -134,12 +134,16 @@ function showTile(t, data, card, act, msg) {
 // ---- the map view: pan by dragging, zoom with the wheel, pinch or the buttons, click a tile ----
 function showMap(data, headers) {
   const canvas = $("map"), ctx = canvas.getContext("2d");
-  const color = Object.fromEntries(data.nations.map((n) => [n.id, n.color]));
-  const tiles = data.tiles.map((t) => {
-    const [q, r] = t.k.split(",").map(Number);
-    return {...t, q, r, x: SQRT3 * (q + r / 2), y: 1.5 * r};      // position in units of one hex size
-  });
-  const at = Object.fromEntries(tiles.map((t) => [t.k, t]));
+  let color, tiles, at;
+  function adopt() {                                               // (re)build what is drawn from the latest data
+    color = Object.fromEntries(data.nations.map((n) => [n.id, n.color]));
+    tiles = data.tiles.map((t) => {
+      const [q, r] = t.k.split(",").map(Number);
+      return {...t, q, r, x: SQRT3 * (q + r / 2), y: 1.5 * r};      // position in units of one hex size
+    });
+    at = Object.fromEntries(tiles.map((t) => [t.k, t]));
+  }
+  adopt();
   let size = 34, cx = 0, cy = 0, coords = false, terrain = true, selected = null, W = 0, H = 0;   // (cx, cy): the map point at the centre
 
   const centreOn = (k) => { const t = at[k]; if (t) { cx = t.x; cy = t.y; } };
@@ -285,15 +289,26 @@ function showMap(data, headers) {
       msg = await got.json();
       if (!msg.message) msg = {ok: false, message: "That did not work."};
     } catch (e) { msg = {ok: false, message: "Could not reach the game."}; }
-    const fresh = await fetch("/.proxy/api/map", {headers});
-    if (fresh.ok) {
-      const d = await fresh.json();
-      for (const k of ["resources", "holdings", "armies", "caravans", "orders"]) data[k] = d[k];
-      showBars(data, data.name);
-      draw();
-    }
-    return open(t, msg);
+    await refresh();
+    return open(at[t.k] || t, msg);
   }
+
+  // fetch the latest map: the game changes at every tick, and orders change your stock, armies and queue
+  async function refresh() {
+    let got;
+    try { got = await fetch("/.proxy/api/map", {headers}); } catch (e) { return false; }
+    if (!got.ok) return false;
+    const fresh = await got.json(), newTick = fresh.tick !== data.tick;
+    Object.assign(data, fresh);
+    adopt(); showBars(data, data.name); draw();
+    return newTick;
+  }
+
+  // keep up with the game: look again every 15 seconds while the page is open, and show the new tile card after a tick
+  setInterval(async () => {
+    if (document.hidden) return;
+    if (await refresh() && selected && at[selected]) open(at[selected]);
+  }, 15000);
 
   async function pick(px, py) {
     let best = null, bestD = size * 0.95;

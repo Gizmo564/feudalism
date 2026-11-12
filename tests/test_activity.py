@@ -87,6 +87,7 @@ def test_map_data_follows_the_players_view(tmp_path):
         assert data["capital"] in [t["k"] for t in data["tiles"] if t["owner"] == 0]
         assert {"k", "terrain", "owner", "building", "oil", "visible"} <= set(data["tiles"][0])
         assert any(n["id"] == 0 and n["color"].startswith("#") for n in data["nations"])
+        assert data["tick"] == 0
         assert dict(data["resources"])["wood"] >= 0 and [r for r, _ in data["resources"]][:2] == ["food", "wood"]
         assert data["holdings"]["land"] and "capital" in data["holdings"]["buildings"]
         assert sum(data["holdings"]["land"].values()) == len([t for t in data["tiles"] if t["owner"] == 0])

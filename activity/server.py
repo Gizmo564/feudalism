@@ -99,7 +99,7 @@ def make_app(client_id, client_secret, game, call=discord_request):
                 buildings[t["building"]] = buildings.get(t["building"], 0) + 1
         stock = world["nations"][nid]["resources"]
         return web.json_response({
-            "me": nid, "capital": world["nations"][nid]["capital"], "nations": nations,
+            "tick": world["tick"], "me": nid, "capital": world["nations"][nid]["capital"], "nations": nations,
             "resources": [[r, stock.get(r, 0)] for r in rules["resources"]],
             "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
