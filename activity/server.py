@@ -5,6 +5,8 @@ import os
 import aiohttp
 from aiohttp import web
 
+from population import render, views
+
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 DISCORD_API = "https://discord.com/api"
 
@@ -33,17 +35,42 @@ def make_app(client_id, client_secret, game, call=discord_request):
             return web.json_response({"error": "login failed"}, status=401)
         return web.json_response({"access_token": data["access_token"]})
 
-    async def me(request):
-        """Who is asking? Ask Discord about the token, then look up their nation."""
+    async def asker(request):
+        """The Discord user making this request (checked with Discord), or None."""
         bearer = request.headers.get("Authorization", "")
         if not bearer.startswith("Bearer "):
-            return web.json_response({"error": "not logged in"}, status=401)
+            return None
         status, user = await call("GET", "/users/@me", headers={"Authorization": bearer})
-        if status != 200 or "id" not in user:
+        return user if status == 200 and "id" in user else None
+
+    async def me(request):
+        """Who is asking? Ask Discord about the token, then look up their nation."""
+        user = await asker(request)
+        if user is None:
             return web.json_response({"error": "not logged in"}, status=401)
         nid = game.players.get(str(user["id"]))
         nation = game.world["nations"][nid]["name"] if game.phase == "running" and nid is not None else None
         return web.json_response({"id": user["id"], "name": user.get("global_name") or user["username"], "nation": nation})
+
+    async def map_data(request):
+        """The map exactly as this player may see it (fog of war included)."""
+        user = await asker(request)
+        if user is None:
+            return web.json_response({"error": "not logged in"}, status=401)
+        nid = game.players.get(str(user["id"]))
+        if game.phase != "running" or nid is None:
+            return web.json_response({"error": "not in a running game"}, status=404)
+        world, rules = game.world, game.rules
+        tiles = views.map_view(world, rules, nid)
+        armies = views.armies_view(world, rules, nid)
+        shown = {t["owner"] for t in tiles if t["owner"] is not None} | {a["owner"] for a in armies} | {nid}
+        nations = [{"id": n["id"], "name": n["name"], "color": "#%02x%02x%02x" % render.nation_color(n["id"])}
+                   for n in world["nations"] if n["id"] in shown]
+        return web.json_response({
+            "me": nid, "capital": world["nations"][nid]["capital"], "nations": nations,
+            "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
+                       "oil": bool(t["oil"]), "visible": t["visible"]} for t in tiles],
+            "armies": [{"owner": a["owner"], "tile": a["tile"], "n": a["n"]} for a in armies]})
 
     async def index(request):
         return web.FileResponse(os.path.join(STATIC, "index.html"))
@@ -52,6 +79,7 @@ def make_app(client_id, client_secret, game, call=discord_request):
         app.router.add_get(prefix + "/api/config", config)
         app.router.add_post(prefix + "/api/token", token)
         app.router.add_get(prefix + "/api/me", me)
+        app.router.add_get(prefix + "/api/map", map_data)
         app.router.add_static(prefix + "/static", STATIC)
     app.router.add_get("/", index)
     return app

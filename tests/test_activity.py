@@ -76,3 +76,33 @@ def test_player_without_a_nation(tmp_path):
         finally:
             await c.close()
     asyncio.run(go())
+
+
+def test_map_data_follows_the_players_view(tmp_path):
+    async def steps(client, calls):
+        assert (await client.get("/api/map")).status == 401
+        got = await client.get("/.proxy/api/map", headers={"Authorization": "Bearer tok"})
+        data = await got.json()
+        assert got.status == 200 and data["me"] == 0
+        assert data["capital"] in [t["k"] for t in data["tiles"] if t["owner"] == 0]
+        assert {"k", "terrain", "owner", "building", "oil", "visible"} <= set(data["tiles"][0])
+        assert any(n["id"] == 0 and n["color"].startswith("#") for n in data["nations"])
+    run(tmp_path, steps)
+
+
+def test_map_data_hides_fogged_tiles_and_players_not_in_the_game(tmp_path):
+    async def go():
+        game = make_game(tmp_path)
+        game.world["settings"]["fog"] = True
+        async def asker(method, path, **kw):
+            return 200, {"id": kw["headers"]["Authorization"][7:], "username": "u"}
+        c = TestClient(TestServer(server.make_app("1", "s", game, asker)))
+        await c.start_server()
+        try:
+            data = await (await c.get("/api/map", headers={"Authorization": "Bearer 100"})).json()
+            fogged = [t for t in data["tiles"] if not t["visible"]]
+            assert fogged and all(t["owner"] is None and t["building"] is None and not t["oil"] for t in fogged)
+            assert (await c.get("/api/map", headers={"Authorization": "Bearer 999"})).status == 404
+        finally:
+            await c.close()
+    asyncio.run(go())
