@@ -381,3 +381,33 @@ def test_rules_panel_number_entry_and_reset(bot, game):
         assert "Can't do that" in j.response.send_message.await_args.args[0]
         assert game.pending_rules == {"scarcity": 350}
     asyncio.run(go())
+
+
+def test_hexpad_layout_and_clicks(bot, game):
+    async def go():
+        view = bot.HexPad(100, 0, game)
+        rows = view.pad()
+        assert [len(r) for r in rows] == [3, 4, 5, 4, 3] and rows[2][2] == game.world["nations"][0]["capital"]
+        assert view.total_children_count <= 40                 # Discord's limit for one message
+        tile_buttons = [c for row in view.children if type(row).__name__ == "ActionRow" for c in row.children
+                        if c.label and c.label != "\u00b7"]
+        assert len(tile_buttons) == 19 + 2        # 19 tiles + Recenter and Home
+        # click a free tile you can claim: the card and a Claim button appear, and the layout stays within the limit
+        free = sorted(mapnav.claimable(game.world, 0) & {k for r in rows for k in r})[0]
+        i = click(100)
+        await view.pick(free)(i)
+        i.edit_original_response.assert_awaited()
+        assert view.selected == free and view.total_children_count <= 40
+        claim = [c for row in view.children if type(row).__name__ == "ActionRow" for c in row.children
+                 if (c.label or "").startswith("Claim")][0]
+        j = click(100)
+        await claim.callback(j)
+        assert any(o["type"] == "claim" and o["tile"] == free for o in game.world["orders"])
+        # recentre moves the pad, home brings it back
+        await view.recenter(click(100))
+        assert view.center == free
+        await view.go_home(click(100))
+        assert view.center == game.world["nations"][0]["capital"]
+        assert await view.interaction_check(click(999)) is False
+        assert view.to_components()                            # serialises as a valid layout message
+    asyncio.run(go())

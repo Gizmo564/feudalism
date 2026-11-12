@@ -13,6 +13,7 @@ from population import guide, infopage, mapnav, render, rulepanel, ruleset, sche
 from population.game import Game, GameError
 from population.store import Store
 from population.tutorial import Tutorial
+from population import hexes, views
 from population.hexes import neighbors
 from population import world as W
 from population import tick
@@ -519,6 +520,133 @@ class MapView(discord.ui.View):
             self.choosing_army = False
             await self.order(interaction, self.g.move, int(menu.values[0]), self.selected)
         return cb
+
+
+class HexPad(discord.ui.LayoutView):
+    """EXPERIMENT: the map as one message with a hex-shaped grid of clickable tile buttons.
+    Click a tile to select it; its card and action buttons appear below. Click "Recenter" to move the grid there."""
+    EMOJI = {"field": "\U0001f33e", "forest": "\U0001f332", "hills": "\u26f0\ufe0f", "mountain": "\U0001f3d4\ufe0f",
+             "water": "\U0001f30a"}
+
+    def __init__(self, uid, nid, g=None):
+        super().__init__(timeout=900)
+        self.uid, self.nid, self.g = uid, nid, g or game
+        self.center = self.g.world["nations"][nid]["capital"]
+        self.selected = None
+        self.build()
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    def image(self):
+        return render.render(self.g.world, self.g.rules, nid=self.nid, center=self.center, radius=3, tile=48,
+                             legend=False, coords=True, tint=True, icons=False, claim=True, tidy=True,
+                             mark=self.selected, buildings=True)
+
+    def pad(self):
+        """The 19 tiles around the centre as rows of 3, 4, 5, 4, 3 (None = off the map)."""
+        q, r = hexes.parse(self.center)
+        rows = []
+        for dr in range(-2, 3):
+            rows.append([hexes.key(q + dq, r + dr) for dq in range(max(-2, -2 - dr), min(2, 2 - dr) + 1)])
+        return rows
+
+    def tile_button(self, k):
+        t = self.g.world["tiles"].get(k)
+        if t is None:
+            return discord.ui.Button(label="\u00b7", disabled=True)
+        info = self.info.get(k)
+        fog = info is not None and not info["visible"]
+        label = ("\u25b8" if k == self.selected else "") + ("\u2753" if fog else self.EMOJI.get(t["terrain"], "")) + k
+        if k in self.can_claim:
+            style = discord.ButtonStyle.success
+        elif t["owner"] == self.nid:
+            style = discord.ButtonStyle.primary
+        else:
+            style = discord.ButtonStyle.secondary
+        b = discord.ui.Button(label=label, style=style)
+        b.callback = self.pick(k)
+        return b
+
+    def build(self):
+        self.clear_items()
+        world, rules = self.g.world, self.g.rules
+        self.info = {v["k"]: v for v in views.map_view(world, rules, self.nid)}      # looked up once per redraw
+        self.can_claim = mapnav.claimable(world, self.nid)
+        text = "**Hex pad** (experiment) - click a tile. Green: free land you can claim. Blue: yours."
+        if self.selected:
+            text += "\n" + mapnav.tile_card(world, rules, self.nid, self.selected)["text"]
+        self.add_item(discord.ui.TextDisplay(text))
+        self.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem("attachment://map.png")))
+        for i, row in enumerate(self.pad()):
+            buttons = [self.tile_button(k) for k in row]
+            if i in (0, 4):                       # indent the short top and bottom rows
+                buttons.insert(0, discord.ui.Button(label="\u00b7", disabled=True))
+            self.add_item(discord.ui.ActionRow(*buttons))
+        move = discord.ui.Button(label="Recenter on selected", disabled=self.selected is None)
+        move.callback = self.recenter
+        home = discord.ui.Button(label="Home")
+        home.callback = self.go_home
+        self.add_item(discord.ui.ActionRow(move, home))
+        actions = self.action_buttons()
+        if actions:
+            self.add_item(discord.ui.ActionRow(*actions))
+
+    def action_buttons(self):
+        if self.selected is None:
+            return []
+        card = mapnav.tile_card(self.g.world, self.g.rules, self.nid, self.selected)
+        out = []
+        if card["can_claim"]:
+            ok = not card["claim_queued"] and not card["claim_missing"]
+            b = discord.ui.Button(label="Claim (%s)" % money(card["claim_cost"]) if ok else "Claim: not now",
+                                  style=discord.ButtonStyle.success, disabled=not ok)
+            b.callback = lambda i: self.order(i, self.g.claim, self.selected)
+            out.append(b)
+        for name in card["builds"]:
+            missing = card["build_missing"][name]
+            b = discord.ui.Button(label=("%s: short %s" % (name.capitalize(), money(missing))) if missing
+                                  else "%s (%s)" % (name.capitalize(), money(card["build_cost"][name])),
+                                  disabled=bool(missing))
+            b.callback = (lambda n: lambda i: self.order(i, self.g.build, self.selected, n))(name)
+            out.append(b)
+        return out[:5]
+
+    async def redraw(self, interaction):
+        self.build()
+        await interaction.response.defer()
+        await interaction.edit_original_response(attachments=[png(self.image())], view=self)
+
+    def pick(self, k):
+        async def cb(interaction):
+            self.selected = k
+            await self.redraw(interaction)
+        return cb
+
+    async def recenter(self, interaction):
+        self.center = self.selected
+        await self.redraw(interaction)
+
+    async def go_home(self, interaction):
+        self.center = self.g.world["nations"][self.nid]["capital"]
+        await self.redraw(interaction)
+
+    async def order(self, interaction, fn, *args):
+        try:
+            text = fn(interaction.user.id, *args)
+        except (GameError, ValueError) as e:
+            text = "Can't do that: %s" % e
+        await interaction.response.send_message(text, ephemeral=True)
+
+
+@tree.command(description="EXPERIMENT: a map made of clickable tile buttons")
+async def hexmap(interaction: discord.Interaction):
+    nid = my_nation(interaction)
+    if nid is None:
+        return await say(interaction, "Can't do that: you need to be a player in a running game")
+    await interaction.response.defer(ephemeral=True)
+    view = HexPad(interaction.user.id, nid, game_for(interaction.user.id))
+    await interaction.followup.send(file=png(view.image()), view=view, ephemeral=True)
 
 
 @tree.command(description="Claim a free tile next to your land (1 per night, cost rises as you grow)")
