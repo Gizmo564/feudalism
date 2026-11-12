@@ -502,3 +502,10 @@ def test_reset_stock_gives_everyone_the_start_amounts(game):
     start = game.rules["start"]["resources"]
     assert all(n["resources"] == {r: start.get(r, 0) for r in game.rules["resources"]} for n in game.world["nations"])
     assert any("reset your stockpile" in e for e in game.world["events"]["1"])
+
+
+def test_reset_stock_uses_start_amounts_waiting_for_the_tick(game):
+    game.queue_rule("start_wood", 77)
+    game.reset_stock()
+    assert all(n["resources"]["wood"] == 77 for n in game.world["nations"])
+    assert game.rules["start"]["resources"]["wood"] != 77          # the rule itself still changes at the tick
