@@ -5,7 +5,7 @@ import os
 import aiohttp
 from aiohttp import web
 
-from population import render, views
+from population import mapnav, render, views
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 DISCORD_API = "https://discord.com/api"
@@ -79,6 +79,17 @@ def make_app(client_id, client_secret, game, call=discord_request):
                        "oil": bool(t["oil"]), "visible": t["visible"]} for t in tiles],
             "armies": [{"owner": a["owner"], "tile": a["tile"], "n": a["n"]} for a in armies]})
 
+    async def tile_data(request):
+        """What one tile is and what this player could do there (the same card the Discord map shows)."""
+        user = await asker(request)
+        if user is None:
+            return web.json_response({"error": "not logged in"}, status=401)
+        nid = game.players.get(str(user["id"]))
+        if game.phase != "running" or nid is None:
+            return web.json_response({"error": "not in a running game"}, status=404)
+        card = mapnav.tile_card(game.world, game.rules, nid, request.query.get("k", ""))
+        return web.json_response({k: card[k] for k in ("text", "can_claim", "builds", "can_move")})
+
     async def index(request):
         return web.FileResponse(os.path.join(STATIC, "index.html"))
 
@@ -87,6 +98,7 @@ def make_app(client_id, client_secret, game, call=discord_request):
         app.router.add_post(prefix + "/api/token", token)
         app.router.add_get(prefix + "/api/me", me)
         app.router.add_get(prefix + "/api/map", map_data)
+        app.router.add_get(prefix + "/api/tile", tile_data)
         app.router.add_static(prefix + "/static", STATIC)
     app.router.add_get("/", index)
     return app

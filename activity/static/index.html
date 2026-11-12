@@ -14,6 +14,8 @@
                              font: inherit; }
     #bar button { cursor: pointer; }
     #bar button.on { background: #5865f2; }
+    #card { position: absolute; left: 8px; bottom: 8px; max-width: 320px; display: none; background: #1e1f22;
+            border-radius: 8px; padding: 10px 12px; line-height: 1.4; white-space: pre-line; }
   </style>
 </head>
 <body>
@@ -24,6 +26,7 @@
     <button id="zin">+</button><button id="zout">&minus;</button>
     <button id="coords">Coords</button><button id="home">Capital</button>
   </div>
-  <script src="/static/app.js?v=2"></script>
+  <div id="card"></div>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

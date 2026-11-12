@@ -113,3 +113,17 @@ def test_pages_are_never_cached(tmp_path):
         for path in ("/", "/static/app.js", "/api/config"):
             assert (await client.get(path)).headers["Cache-Control"] == "no-store"
     run(tmp_path, steps)
+
+
+def test_tile_card(tmp_path):
+    async def steps(client, calls):
+        assert (await client.get("/api/tile?k=0,0")).status == 401
+        game_map = await (await client.get("/api/map", headers={"Authorization": "Bearer tok"})).json()
+        cap = game_map["capital"]
+        got = await client.get("/.proxy/api/tile?k=" + cap, headers={"Authorization": "Bearer tok"})
+        card = await got.json()
+        assert got.status == 200 and cap in card["text"] and "Aldmere" in card["text"]
+        assert set(card) == {"text", "can_claim", "builds", "can_move"}
+        nowhere = await (await client.get("/api/tile?k=99,99", headers={"Authorization": "Bearer tok"})).json()
+        assert nowhere["text"] == "No such tile."
+    run(tmp_path, steps)
