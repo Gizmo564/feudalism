@@ -890,6 +890,25 @@ async def admin_pause(interaction: discord.Interaction, paused: bool):
     await say(interaction, "Paused." if paused else "Resumed.")
 
 
+class NumberModal(discord.ui.Modal):
+    """A small pop-up to type an exact number for a rule."""
+
+    def __init__(self, view, key, label, lo, hi):
+        super().__init__(title=label[:45])
+        self.view, self.key, self.lo, self.hi = view, key, lo, hi
+        self.number = discord.ui.TextInput(label="New value (%d to %d)" % (lo, hi), max_length=6)
+        self.add_item(self.number)
+
+    async def on_submit(self, interaction):
+        try:
+            self.view.g.queue_rule(self.key, int(self.number.value.strip()))
+        except ValueError:
+            return await interaction.response.send_message("Type a whole number, like %d." % self.lo, ephemeral=True)
+        except GameError as e:
+            return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+        await self.view.refresh(interaction)
+
+
 class RulesView(discord.ui.View):
     """The admin's rules panel: pick a rule, then flip it or step it. Changes wait for the next tick."""
 
@@ -940,6 +959,7 @@ class RulesView(discord.ui.View):
             self.add_item(self.button("-%d" % step, self.set_to(target - step), disabled=target - step < lo))
             self.add_item(self.button("%s" % target, None, disabled=True))
             self.add_item(self.button("+%d" % step, self.set_to(target + step), disabled=target + step > hi))
+            self.add_item(self.button("Type a number", self.type_number(r["label"], lo, hi)))
         self.add_item(self.button("Undo change", self.set_to(r["now"]), disabled=r["next"] is None))
 
     def button(self, label, callback, disabled=False):
@@ -956,6 +976,11 @@ class RulesView(discord.ui.View):
         async def cb(interaction):
             self.key = menu.values[0]
             await self.refresh(interaction)
+        return cb
+
+    def type_number(self, label, lo, hi):
+        async def cb(interaction):
+            await interaction.response.send_modal(NumberModal(self, self.key, label, lo, hi))
         return cb
 
     def set_to(self, value):
@@ -977,6 +1002,11 @@ async def admin_rules(interaction: discord.Interaction):
     except GameError as e:
         return await say(interaction, "Can't do that: %s" % e)
     await interaction.response.send_message(view.text(), view=view, ephemeral=True)
+
+
+@admin.command(name="resetrules", description="Put every rule back to the mode's defaults (next tick if the game is running)")
+async def admin_resetrules(interaction: discord.Interaction):
+    await admin_run(interaction, game.reset_rules, public=True)
 
 
 @admin.command(name="expand", description="Add rings of new land to the map")

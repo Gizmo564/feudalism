@@ -423,3 +423,23 @@ def test_tick_schedule(rules):
     assert not schedule.is_due(at(12, 5, 10), at(12, 5, 4), 6, "02:00", tz, "5")
     from population import rulepanel
     assert "tick_hours" in rulepanel.keys(rules)                                 # and the admin can change it
+
+
+def test_reset_rules_to_defaults(game):
+    assert "already at its default" in game.reset_rules()
+    game.queue_rule("scarcity", 500)
+    game.queue_rule("expiry", 9)
+    apply_now(game, "workers", 7)
+    game.queue_rule("fog", True)
+    assert "4 rules will go back" in game.reset_rules()      # workers (live), scarcity/expiry/fog (pending) all return
+    game.run_tick()
+    assert game.rules["workers_per_tile"] == 5 and game.rules["claim"]["scarcity_percent"] == 200
+    assert game.rules["trade"]["offer_expires_ticks"] == 3 and game.world["settings"]["fog"] is False
+    assert "already at its default" in game.reset_rules()
+
+
+def test_reset_rules_before_start(tmp_path):
+    g = Game(Store(str(tmp_path / "r.db")))
+    g.open_signup("feudalism")
+    g.queue_rule("scarcity", 700)
+    assert "right away" in g.reset_rules() and g.rules["claim"]["scarcity_percent"] == 200

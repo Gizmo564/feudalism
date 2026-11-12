@@ -120,6 +120,24 @@ class Game:
         self.save()
         return text
 
+    def reset_rules(self):
+        """Ask for every changeable rule to go back to the mode's own ruleset file."""
+        self.need_rules()
+        original = next((r for r in (ruleset.load(os.path.join(RULES_DIR, f)) for f in sorted(os.listdir(RULES_DIR))
+                                      if f.endswith(".json")) if r["name"] == self.rules["name"]), None)
+        if original is None:
+            raise GameError("I can't find the default rules for %s" % self.rules["name"])
+        changed = 0
+        for key in rulepanel.keys(self.rules):
+            want = rulepanel.current(None, original, key)
+            if want != rulepanel.current(self.world, self.rules, key) or key in self.pending_rules:
+                self.queue_rule(key, want)
+                changed += 1
+        if not changed:
+            return "Every rule is already at its default."
+        when = "right away" if self.phase == "signup" else "at the next tick"
+        return "%d rule%s will go back to the default %s." % (changed, "" if changed == 1 else "s", when)
+
     def need_rules(self):
         if self.phase not in ("signup", "running"):
             raise GameError("No game is set up yet. Use /admin open first")

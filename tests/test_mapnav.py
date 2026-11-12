@@ -355,3 +355,29 @@ def test_rules_panel_before_the_game_starts(bot, tmp_path):
         await find(view, "Turn on").callback(click(100))
         assert g.rules["fog_of_war"] is True and g.pending_rules == {} and find(view, "Turn off") is not None
     asyncio.run(go())
+
+
+def test_rules_panel_number_entry_and_reset(bot, game):
+    async def go():
+        view = bot.RulesView(100, game)
+        menu = selects(view)[0]
+        menu._values = ["scarcity"]
+        await view.pick(menu)(click(100))
+        i = click(100)
+        i.response.send_modal = AsyncMock()
+        await find(view, "Type a number").callback(i)
+        modal = i.response.send_modal.await_args.args[0]
+        modal.number._value = "350"
+        j = click(100)
+        await modal.on_submit(j)
+        assert game.pending_rules == {"scarcity": 350} and "350" in view.text()
+        modal.number._value = "abc"
+        j = click(100)
+        await modal.on_submit(j)
+        assert "whole number" in j.response.send_message.await_args.args[0]
+        modal.number._value = "99999"
+        j = click(100)
+        await modal.on_submit(j)
+        assert "Can't do that" in j.response.send_message.await_args.args[0]
+        assert game.pending_rules == {"scarcity": 350}
+    asyncio.run(go())

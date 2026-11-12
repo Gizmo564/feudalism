@@ -32,7 +32,7 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 - `/tutorial start|night|hint|stop` – a private practice game against two simple rivals. While it is on, every command works on the practice realm.
 
 ## Admin extras
-- `/admin rules` – a private panel to change fog of war, hidden oil, market-needed-to-trade, win share, land price rise, offer expiry, hours between ticks and workers per tile. Changes wait for the next tick and are announced. (Replaces the old `/admin fog`, `hiddenoil` and `empire`.)
+- `/admin rules` – a private panel to change fog of war, hidden oil, market-needed-to-trade, win share, land price rise, offer expiry, hours between ticks and workers per tile. Numbers can be stepped with -/+ or typed with "Type a number". Changes wait for the next tick and are announced. `/admin resetrules` puts every rule back to the mode's defaults. (Replaces the old `/admin fog`, `hiddenoil` and `empire`.)
 - Sign-ups: `/admin open` starts a fresh list; `/admin close` stops joins (names kept); `/admin reopen` lets people join again; `/admin clear` wipes the names and leaves sign-ups closed. `/admin start` works whether open or closed.
 - `/admin gamelog #channel` – post each night's public events there as a story (leave the channel empty to turn it off).
 - Players get a private message when the game starts, and each night's `/report` as a DM. Set `DM_REPORTS=0` in `.env` to turn the DMs off (people with DMs closed are skipped quietly).
