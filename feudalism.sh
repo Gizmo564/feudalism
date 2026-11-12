@@ -32,6 +32,7 @@ feudalism <command>
   logs [-f]            recent log lines (-f keeps following)
   update               get the latest code from GitHub and restart
   auto on | off        turn automatic updates on or off
+  try <branch>         switch to a test branch from GitHub and restart (back again: feudalism try main)
   env                  edit the settings file (.env), then offer to restart
 
   backup [folder]      save game.db (default folder ~/feudalism-backups)
@@ -56,6 +57,15 @@ case "$cmd" in
       off) exec "$APP_DIR/install.sh" --no-auto ;;
       *)   echo "Use: feudalism auto on|off"; exit 1 ;;
     esac ;;
+  try)
+    branch="${1:-}"
+    [ -n "$branch" ] || { echo "Use: feudalism try <branch>   (back to normal: feudalism try main)"; exit 1; }
+    cd "$APP_DIR"
+    git fetch -q origin
+    git checkout -q "$branch" 2>/dev/null || git checkout -q -b "$branch" "origin/$branch" \
+      || { echo "No branch called $branch on GitHub."; exit 1; }
+    echo "Now on branch $branch."
+    exec "$APP_DIR/install.sh" ;;
   env)
     "${EDITOR:-nano}" "$APP_DIR/.env"
     read -r -p "Restart the bot to use the new settings? [y/N] " yn
