@@ -31,6 +31,7 @@ BUILDING_ICON = {
     "market": "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
     "wall": "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
 }
+CARAVAN_ICON = "M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3"
 OIL_DROP = "M0 -6Q5 0 4 3Q3 6 0 6Q-3 6 -4 3Q-5 0 0 -6Z"
 OIL_SHINE = "M-2 2Q-2 3.6 -0.6 4.2"
 OIL_COLOUR = (52, 44, 40)
@@ -328,6 +329,14 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             top = y - hh / 2 if tidy else y + s * 0.3
             cv.rect(x - w / 2, top, x + w / 2, top + hh, (255, 255, 255), nation_colours(a["owner"])[1], 1.5)
             cv.text(x, top + hh / 2, label, s * 0.26 if tidy else s * 0.3, INK)
+
+        for c in views.caravans_view(world, rules, nid):             # a small white cart badge, top-left of its tile
+            if c["tile"] not in keys:
+                continue
+            x, y = pos[c["tile"]][0] + ox - s * 0.45, pos[c["tile"]][1] + oy - s * 0.42
+            r = s * 0.27
+            cv.circle(x, y, r, (255, 255, 255), nation_colours(c["from"])[1], 1.5)
+            cv.icon(CARAVAN_ICON, x, y, r / 8.5, INK, width=1.6)
 
     if legend:
         x0, y = map_w + 12, 22

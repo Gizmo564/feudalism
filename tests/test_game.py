@@ -443,3 +443,33 @@ def test_reset_rules_before_start(tmp_path):
     g.open_signup("feudalism")
     g.queue_rule("scarcity", 700)
     assert "right away" in g.reset_rules() and g.rules["claim"]["scarcity_percent"] == 200
+
+
+def test_caravan_rules_are_in_the_panel(game):
+    keys = [r["key"] for r in game.rule_rows()]
+    assert "caravans" in keys and "trade_speed" in keys
+    assert game.rules["trade"]["caravans"] is False                          # off unless an admin turns it on
+    apply_now(game, "caravans", True)
+    assert game.rules["trade"]["caravans"] is True
+    apply_now(game, "trade_speed", 3)
+    assert game.rules["movement"]["trade_tiles_per_tick"] == 3
+    with pytest.raises(GameError):
+        game.queue_rule("trade_speed", 0)
+
+
+def test_caravan_shows_on_the_tile_card_and_the_map(game):
+    from population import mapnav, render, trade
+    trade.send_caravan(game.world, 0, 1, {"wood": 5})
+    k = game.world["caravans"][0]["tile"]
+    assert "Caravan: Aldmere to Brask, carrying 5 wood." in mapnav.tile_card(game.world, game.rules, 0, k)["text"]
+    png = render.render(game.world, game.rules, 0, center=k, radius=2)
+    assert png[:4] == b"\x89PNG"
+    json = __import__("json")
+    json.dumps(game.world)
+
+
+def test_help_mentions_caravans_only_when_on(game):
+    pages = lambda: " ".join(game.help(t) for t in ("basics", "resources", "war", "winning", "commands")).lower()
+    assert "caravan" not in pages()
+    apply_now(game, "caravans", True)
+    assert "caravan" in pages()

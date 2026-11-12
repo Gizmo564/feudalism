@@ -33,6 +33,18 @@ def armies_view(world, rules, nid):
     return [a for a in world["armies"] if a["owner"] == nid or a["tile"] in vis]
 
 
+def caravans_view(world, rules, nid):
+    """Your own caravans (with their cargo), and other nations' caravans only on tiles you can see (no cargo)."""
+    vis = visible_keys(world, rules, nid)
+    out = []
+    for c in world.get("caravans", []):
+        if nid in (c["from"], c["to"]):
+            out.append(dict(c))
+        elif c["tile"] in vis:
+            out.append({k: v for k, v in c.items() if k != "res"})
+    return out
+
+
 def public_standings(world, rules, nid):
     """Land and population for every nation with fog off; just your own with fog on."""
     rows = []

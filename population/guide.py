@@ -89,6 +89,8 @@ def war(rules):
         "",
         "**Trade**",
         "/trade needs a Market on both sides. Name a nation, or leave 'to' empty to post on the trade board for anyone. Offers expire after %d nights; goods take time to arrive." % rules["trade"]["offer_expires_ticks"],
+        *(["Goods travel as caravans over land. An army of a third nation that stands on one captures it, so guard the road."]
+          if rules["trade"].get("caravans") else []),
         "/pact writes a promise between two nations on the public record. The game never enforces it; breaking one is announced.",
     ])
 

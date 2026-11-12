@@ -715,3 +715,109 @@ def test_open_offer_needs_the_senders_market_and_a_market_to_accept(rules):
         trade.accept(w, rules, tid, 1)               # no market
     trade.decline(w, tid, 0)
     assert trade.find(w, tid)["status"] == "withdrawn"
+
+
+# ---------- caravans ----------
+
+def caravan_world(rules, third=False):
+    rules["trade"]["caravans"] = True
+    w = market_world(rules)
+    if third:
+        W.found_nation(w, rules, "C", "0,3", dict(rules["start"]["resources"]))
+    return w
+
+
+def run_caravans(w, rules, ticks):
+    for _ in range(ticks):
+        tick.trade.move_caravans(w, rules)
+        w["tick"] += 1
+
+
+def test_caravans_replace_shipments_and_carry_goods_over_land(rules):
+    w = caravan_world(rules)
+    wood0, stone0 = w["nations"][0]["resources"]["wood"], w["nations"][1]["resources"]["stone"]
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {"resources": {"stone": 5}})
+    trade.accept(w, rules, tid, 1)
+    assert w["shipments"] == [] and len(w["caravans"]) == 2
+    assert w["nations"][0]["resources"]["wood"] == wood0 - 10              # the goods left at once
+    run_caravans(w, rules, 1)
+    assert [c["tile"] for c in w["caravans"]] == ["0,0", "0,0"]            # 2 tiles a tick, on the way
+    assert w["nations"][1]["resources"]["wood"] == rules["start"]["resources"]["wood"]
+    run_caravans(w, rules, 1)
+    assert w["caravans"] == []
+    assert w["nations"][1]["resources"]["wood"] == rules["start"]["resources"]["wood"] + 10
+    assert w["nations"][0]["resources"]["stone"] == rules["start"]["resources"]["stone"] + 5
+    assert any("caravan arrived" in e for e in w["events"]["1"])
+
+
+def test_caravan_can_be_captured_by_a_third_nation(rules):
+    w = caravan_world(rules, third=True)
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {})
+    trade.accept(w, rules, tid, 1)
+    W.add_army(w, 2, "0,0", 3)
+    wood_c = w["nations"][2]["resources"]["wood"]
+    run_caravans(w, rules, 1)
+    assert w["caravans"] == []
+    assert w["nations"][2]["resources"]["wood"] == wood_c + 10
+    assert w["nations"][1]["resources"]["wood"] == rules["start"]["resources"]["wood"]      # never arrived
+    assert any("captured" in e for e in w["events"]["0"]) and any("captured" in e for e in w["events"]["1"])
+    assert any("captured a caravan" in e for e in w["events"]["2"])
+
+
+def test_an_army_arriving_on_a_waiting_caravan_captures_it(rules):
+    w = caravan_world(rules, third=True)
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {})
+    trade.accept(w, rules, tid, 1)
+    run_caravans(w, rules, 1)                                              # now standing on 0,0
+    W.add_army(w, 2, "0,0", 3)
+    run_caravans(w, rules, 1)
+    assert w["caravans"] == [] and w["nations"][2]["resources"]["wood"] >= rules["start"]["resources"]["wood"] + 10
+
+
+def test_the_two_traders_armies_do_not_capture(rules):
+    w = caravan_world(rules)
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {})
+    trade.accept(w, rules, tid, 1)
+    W.add_army(w, 1, "0,0", 3)
+    W.add_army(w, 0, "1,0", 3)
+    run_caravans(w, rules, 2)
+    assert w["nations"][1]["resources"]["wood"] == rules["start"]["resources"]["wood"] + 10
+
+
+def test_no_land_route_blocks_a_caravan_trade_but_not_land_or_offers(rules):
+    w = caravan_world(rules)
+    for k, t in w["tiles"].items():
+        if k.startswith("0,") or k.startswith("-0,"):
+            t["terrain"] = "water"
+    wood0 = w["nations"][0]["resources"]["wood"]
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {})
+    with pytest.raises(ValueError, match="no land route"):
+        trade.accept(w, rules, tid, 1)
+    assert w["nations"][0]["resources"]["wood"] == wood0 and w["caravans"] == []        # nothing changed
+    assert trade.find(w, tid)["status"] == "open"
+
+
+def test_caravan_speed_and_old_worlds(rules):
+    w = caravan_world(rules)
+    rules["movement"]["trade_tiles_per_tick"] = 1
+    del w["caravans"]                                                       # a world saved before caravans existed
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {})
+    trade.accept(w, rules, tid, 1)
+    run_caravans(w, rules, 1)
+    assert w["caravans"][0]["tile"] == "-1,0"
+    import json
+    json.dumps(w)                                                           # still saveable
+
+
+def test_who_sees_a_caravan(rules):
+    w = caravan_world(rules, third=True)
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 10}}, {})
+    trade.accept(w, rules, tid, 1)
+    mine = views.caravans_view(w, rules, 0)
+    assert mine[0]["res"] == {"wood": 10}
+    assert views.caravans_view(w, rules, 1)[0]["res"] == {"wood": 10}
+    rules["vision_radius"] = 1
+    assert views.caravans_view(w, rules, 2) == []                           # far away: unseen
+    W.add_army(w, 2, "-2,1", 1)
+    seen = views.caravans_view(w, rules, 2)
+    assert len(seen) == 1 and "res" not in seen[0]                          # seen, but not what it carries

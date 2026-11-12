@@ -127,8 +127,8 @@ def new_world(rules, names, radius, seed):
         "seed": seed, "tick": 0, "radius": radius,
         "settings": {"fog": rules["fog_of_war"], "hidden_oil": rules.get("hidden_oil", True)},
         "tiles": {}, "nations": [], "armies": [], "orders": [],
-        "trades": [], "shipments": [], "events": {}, "winner": None,
-        "next_army_id": 1, "next_trade_id": 1,
+        "trades": [], "shipments": [], "caravans": [], "events": {}, "winner": None,
+        "next_army_id": 1, "next_trade_id": 1, "next_caravan_id": 1,
     }
     make_tiles(rules, rng, within("0,0", radius), world["tiles"])
     for name in names:
