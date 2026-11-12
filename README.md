@@ -3,7 +3,7 @@
 - `rules/population.json` holds every game number. To change the rules, edit a copy and pass it to `simulate.py --rules`.
 - `population/` is the engine: `world.py` (state, map), `tick.py` (orders and the nightly tick), `combat.py`, `trade.py`, `victory.py`, `views.py` (fog), `bot.py` (test players).
 - Run tests: `python3 -m pytest -q`
-- Balance check: `python3 simulate.py --players 16 --radius 8 --seeds 5`
+- Balance check: `python3 simulate.py --players 16 --radius 8 --seeds 5`; building pacing: `python3 pacing.py 12 8`
 
 All numbers in the ruleset are placeholders to be tuned.
 
@@ -27,7 +27,7 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 - `/info` – your nation in four tabs (Overview, Economy, Land, Military) with alerts at the top; change work priorities with the buttons on the Economy tab.
 - `/report` – what happened to you last night. `/status`, `/standings`, `/map` – quick views.
 - `/help` – how to play in five short pages. `/cancel` – clear tonight's orders.
-- `/claim`, `/build`, `/train`, `/move`, `/priorities`, `/trade`, `/offers`, `/accept`, `/decline` – typed versions of orders. `/trade` with no `to` posts an open offer on the trade board (Accept/Decline buttons; `/admin tradeboard` picks the channel, else announcements).
+- `/claim`, `/build`, `/upgrade`, `/train`, `/move`, `/priorities`, `/trade`, `/offers`, `/accept`, `/decline` – typed versions of orders. `/trade` with no `to` posts an open offer on the trade board (Accept/Decline buttons; `/admin tradeboard` picks the channel, else announcements).
 - `/pact propose|accept|decline|break|list` – promises between nations, kept as a public record and never enforced. Orders are checked when you give them, with a message saying what to do instead.
 - `/tutorial start|night|hint|stop` – a private practice game against two simple rivals. While it is on, every command works on the practice realm.
 
@@ -37,7 +37,7 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 - Sign-ups: `/admin open` starts a fresh list; `/admin close` stops joins (names kept); `/admin reopen` lets people join again; `/admin clear` wipes the names and leaves sign-ups closed. `/admin start` works whether open or closed.
 - `/admin errorlog` – the last 10 errors the bot hit (command, who, what, and where in the code). Errors also go to `feudalism logs`.
 - `/admin gamelog #channel` – post each night's public events there as a story (leave the channel empty to turn it off).
-- Players get a private message when the game starts, and each night's `/report` as a DM. Set `DM_REPORTS=0` in `.env` to turn the DMs off (people with DMs closed are skipped quietly).
+- Private messages are opt-in: nobody is DMed until they run `/dms on` (or press the button on the Activity's Report tab). Then they get the start message, each night's report and private trade offers. Admins can't switch it on for anyone. `DM_REPORTS=0` in `.env` (or `/admin settings`) is a master switch that stops all report DMs.
 
 ## Installing on a server (Ubuntu)
 
@@ -68,3 +68,11 @@ On the server, `feudalism help` lists everything:
 - `feudalism games` – how many games and servers, each game's size and last tick time, and whether the box is getting too busy. The bot owner can see the same in Discord with `/admin botstats`.
 
 `feudalism-update` and `feudalism-backup` still work too.
+
+
+## Map, prices and upgrades (Crownfall update)
+- **Map size** scales with the players: `/admin start` with no radius uses the people joined, or `expected_players` if you give it (4 players: radius 5, 8: 8, 12: 9, 16: 11, 24: 13). Give a radius to override.
+- **Map shape**: water first (rivers and lakes), then mountain ranges, then big patches of field, forest and hills, with a repair step so every nation can reach each resource within a few claims. Big biomes mean someone often lacks something and has a reason to trade.
+- **Prices rise**: each building of a kind you already own makes the next of that kind 15% dearer (`/admin rules`, "Building price rise").
+- **Upgrades**: `/upgrade` (or the tile card) makes a home hold more workers or a barracks more soldiers, up to level 3. The map shows a dot per upgrade.
+- **Activity**: besides the map it now has Nation (people, work, priorities, training), Trade (offers, private or on the board), Pacts and Report tabs. Every command still works too.

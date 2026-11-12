@@ -7,7 +7,7 @@ from . import world as W
 from . import combat, trade, victory
 from .hexes import neighbors
 
-ORDER_TYPES = ("claim", "build", "train", "move")
+ORDER_TYPES = ("claim", "build", "upgrade", "train", "move")
 
 
 # ---------- player actions (stored now, carried out at the next tick) ----------
@@ -20,6 +20,8 @@ def queue(world, rules, nid, order):
         raise ValueError("unknown order type")
     if order["type"] == "build" and order.get("building") not in rules["buildings"]:
         raise ValueError("unknown building")
+    if order["type"] == "upgrade" and not isinstance(order.get("tile"), str):
+        raise ValueError("upgrade needs a tile")
     if order["type"] == "train" and not (isinstance(order.get("n"), int) and order["n"] > 0):
         raise ValueError("train needs a positive number")
     o = dict(order)
@@ -103,6 +105,22 @@ def pay(res, cost):
         res[r] -= v
 
 
+def build_cost(world, rules, nid, building, queued=0):
+    """Each building you already own of the same kind makes the next one dearer. `queued` counts ones already ordered tonight."""
+    rise = rules.get("build", {}).get("rise_percent", 0)
+    have = sum(1 for t in world["tiles"].values() if t["owner"] == nid and t["building"] == building) + queued
+    return {r: -(-v * (100 + rise * have) // 100) if v else 0 for r, v in rules["buildings"][building]["cost"].items()}
+
+
+def upgrade_of(rules, tile):
+    """The next upgrade of the building on this tile ({"cost": ..., housing numbers}), or None."""
+    if tile["building"] in (None, "capital"):
+        return None
+    ups = rules["buildings"][tile["building"]].get("upgrades", [])
+    level = W.level_of(tile)
+    return ups[level - 1] if level - 1 < len(ups) else None
+
+
 def claim_cost(world, rules, nid):
     c = rules["claim"]
     count = len(W.owned(world, nid))
@@ -173,12 +191,31 @@ def do_build(world, rules, n, o):
         return W.ev(world, nid, "Build on %s failed: it already has a building" % k)
     if foreign_army_on(world, k, nid):
         return W.ev(world, nid, "Build on %s failed: foreign soldiers are there" % k)
-    cost = rules["buildings"][b]["cost"]
+    cost = build_cost(world, rules, nid, b)
     if not can_pay(n["resources"], cost):
         return W.ev(world, nid, "Build %s failed: not enough resources (need %s)" % (b, cost))
     pay(n["resources"], cost)
     t["building"] = b
+    t.pop("level", None)
     W.ev(world, nid, "You built a %s on %s" % (b, k))
+
+
+def do_upgrade(world, rules, n, o):
+    nid = n["id"]
+    k = o.get("tile")
+    t = world["tiles"].get(k)
+    if t is None or t["owner"] != nid:
+        return W.ev(world, nid, "Upgrade of %s failed: not your tile" % k)
+    up = upgrade_of(rules, t)
+    if up is None:
+        return W.ev(world, nid, "Upgrade of %s failed: nothing to upgrade there" % k)
+    if foreign_army_on(world, k, nid):
+        return W.ev(world, nid, "Upgrade of %s failed: foreign soldiers are there" % k)
+    if not can_pay(n["resources"], up["cost"]):
+        return W.ev(world, nid, "Upgrade of %s failed: not enough resources (need %s)" % (k, up["cost"]))
+    pay(n["resources"], up["cost"])
+    t["level"] = W.level_of(t) + 1
+    W.ev(world, nid, "You upgraded the %s on %s to level %d" % (t["building"], k, t["level"]))
 
 
 def do_train(world, rules, n, o):
@@ -214,7 +251,7 @@ def apply_orders(world, rules, rng):
         if not n["alive"]:
             continue
         for o in [x for x in world["orders"] if x["nation"] == n["id"]]:
-            {"claim": do_claim, "build": do_build, "train": do_train, "move": do_move}[o["type"]](world, rules, n, o)
+            {"claim": do_claim, "build": do_build, "upgrade": do_upgrade, "train": do_train, "move": do_move}[o["type"]](world, rules, n, o)
     world["orders"] = []
 
 

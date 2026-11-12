@@ -1,5 +1,6 @@
 """The game state: a plain dict that can be saved as JSON. Also map creation and expansion."""
 import json
+import math
 import random
 
 from .hexes import neighbors, distance, within, ring
@@ -33,13 +34,26 @@ def stock(nation):
     return sum(nation["resources"].values())
 
 
+def level_of(tile):
+    """A building's level: 1 when built, up to the number of upgrades it has plus one."""
+    return tile.get("level", 1)
+
+
+def spec_at(spec, level):
+    """A building's numbers at a level. Each upgrade replaces the housing numbers (its own cost is not part of the spec)."""
+    out = dict(spec)
+    if level > 1:
+        out.update({k: v for k, v in spec["upgrades"][level - 2].items() if k != "cost"})
+    return out
+
+
 def housing(world, rules, nid):
     """(room for workers, room for soldiers) from the nation's buildings."""
     w = s = 0
     for t in world["tiles"].values():
         if t["owner"] != nid or t["building"] is None:
             continue
-        spec = rules["capital"] if t["building"] == "capital" else rules["buildings"][t["building"]]
+        spec = rules["capital"] if t["building"] == "capital" else spec_at(rules["buildings"][t["building"]], level_of(t))
         w += spec.get("houses_workers", 0)
         s += spec.get("houses_soldiers", 0)
     return w, s
@@ -97,7 +111,7 @@ def pick_terrain(rules, rng):
         x -= w
 
 
-def make_tiles(rules, rng, keys, tiles):
+def grow_tiles(rules, rng, keys, tiles):
     """Create tiles for `keys`. Scatter some seed points, give each a terrain, and let every tile copy its
     nearest seed, so terrain forms patches (lakes, forests, ranges). Tiles that already exist act as seeds too,
     so a map expansion continues the patches instead of starting over. Hills then soften the edge of mountains."""
@@ -114,6 +128,120 @@ def make_tiles(rules, rng, keys, tiles):
     for k in keys:  # a field next to a mountain becomes hills half the time
         if terrain[k] == "field" and any(terrain.get(n) == "mountain" for n in neighbors(k)) and rng.random() < 0.5:
             terrain[k] = "hills"
+    for k in keys:
+        land = terrain[k] != "water"
+        oil = land and rng.randrange(rules["oil_deposit_one_in"]) == 0
+        tiles[k] = {"terrain": terrain[k], "oil": oil, "owner": None, "building": None}
+
+
+def default_radius(players):
+    """How big the map is when nobody picks a size: about 22 tiles per nation (16 nations -> radius 11)."""
+    return max(5, round(math.sqrt(22 * players / 3)))
+
+
+REACH = 6        # every dry tile has hills, forest and a mountain within this many tiles, so nobody is locked out
+
+
+def exact_mix(rng, n, weights):
+    """n terrain names in the proportions of `weights`, shuffled."""
+    total = sum(weights.values())
+    out = []
+    for name, w in weights.items():
+        out += [name] * (n * w // total)
+    names = sorted(weights, key=lambda k: -weights[k])
+    i = 0
+    while len(out) < n:
+        out.append(names[i % len(names)])
+        i += 1
+    rng.shuffle(out)
+    return out
+
+
+def walk(rng, kset, free, start, length, keep):
+    """A wandering line of free tiles that tends to keep going the same way (a river or a mountain range)."""
+    cells, here, last = [start], start, None
+    for _ in range(length):
+        options = [n for n in neighbors(here) if n in kset and n in free and n not in cells]
+        if not options:
+            break
+        here = last if last in options and rng.random() < keep else rng.choice(options)
+        last = here
+        cells.append(here)
+    return cells
+
+
+def blob(rng, kset, free, start, size):
+    """A rounded patch of free tiles (a lake)."""
+    cells = {start}
+    while len(cells) < size:
+        edge = sorted(n for c in cells for n in neighbors(c) if n in kset and n in free and n not in cells)
+        if not edge:
+            break
+        cells.add(rng.choice(edge))
+    return cells
+
+
+def paint(rng, kset, free, terrain, name, want, shape):
+    """Lay down `name` tiles in shapes until there are `want` of them."""
+    got = 0
+    while got < want and free:
+        for k in shape(rng, kset, free, rng.choice(sorted(free))):
+            if k in free:
+                terrain[k] = name
+                free.discard(k)
+                got += 1
+
+
+def river_or_lake(rng, kset, free, start):
+    return walk(rng, kset, free, start, rng.randint(7, 13), 0.65) if rng.random() < 0.6 else blob(rng, kset, free, start, rng.randint(4, 8))
+
+
+def mountain_range(rng, kset, free, start):
+    cells = walk(rng, kset, free, start, rng.randint(5, 10), 0.75)
+    return cells + [n for c in cells for n in neighbors(c) if n in kset and n in free and rng.random() < 0.3]
+
+
+def give_reach(rng, kset, terrain, kinds):
+    """A dry tile with no hills (or forest, or mountain) within REACH tiles gets a small outcrop of it nearby."""
+    for kind in kinds:
+        for _ in range(80):
+            bad = [k for k in sorted(kset) if terrain[k] != "water"
+                   and not any(terrain.get(x) == kind for x in within(k, REACH) if x in kset)]
+            if not bad:
+                break
+            spots = [x for x in within(rng.choice(bad), 2) if x in kset and terrain[x] not in ("water", "mountain")]
+            if spots:
+                spot = rng.choice(spots)
+                terrain[spot] = kind
+                more = [n for n in neighbors(spot) if n in kset and terrain[n] not in ("water", "mountain")]
+                if more and rng.random() < 0.7:
+                    terrain[rng.choice(more)] = kind
+
+
+def make_tiles(rules, rng, keys, tiles):
+    """Create the map. Water (rivers, lakes) goes down first, then mountain ranges, then big patches of hills, forest and
+    field in even amounts. Finally anywhere that is too far from some terrain gets a small outcrop of it, so
+    every nation can reach everything but must trade for what is not at home. If tiles already exist (a map
+    expansion) the old patches simply continue instead."""
+    if tiles:
+        return grow_tiles(rules, rng, keys, tiles)
+    keys = sorted(keys)
+    kset, free, terrain = set(keys), set(keys), {}
+    weights = rules["terrain_weights"]
+    total = sum(weights.values())
+    paint(rng, kset, free, terrain, "water", len(keys) * weights.get("water", 0) // total, river_or_lake)
+    paint(rng, kset, free, terrain, "mountain", len(keys) * weights.get("mountain", 0) // total, mountain_range)
+    mix = {name: w for name, w in weights.items() if name not in ("water", "mountain") and w > 0}
+    rest = sorted(free)
+    if rest and mix:
+        count = max(2, len(rest) * 6 // 100)
+        seeds = list(zip(rng.sample(rest, min(count, len(rest))), exact_mix(rng, count, mix)))
+        for k in rest:
+            terrain[k] = min(seeds, key=lambda s: distance(k, s[0]) + rng.random() * 0.9)[1]
+    for k in rest:  # a field next to a mountain becomes hills half the time
+        if terrain.get(k) == "field" and any(terrain.get(n) == "mountain" for n in neighbors(k)) and rng.random() < 0.5:
+            terrain[k] = "hills"
+    give_reach(rng, kset, terrain, [t for t in ("mountain", "hills", "forest") if weights.get(t)])
     for k in keys:
         land = terrain[k] != "water"
         oil = land and rng.randrange(rules["oil_deposit_one_in"]) == 0

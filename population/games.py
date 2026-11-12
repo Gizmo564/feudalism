@@ -84,7 +84,7 @@ SETTINGS = {
     "tick_tz": "timezone for the tick time, like America/Denver",
     "tick_minutes": "tick every N minutes instead of nightly (blank for nightly)",
     "admin_role": "name of the admin role",
-    "dm_reports": "send night reports as DMs (1 or 0)",
+    "dm_reports": "allow night reports by DM (1 or 0); players still opt in themselves with /dms",
 }
 
 

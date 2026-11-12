@@ -26,8 +26,16 @@ const ICON = {
 };
 const CART_D = "M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3";
 const CART = new Path2D(CART_D);
+// buildings: the same icons as the Discord map (house, crossed swords, market stall, wall, and a crown for capitals)
+const BUILDING_D = {
+  home: "M-4 0L0 -4L4 0M-2.8 -1V3.5H2.8V-1",
+  barracks: "M-4.5 -4.5L3 3M4.5 -4.5L-3 3M-1 3L3 -1M-3 -1L1 3",
+  market: "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
+  wall: "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
+  capital: "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5",
+};
 const SHIELD = new Path2D("M0 -10L8 -7V1Q8 8 0 11Q-8 8 -8 1V-7Z");
-const PATH = Object.fromEntries(Object.entries(ICON).map(([k, d]) => [k, new Path2D(d)]));
+const PATH = Object.fromEntries(Object.entries({...ICON, ...BUILDING_D}).map(([k, d]) => [k, new Path2D(d)]));
 // for each hex side: the neighbour across it and the two corners it joins (corner i is at angle 60*i - 30 degrees)
 const EDGES = [[1, 0, 0, 1], [0, 1, 1, 2], [-1, 1, 2, 3], [-1, 0, 3, 4], [0, -1, 4, 5], [1, -1, 5, 0]];
 
@@ -93,7 +101,7 @@ function showTile(t, data, card, act, msg) {
       const n = names[t.owner];
       tags.append(el("span", {className: "tag"}, swatch(n ? n.color : "#888"), (n ? n.name : "Unknown") + (t.owner === data.me ? " (you)" : "")));
     }
-    tags.append(el("span", {className: "tag", textContent: t.building ? cap(t.building) : "No building"}));
+    tags.append(el("span", {className: "tag", textContent: t.building ? cap(t.building) + (t.level > 1 ? " (level " + t.level + ")" : "") : "No building"}));
     if (t.oil) tags.append(el("span", {className: "tag", textContent: "Oil deposit"}));
     out.push(tags);
     for (const line of card.text.split("\n").filter((l) => l.startsWith("Caravan:")))
@@ -117,6 +125,16 @@ function showTile(t, data, card, act, msg) {
         }),
         el("div", {className: "note", textContent: "Greyed out: you cannot pay for it yet."})));
     }
+    const up = card.upgrade;
+    if (up) {
+      const short = Object.keys(up.missing).length > 0;
+      const gain = Object.entries(up.gives).map(([k, v]) => "holds " + v + (k === "houses_workers" ? " " + data.worker + "s" : " " + data.soldier + "s")).join(", ");
+      things.push(el("div", {className: "box"}, el("h3", {textContent: "Upgrade to level " + up.level}),
+        ...Object.entries(up.cost).map(([r, n]) => row(r, n, r in up.missing)),
+        el("div", {className: "note", textContent: "Then it " + gain + "."}),
+        button(up.queued ? "An upgrade is already queued" : short ? "You cannot pay for this yet" : "Upgrade",
+               () => act({action: "upgrade", tile: t.k}), up.queued || short ? "off" : "primary")));
+    }
     const armies = data.armies.filter((a) => a.owner === data.me && a.tile !== t.k);
     if (card.can_move && armies.length) {
       things.push(el("div", {className: "box"}, el("h3", {textContent: "Send an army here"}),
@@ -129,6 +147,129 @@ function showTile(t, data, card, act, msg) {
   }
   out.push(...ordersBox(data, act));
   $("card").replaceChildren(...out);
+}
+
+
+// ---- the tabs beside the map: Tile (above), then Nation, Trade, Pacts and Report. They use the same orders as the commands ----
+const TABS = [["tile", "Tile"], ["nation", "Nation"], ["trade", "Trade"], ["pacts", "Pacts"], ["report", "Report"]];
+const ui = {tab: "tile", headers: null, msg: null, refresh: async () => {}};
+const plain = (text) => text.replace(/\*\*/g, "");
+const box = (title, ...kids) => el("div", {className: "box"}, ...(title ? [el("h3", {textContent: title})] : []), ...kids);
+const note = (text) => el("div", {className: "note", textContent: text});
+const line = (a, b) => el("div", {className: "row"}, el("span", {textContent: a}), el("span", {textContent: b}));
+const input = (placeholder) => el("input", {className: "field", placeholder});
+const choose = (options) => {                         // options: [[value, label], ...]
+  const s = el("select", {className: "field"});
+  for (const [v, l] of options) s.append(el("option", {value: v, textContent: l}));
+  return s;
+};
+
+// place an order from any tab, then reload the map (stock, queue) and this tab
+async function send(body) {
+  let msg;
+  try {
+    const got = await fetch("/.proxy/api/order", {method: "POST", headers: {...ui.headers, "Content-Type": "application/json"}, body: JSON.stringify(body)});
+    msg = await got.json();
+    if (!msg.message) msg = {ok: false, message: "That did not work."};
+  } catch (e) { msg = {ok: false, message: "Could not reach the game."}; }
+  ui.msg = msg;
+  await ui.refresh();
+  await loadNation();
+}
+
+function drawTabs() {
+  $("tabs").replaceChildren(...TABS.map(([id, label]) => {
+    const b = el("button", {className: "tab" + (ui.tab === id ? " on" : ""), textContent: label});
+    b.onclick = () => { ui.tab = id; ui.msg = null; drawTabs(); showTab(); };
+    return b;
+  }));
+}
+
+function showTab() {
+  $("card").style.display = ui.tab === "tile" ? "" : "none";
+  $("npanel").style.display = ui.tab === "tile" ? "none" : "";
+  if (ui.tab !== "tile") loadNation();
+}
+
+async function loadNation() {
+  if (ui.tab === "tile") return;
+  let got;
+  try { got = await fetch("/.proxy/api/nation", {headers: ui.headers}); } catch (e) { return; }
+  if (!got.ok) return;
+  const n = await got.json();
+  const out = [];
+  if (ui.msg) out.push(el("div", {className: "msg " + (ui.msg.ok ? "ok" : "bad"), textContent: ui.msg.message}));
+  out.push(...{nation: nationTab, trade: tradeTab, pacts: pactsTab, report: reportTab}[ui.tab](n));
+  $("npanel").replaceChildren(...out);
+}
+
+function nationTab(n) {
+  const p = n.people;
+  const meter = (label, v, room) => el("div", {className: "meter"}, line(cap(label), v + " of " + room),
+    el("div", {className: "track"}, el("i", {style: "width:" + Math.min(100, room ? 100 * v / room : 0) + "%"})));
+  const prio = (pr) => {
+    const row = el("div", {className: "row" + (pr.can ? "" : " dim")}, el("span", {textContent: cap(pr.resource)}));
+    const step = (d) => button(d > 0 ? "+" : "-", () => send({action: "priority", resource: pr.resource, value: pr.value + d}),
+                               !pr.can || pr.value + d < 0 || pr.value + d > 5 ? "off" : "plain");
+    const ctl = el("span", {className: "stepper"}, step(-1), el("b", {textContent: pr.value}), step(1));
+    row.append(ctl);
+    return row;
+  };
+  const room = Math.max(0, p.soldier_room - p.soldiers);
+  const count = input("How many");
+  count.type = "number"; count.min = 1; count.value = 1;
+  const food = n.food.net >= 0 ? "+" + n.food.net : String(n.food.net);
+  return [
+    box("People", meter(n.worker + "s", p.workers, p.worker_room), meter(n.soldier + "s", p.soldiers, p.soldier_room)),
+    box("Work tonight", ...(n.work.length ? n.work.map((w) => line(cap(w.resource), w.workers + " working, +" + w.amount)) : [note("Nobody is working.")]),
+        line("Food", food + " a night" + (n.food.nights == null ? "" : ", lasts about " + n.food.nights + " nights"))),
+    box("Priorities", ...n.priorities.map(prio), note("0 turns a resource off, 5 is top. Only the proportions matter. Greyed resources need land that makes them.")),
+    box("Train " + n.soldier + "s", note("Each costs " + n.train_cost + " and a " + n.worker + ". Room for " + room + " more."), count,
+        button("Train", () => send({action: "train", n: Number(count.value)}), room ? "primary" : "off")),
+    box("Advice", ...n.advice.map((a) => note("- " + a))),
+  ];
+}
+
+function tradeTab(n) {
+  const offerRow = (o) => box("", note(plain(o.line)),
+    o.mine ? button("Withdraw", () => send({action: "trade_decline", id: o.id}), "plain")
+           : el("div", {className: "pair"}, button("Accept", () => send({action: "trade_accept", id: o.id}), "primary"),
+                                            button("Decline", () => send({action: "trade_decline", id: o.id}), "plain")));
+  const to = choose([["", "Anyone with a Market (trade board)"], ...n.others.map((m) => [m, m])]);
+  const give = input("You give, e.g. wood 10"), get = input("You want, e.g. stone 5");
+  const how = choose([["public", "Public: posted on the trade board"], ["private", "Private: only you and the named nation"]]);
+  return [
+    ...(n.offers.length ? n.offers.map(offerRow) : [el("p", {className: "hint", textContent: "No open offers right now."})]),
+    box("Make an offer", to, give, get, how,
+        button("Send offer", () => send({action: "trade_offer", to: to.value, give: give.value, get: get.value, private: how.value === "private"}), "primary"),
+        note("Both sides need a Market. A private offer needs a nation named above.")),
+  ];
+}
+
+function pactsTab(n) {
+  const row = (p) => {
+    const acts = p.state === "waiting for you"
+      ? el("div", {className: "pair"}, button("Accept", () => send({action: "pact_accept", id: p.id}), "primary"),
+                                       button("Decline", () => send({action: "pact_decline", id: p.id}), "plain"))
+      : p.state === "active" ? button("Break pact", () => send({action: "pact_break", id: p.id}), "plain") : note("Waiting for them to answer.");
+    return box("", line("Pact " + p.id + " with " + p.other, p.state), note(p.text), acts);
+  };
+  const to = choose(n.others.map((m) => [m, m])), text = input("What you promise each other");
+  return [
+    ...(n.pacts.length ? n.pacts.map(row) : [el("p", {className: "hint", textContent: "You have no pacts."})]),
+    box("Propose a pact", to, text, button("Propose", () => send({action: "pact_propose", to: to.value, text: text.value}), "primary"),
+        note("A pact is a public record only. Nothing enforces it, and breaking it shows in the next report.")),
+  ];
+}
+
+function reportTab(n) {
+  return [
+    box("Last night", el("div", {className: "text", textContent: plain(n.report)})),
+    box("Standings", el("div", {className: "text", textContent: plain(n.standings)})),
+    box("Private messages", note("Off until you turn them on. When on, the bot DMs you your night report and private trade offers."),
+        button(n.dm ? "Turn off" : "Turn on", () => send({action: "dm", on: !n.dm}), n.dm ? "plain" : "primary"),
+        line("Now", n.dm ? "on" : "off")),
+  ];
 }
 
 // ---- the map view: pan by dragging, zoom with the wheel, pinch or the buttons, click a tile ----
@@ -165,8 +306,8 @@ function showMap(data, headers) {
     ctx.closePath();
   }
 
-  function icon(name, x, y, colour) {
-    const k = size / 18;
+  function icon(name, x, y, colour, more = 1) {
+    const k = size / 18 * more;
     ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
     ctx.strokeStyle = colour; ctx.lineWidth = 1.3; ctx.lineCap = "round"; ctx.lineJoin = "round";
     ctx.stroke(PATH[name]); ctx.restore();
@@ -208,9 +349,14 @@ function showMap(data, headers) {
       ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = 1; ctx.stroke();
       if (!t.visible) continue;
       if (t.building) {
-        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, size * 0.36, 0, 7); ctx.fill();
-        ctx.fillStyle = "#2c2c2a"; ctx.font = "bold " + Math.round(size * 0.42) + "px Inter, system-ui, sans-serif";
-        ctx.fillText(t.building[0].toUpperCase(), x, y + 1);
+        const crown = t.building === "capital", r = size * (crown ? 0.4 : 0.36);
+        const ink = crown ? dark(color[t.owner] || "#888888") : "#2c2c2a";
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+        if (crown) { ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.stroke(); }
+        icon(t.building, x, y, ink, crown ? 1.4 : 1);
+        for (let i = 1; i < (t.level || 1); i++) {                    // one dot per upgrade
+          ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(x + (i - (t.level - 1) / 2 - 0.5) * size * 0.12, y + r - size * 0.07, size * 0.045, 0, 7); ctx.fill();
+        }
       } else if (terrain) {
         icon(t.terrain, x, y, mine ? "rgba(255,255,255,.75)" : t.terrain === "water" ? "rgba(70,110,150,.55)" : "rgba(44,44,42,.5)");
       }
@@ -301,6 +447,7 @@ function showMap(data, headers) {
     const fresh = await got.json(), newTick = fresh.tick !== data.tick;
     Object.assign(data, fresh);
     adopt(); showBars(data, data.name); draw();
+    if (newTick) loadNation();
     return newTick;
   }
 
@@ -351,6 +498,8 @@ function showMap(data, headers) {
   $("coords").onclick = () => { coords = !coords; $("coords").classList.toggle("on", coords); draw(); };
   $("terrain").onclick = () => { terrain = !terrain; $("terrain").classList.toggle("on", terrain); draw(); };
   addEventListener("resize", resize);
+  ui.headers = headers; ui.refresh = refresh;
+  drawTabs();
 
   // the key: your nation, the others on the map, free land, water, and the two kinds of piece
   const key = (mark, text) => el("span", {}, mark, text);

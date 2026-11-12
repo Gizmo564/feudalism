@@ -6,7 +6,7 @@ import time
 import aiohttp
 from aiohttp import web
 
-from population import mapnav, render, views
+from population import advice, infopage, mapnav, pacts, render, tick, views, world as W
 from population.game import GameError
 
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -31,11 +31,59 @@ def describe(o):
         return "Army %d to %s" % (o["army"], o["dest"])
     if kind == "train":
         return "Train %d" % o["n"]
+    if kind == "upgrade":
+        return "Upgrade %s" % o["tile"]
     return kind
 
 
-def make_app(client_id, client_secret, find_game, call=discord_request):
-    "find_game(server id) gives that server's Game, or None. The page sends its server in the X-Guild-Id header."
+def nation_data(game, uid, nid):
+    """Everything the Nation, Trade and Diplomacy tabs show, in the same words the commands use."""
+    w, r = game.world, game.rules
+    n = w["nations"][nid]
+    hw, hs = W.housing(w, r, nid)
+    soldiers = W.soldiers(w, nid)
+    plan = tick.work_plan(w, r, n)
+    can = infopage.available(w, r, nid)
+    net, nights = advice.food_balance(w, r, nid)
+    try:
+        standings = game.standings()
+    except GameError as e:
+        standings = str(e)
+    offers = []
+    for o in w["trades"]:
+        if o["status"] != "open":
+            continue
+        mine = o["from"] == nid
+        if not mine and o["to"] not in (nid, None):
+            continue
+        offers.append({"id": o["id"], "line": game.offer_line(o), "mine": mine})
+    pact_rows = []
+    for p in pacts.for_nation(w, nid):
+        other = w["nations"][p["b"] if p["a"] == nid else p["a"]]["name"]
+        state = "active" if p["status"] == "active" else ("waiting for them" if p["a"] == nid else "waiting for you")
+        pact_rows.append({"id": p["id"], "other": other, "state": state, "text": p["text"]})
+    return {
+        "alive": n["alive"], "worker": game.word("worker"), "soldier": game.word("soldier"),
+        "people": {"workers": n["workers"], "worker_room": hw, "soldiers": soldiers, "soldier_room": hs},
+        "work": [{"resource": res, "workers": c, "amount": a} for res, (c, a) in sorted(plan.items(), key=lambda x: -x[1][0])],
+        "priorities": [{"resource": res, "value": n["priorities"][res], "can": res in can} for res in r["resources"]],
+        "food": {"net": net, "nights": nights},
+        "advice": advice.advice(w, r, nid),
+        "train_cost": game.fmt(r["soldier"]["train_cost"]),
+        "report": game.report(uid), "standings": standings,
+        "offers": offers, "pacts": pact_rows,
+        "others": [m["name"] for m in w["nations"] if m["id"] != nid],
+        "resources": list(r["resources"]),
+        "dm": game.wants_dm(uid),
+    }
+
+
+def make_app(client_id, client_secret, find_game, call=discord_request, hooks=None):
+    """find_game(server id) gives that server's Game, or None. The page sends its server in the X-Guild-Id header.
+    hooks (optional, from the bot): async offer(server_id, tid) -> True if the offer was posted to the board or DMed;
+    async resolved(server_id, tid) edits the board card of an offer that was just accepted or declined."""
+    hooks = hooks or {}
+
     @web.middleware
     async def no_cache(request, handler):
         """Cloudflare and Discord would otherwise keep serving an old copy of the page after an update."""
@@ -110,11 +158,11 @@ def make_app(client_id, client_secret, find_game, call=discord_request):
             "resources": [[r, stock.get(r, 0)] for r in rules["resources"]],
             "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
-                       "oil": bool(t["oil"]), "visible": t["visible"]} for t in tiles],
+                       "oil": bool(t["oil"]), "visible": t["visible"], "level": t.get("level", 1)} for t in tiles],
             "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"],
                         "dest": a["dest"] if a["owner"] == nid else None} for a in armies],
             "orders": [describe(o) for o in world["orders"] if o["nation"] == nid],
-            "soldier": game.word("soldier"),
+            "soldier": game.word("soldier"), "worker": game.word("worker"),
             "caravans": [{"from": c["from"], "to": c["to"], "tile": c["tile"], "dest": c["dest"]} for c in caravans]})
 
     async def tile_data(request):
@@ -127,8 +175,20 @@ def make_app(client_id, client_secret, find_game, call=discord_request):
         if game is None or game.phase != "running" or nid is None:
             return web.json_response({"error": "not in a running game"}, status=404)
         card = mapnav.tile_card(game.world, game.rules, nid, request.query.get("k", ""))
-        keys = ("text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "claim_queued", "build_cost", "build_missing")
+        keys = ("text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "claim_queued", "build_cost",
+                "build_missing", "upgrade")
         return web.json_response({k: card[k] for k in keys})
+
+    async def nation(request):
+        """The player's own nation: people, work, priorities, trades, pacts, report, standings."""
+        user = await asker(request)
+        if user is None:
+            return web.json_response({"error": "not logged in"}, status=401)
+        game = here(request)
+        nid = game.players.get(str(user["id"])) if game else None
+        if game is None or game.phase != "running" or nid is None:
+            return web.json_response({"error": "not in a running game"}, status=404)
+        return web.json_response(nation_data(game, int(user["id"]), nid))
 
     async def order(request):
         """Place or clear an order. The game's own checks decide whether it is allowed, exactly as in Discord."""
@@ -149,12 +209,47 @@ def make_app(client_id, client_secret, find_game, call=discord_request):
                 message = game.move(uid, int(body.get("army")), str(body.get("tile", "")))
             elif kind == "cancel":
                 message = game.cancel(uid)
+            elif kind == "upgrade":
+                message = game.upgrade(uid, str(body.get("tile", "")))
+            elif kind == "train":
+                message = game.train(uid, int(body.get("n")))
+            elif kind == "priority":
+                message = game.set_priority(uid, str(body.get("resource", "")), int(body.get("value")))
+            elif kind == "trade_offer":
+                private = bool(body.get("private"))
+                tid, message = game.make_offer(uid, str(body.get("to", "")), str(body.get("give", "")),
+                                               str(body.get("get", "")), private=private)
+                server_id = request.headers.get("X-Guild-Id", "")
+                posted = await safely(hooks.get("offer"), server_id, tid)
+                if posted:
+                    message += " They were sent it with buttons." if private else " It is on the trade board."
+                elif private:
+                    message += " They haven't turned on DMs, so they will see it in their Trade tab and /offers."
+            elif kind in ("trade_accept", "trade_decline"):
+                tid = int(body.get("id"))
+                message = (game.trade_accept if kind == "trade_accept" else game.trade_decline)(uid, tid)
+                await safely(hooks.get("resolved"), request.headers.get("X-Guild-Id", ""), tid)
+            elif kind == "pact_propose":
+                message = game.pact_propose(uid, str(body.get("to", "")), str(body.get("text", "")))
+            elif kind in ("pact_accept", "pact_decline", "pact_break"):
+                message = getattr(game, kind)(uid, int(body.get("id")))
+            elif kind == "dm":
+                message = game.set_dm(uid, bool(body.get("on")))
             else:
                 return web.json_response({"ok": False, "message": "Unknown order."}, status=400)
         except (GameError, ValueError, TypeError) as e:
             return web.json_response({"ok": False, "message": str(e)}, status=400)
         game.store.set("last_activity", time.time())        # automatic updates wait while people are playing
         return web.json_response({"ok": True, "message": message})
+
+    async def safely(hook, *args):
+        """Run a bot hook; the order has already worked, so a Discord hiccup must not undo or hide it."""
+        if hook is None:
+            return False
+        try:
+            return await hook(*args)
+        except Exception:
+            return False
 
     async def index(request):
         return web.FileResponse(os.path.join(STATIC, "index.html"))
@@ -165,15 +260,16 @@ def make_app(client_id, client_secret, find_game, call=discord_request):
         app.router.add_get(prefix + "/api/me", me)
         app.router.add_get(prefix + "/api/map", map_data)
         app.router.add_get(prefix + "/api/tile", tile_data)
+        app.router.add_get(prefix + "/api/nation", nation)
         app.router.add_post(prefix + "/api/order", order)
         app.router.add_static(prefix + "/static", STATIC)
     app.router.add_get("/", index)
     return app
 
 
-async def start(port, client_id, client_secret, find_game):
+async def start(port, client_id, client_secret, find_game, hooks=None):
     """Run the web server alongside the bot (called once the bot is connected)."""
-    runner = web.AppRunner(make_app(client_id, client_secret, find_game))
+    runner = web.AppRunner(make_app(client_id, client_secret, find_game, hooks=hooks))
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", port).start()
     return runner

@@ -71,6 +71,12 @@ def resources(rules):
         if name == "market":
             effect.append("lets you trade")
         lines.append("%s: %s%s" % (name.capitalize(), cost(spec["cost"]), " (%s)" % ", ".join(effect) if effect else ""))
+        for i, up in enumerate(spec.get("upgrades", []), 2):
+            gain = ["houses %d %ss" % (up[k], worker if k == "houses_workers" else soldier) for k in ("houses_workers", "houses_soldiers") if k in up]
+            lines.append("  Level %d: %s (%s)" % (i, cost(up["cost"]), ", ".join(gain)))
+    rise = rules.get("build", {}).get("rise_percent", 0)
+    if rise:
+        lines.append("Each building of a kind you already own makes the next one %d%% dearer. Upgrade with /upgrade or from the tile card." % rise)
     cap = rules["capital"]
     lines.append("Your capital houses %d %ss and %d %ss and gets +%d%% defence." % (
         cap["houses_workers"], worker, cap["houses_soldiers"], soldier, cap["defense_percent"]))

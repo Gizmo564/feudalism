@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from population import mapnav, render
+from population import infopage, mapnav, render
 from population.game import Game
 from population.games import current_server
 from population.store import Store
@@ -199,9 +199,11 @@ def test_info_view_tabs_and_priority_buttons(bot, game):
         assert game.world["nations"][0]["priorities"]["food"] == 5 and find(view, "Max").disabled
         await find(view, "-").callback(click(100))
         menu = selects(view)[0]
-        menu._values = ["wood"]
+        other = next(r for r in infopage.available(game.world, game.rules, 0) if r != "food")     # the map decides what is near
+        menu._values = [other]
         await view.pick(menu)(click(100))
-        assert view.resource == "wood" and any(getattr(c, "label", None) == "wood: 3/5" for c in view.children)
+        want = "%s: %d/5" % (other, game.world["nations"][0]["priorities"][other])
+        assert view.resource == other and any(getattr(c, "label", None) == want for c in view.children)
         assert view.embed().title.startswith("Aldmere")
         for tab in ("Land", "Military", "Overview"):
             await find(view, tab).callback(click(100))
@@ -291,6 +293,12 @@ def test_nightly_tick_posts_report_log_and_private_reports(bot, game, monkeypatc
 
     async def go():
         await bot.do_tick()
+    asyncio.run(go())
+    assert not sent_dms                      # nobody has opted in, so nobody is messaged
+    for uid in ("100", "101", "102", "103"):
+        game.set_dm(uid, True)
+    announce.sent.clear(), log.sent.clear()
+    game.world["tick"] = 0
     asyncio.run(go())
     assert "Tick 1" in announce.sent[0] and "/report" in announce.sent[0] and "To win" in announce.sent[0]
     assert log.sent and log.sent[0].startswith("**Night 1**")

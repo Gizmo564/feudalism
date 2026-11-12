@@ -39,7 +39,7 @@ def test_signup_rules(tmp_path):
 
 def test_status_and_orders(game):
     text = game.status(100)
-    assert "Aldmere" in text and "Land: 7" in text
+    assert "Aldmere" in text and "Land: %d" % len(W.owned(game.world, 0)) in text
     assert "knights" in text
     game.priorities(100, "food 5, wood 1")
     assert "wood 1" in game.status(100)
@@ -509,3 +509,33 @@ def test_reset_stock_uses_start_amounts_waiting_for_the_tick(game):
     game.reset_stock()
     assert all(n["resources"]["wood"] == 77 for n in game.world["nations"])
     assert game.rules["start"]["resources"]["wood"] != 77          # the rule itself still changes at the tick
+
+
+def test_dms_are_off_until_a_player_opts_in(game, tmp_path):
+    assert not game.wants_dm(100)
+    game.set_dm(100, True)
+    assert game.wants_dm(100) and not game.wants_dm(101)
+    assert Game(game.store).wants_dm(100)          # survives a restart
+    game.set_dm(100, False)
+    assert not game.wants_dm(100)
+
+
+def test_upgrade_through_the_game(game):
+    nid = game.nid(100)
+    k = next(k for k in W.owned(game.world, nid) if game.world["tiles"][k]["building"] is None)
+    game.world["tiles"][k]["building"] = "home"
+    game.world["nations"][nid]["resources"].update(wood=500, stone=500)
+    assert "level 2" in game.upgrade(100, k)
+    with pytest.raises(GameError):
+        game.upgrade(100, k)                        # already queued tonight
+    with pytest.raises(GameError):
+        game.upgrade(100, game.world["nations"][nid]["capital"])
+
+
+def test_second_building_costs_more_when_queued(game):
+    nid = game.nid(100)
+    free = [k for k in W.owned(game.world, nid) if game.world["tiles"][k]["building"] is None]
+    game.world["nations"][nid]["resources"].update(wood=500, stone=500)
+    first = game.build_price(nid, "home")
+    game.build(100, free[0], "home")
+    assert game.build_price(nid, "home")["wood"] > first["wood"]

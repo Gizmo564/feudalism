@@ -27,10 +27,11 @@ TERRAIN_ICON = {
 }
 BUILDING_ICON = {
     "home": "M-4 0L0 -4L4 0M-2.8 -1V3.5H2.8V-1",
-    "barracks": "M-3.5 -4H3.5V0.5Q3.5 3.5 0 5Q-3.5 3.5 -3.5 0.5Z",
+    "barracks": "M-4.5 -4.5L3 3M4.5 -4.5L-3 3M-1 3L3 -1M-3 -1L1 3",   # crossed swords
     "market": "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
     "wall": "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
 }
+CROWN_ICON = "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5"
 CARAVAN_ICON = "M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3"
 OIL_DROP = "M0 -6Q5 0 4 3Q3 6 0 6Q-3 6 -4 3Q-5 0 0 -6Z"
 OIL_SHINE = "M-2 2Q-2 3.6 -0.6 4.2"
@@ -206,7 +207,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
     ox, oy = pad - min(p[0] for p in pos.values()), pad - min(p[1] for p in pos.values())
     map_w = max(p[0] for p in pos.values()) - min(p[0] for p in pos.values()) + 2 * pad
     map_h = max(p[1] for p in pos.values()) - min(p[1] for p in pos.values()) + 2 * pad
-    key_rows = len(BUILDING_ICON) + len(TERRAIN_ICON) + 3
+    key_rows = len(BUILDING_ICON) + len(TERRAIN_ICON) + 4
     legend_w = 200 if legend else 0
     height = max(map_h, 60 + 22 * (len(world["nations"]) + key_rows) if legend else map_h)
     width = map_w + legend_w
@@ -281,7 +282,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             cv.oil(x + 8 * K, y - 8 * K, 0.85 * K)
         if t["building"] == "capital":
             cv.circle(x, y, 10 * K, (255, 255, 255), dark, 2 * (0.7 + 0.3 * K))
-            cv.text(x, y + 0.5 * K, world["nations"][owner]["name"][0].upper(), 13 * K, dark)
+            cv.icon(CROWN_ICON, x, y, 1.5 * K, dark, 1.3)
             if people and owner == nid:
                 housing_tag(cv, rules, "capital", x, y + 10 * K + s * 0.2, s)
             continue
@@ -295,8 +296,10 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         if b:
             cv.circle(x, by, br, (255, 255, 255), dark, 1.5 * (0.7 + 0.3 * K))
             cv.icon(BUILDING_ICON[b], x, by, bs, INK, 1.2)
+            for i in range(t.get("level", 1) - 1):   # one dot per upgrade
+                cv.circle(x + (i - (t["level"] - 2) / 2) * 4 * K, by + br - 1.5 * K, 1.5 * K, dark, (255, 255, 255), 0.6)
             if people and owner == nid:
-                housing_tag(cv, rules, b, x, by + br + s * 0.2, s)
+                housing_tag(cv, rules, b, x, by + br + s * 0.2, s, t.get("level", 1))
         if production and k in production and not b:
             tag(cv, production[k], x, y + s * 0.02, s)
         if coords is True or (coords == "claim" and k in claimable):
@@ -352,8 +355,8 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
         y += 10
         cv.text(x0, y, "Key", 14, INK, anchor="lm")
         y += 22
-        for name, path in list(TERRAIN_ICON.items()) + list(BUILDING_ICON.items()):
-            if name in BUILDING_ICON:
+        for name, path in list(TERRAIN_ICON.items()) + list(BUILDING_ICON.items()) + [("capital", CROWN_ICON)]:
+            if name in BUILDING_ICON or name == "capital":
                 cv.circle(x0 + 9, y, 9, (255, 255, 255), MUTED, 1.2)
                 cv.icon(path, x0 + 9, y, 1.25, INK, 1.2)
             elif tint and not icons:
@@ -375,9 +378,9 @@ def tag(cv, label, x, y, s):
     cv.text(x, y, label, size, INK)
 
 
-def housing_tag(cv, rules, building, x, y, s):
+def housing_tag(cv, rules, building, x, y, s, level=1):
     """A small label under a building: how many workers (w) and soldiers (s) it houses."""
-    spec = rules["capital"] if building == "capital" else rules["buildings"][building]
+    spec = rules["capital"] if building == "capital" else W.spec_at(rules["buildings"][building], level)
     parts = [("%d%s" % (spec[key], letter)) for key, letter in (("houses_workers", "w"), ("houses_soldiers", "s"))
              if spec.get(key)]
     if not parts:

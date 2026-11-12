@@ -41,6 +41,12 @@ def check(rules):
         for r in b["cost"]:
             if r not in res:
                 raise ValueError("building '%s' costs unknown resource '%s'" % (name, r))
+        for up in b.get("upgrades", []):
+            for r in up["cost"]:
+                if r not in res:
+                    raise ValueError("an upgrade of '%s' costs unknown resource '%s'" % (name, r))
+    if not 0 <= rules.get("build", {}).get("rise_percent", 0) <= 200:
+        raise ValueError("build.rise_percent must be 0 to 200")
     for r, v in rules["default_priorities"].items():
         if not isinstance(v, int) or not 0 <= v <= 5:
             raise ValueError("default priority for '%s' must be 0 to 5" % r)

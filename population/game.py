@@ -38,9 +38,10 @@ class Game:
         self.rules = store.get("rules")
         self.signups_closed = store.get("signups_closed", False)
         self.pending_rules = store.get("pending_rules", {})   # {rule key: new value}, applied at the next tick
+        self.dm_optin = store.get("dm_optin", [])             # discord user ids that chose to get DMs (off for everyone by default)
 
     def save(self):
-        for k in ("phase", "signups", "players", "world", "rules", "pending_rules", "signups_closed"):
+        for k in ("phase", "signups", "players", "world", "rules", "pending_rules", "signups_closed", "dm_optin"):
             self.store.set(k, getattr(self, k))
 
     # ---------- setup (admin) ----------
@@ -61,11 +62,14 @@ class Game:
     def modes():
         return sorted(f[:-5] for f in os.listdir(RULES_DIR) if f.endswith(".json"))
 
-    def start(self, radius, seed=None):
+    def start(self, radius=None, seed=None, expected_players=None):
+        """radius blank: the map is sized for expected_players, or for the people who joined."""
         if self.phase != "signup":
             raise GameError("Open sign-ups first")
         if not self.signups:
             raise GameError("Nobody has joined yet")
+        if radius is None:
+            radius = W.default_radius(max(expected_players or 0, len(self.signups)))
         seed = random.randrange(1, 10 ** 6) if seed is None else seed
         self.world = W.new_world(self.rules, [s["name"] for s in self.signups], radius, seed)
         self.players = {s["uid"]: i for i, s in enumerate(self.signups)}
@@ -296,10 +300,34 @@ class Game:
             raise GameError("%s already has a %s." % (k, t["building"]))
         if tick.foreign_army_on(w, k, nid):
             raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
-        cost = r["buildings"][building]["cost"]
+        cost = self.build_price(nid, building)
         missing = advice.shortfall(advice.available(w, r, nid), cost)
         if missing:
             raise GameError("Not enough for a %s: it costs %s and you are short %s." % (building, self.fmt(cost), self.fmt(missing)))
+
+    def build_price(self, nid, building):
+        """What the next one costs, counting the ones already ordered tonight."""
+        queued = sum(1 for o in self.world["orders"] if o["nation"] == nid and o["type"] == "build" and o.get("building") == building)
+        return tick.build_cost(self.world, self.rules, nid, building, queued)
+
+    def check_upgrade(self, nid, k):
+        w, r = self.world, self.rules
+        t = w["tiles"].get(k)
+        if t is None or t["owner"] != nid:
+            raise GameError("%s isn't yours. Pick one of your own tiles in /zoom." % k)
+        if t["building"] is None:
+            raise GameError("%s has no building to upgrade." % k)
+        up = tick.upgrade_of(r, t)
+        if up is None:
+            raise GameError("The %s on %s can't be upgraded any further." % (t["building"], k) if t["building"] != "capital"
+                            else "A capital can't be upgraded.")
+        if tick.foreign_army_on(w, k, nid):
+            raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
+        if any(o["nation"] == nid and o["type"] == "upgrade" and o.get("tile") == k for o in w["orders"]):
+            raise GameError("%s already has an upgrade queued for tonight." % k)
+        missing = advice.shortfall(advice.available(w, r, nid), up["cost"])
+        if missing:
+            raise GameError("Not enough to upgrade the %s: it costs %s and you are short %s." % (t["building"], self.fmt(up["cost"]), self.fmt(missing)))
 
     def claim(self, uid, tile):
         nid = self.nid(uid)
@@ -310,8 +338,17 @@ class Game:
     def build(self, uid, tile, building):
         nid = self.nid(uid)
         self.check_build(nid, tile, building)
+        price = self.build_price(nid, building)
         self.queue(nid, {"type": "build", "tile": tile, "building": building})
-        return "Build %s on %s queued. Cost: %s." % (building, tile, self.fmt(self.rules["buildings"][building]["cost"]))
+        return "Build %s on %s queued. Cost: %s." % (building, tile, self.fmt(price))
+
+    def upgrade(self, uid, tile):
+        nid = self.nid(uid)
+        self.check_upgrade(nid, tile)
+        t = self.world["tiles"][tile]
+        up = tick.upgrade_of(self.rules, t)
+        self.queue(nid, {"type": "upgrade", "tile": tile})
+        return "Upgrade of the %s on %s to level %d queued. Cost: %s." % (t["building"], tile, W.level_of(t) + 1, self.fmt(up["cost"]))
 
     def train(self, uid, n):
         nid = self.nid(uid)
@@ -566,6 +603,20 @@ class Game:
     def start_messages(self):
         """{discord user id: first-night message} for everyone in a game that has just started."""
         return {uid: guide.started(self.world, self.rules, nid) for uid, nid in self.players.items()}
+
+    def wants_dm(self, uid):
+        return str(uid) in self.dm_optin
+
+    def set_dm(self, uid, on):
+        """Each player chooses for themselves; nobody (admins included) can switch it on for someone else."""
+        uid = str(uid)
+        if on and uid not in self.dm_optin:
+            self.dm_optin = self.dm_optin + [uid]
+        if not on:
+            self.dm_optin = [u for u in self.dm_optin if u != uid]
+        self.save()
+        return ("Private messages are on: you will get your night report and private trade offers by DM. Turn off with /dms off."
+                if on else "Private messages are off. Use /report any time to see your night.")
 
     def titles(self):
         """{discord user id: title} for the bot to turn into roles. Empty if the mode has no titles."""

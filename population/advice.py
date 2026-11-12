@@ -17,7 +17,7 @@ def committed(world, rules, nid):
         for r, v in c.items():
             cost[r] = cost.get(r, 0) + v
 
-    claims = 0
+    claims, built = 0, {}
     for o in world["orders"]:
         if o["nation"] != nid:
             continue
@@ -25,7 +25,13 @@ def committed(world, rules, nid):
             add(tick.claim_cost(world, rules, nid))
             claims += 1
         elif o["type"] == "build" and o.get("building") in rules["buildings"]:
-            add(rules["buildings"][o["building"]]["cost"])
+            b = o["building"]
+            add(tick.build_cost(world, rules, nid, b, built.get(b, 0)))      # each one ordered raises the next one's price
+            built[b] = built.get(b, 0) + 1
+        elif o["type"] == "upgrade":
+            up = tick.upgrade_of(rules, world["tiles"].get(o.get("tile"), {"building": None}))
+            if up:
+                add(up["cost"])
     return cost
 
 

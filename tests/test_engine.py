@@ -137,7 +137,7 @@ def test_build_home_costs_and_housing(rules):
     tick.apply_orders(w, rules, random.Random(1))
     assert w["tiles"][k]["building"] == "home"
     assert W.housing(w, rules, 0)[0] == before + 10
-    assert w["nations"][0]["resources"]["wood"] == wood - 10
+    assert w["nations"][0]["resources"]["wood"] == wood - rules["buildings"]["home"]["cost"]["wood"]
 
 
 def test_one_building_per_tile(rules):
@@ -843,3 +843,63 @@ def test_who_sees_a_caravan(rules):
     W.add_army(w, 2, "-2,1", 1)
     seen = views.caravans_view(w, rules, 2)
     assert len(seen) == 1 and "res" not in seen[0]                          # seen, but not what it carries
+
+
+# ---------- rising prices and upgrades ----------
+
+def test_each_building_costs_more_than_the_last(rules):
+    w = two_nations(rules)
+    base = rules["buildings"]["home"]["cost"]["wood"]
+    assert tick.build_cost(w, rules, 0, "home")["wood"] == base
+    w["tiles"]["-3,0"].update(owner=0, building="home")
+    rise = rules["build"]["rise_percent"]
+    assert tick.build_cost(w, rules, 0, "home")["wood"] == -(-base * (100 + rise) // 100)
+    assert tick.build_cost(w, rules, 0, "barracks") == rules["buildings"]["barracks"]["cost"]   # other kinds unaffected
+    assert tick.build_cost(w, rules, 0, "home", queued=1)["wood"] > tick.build_cost(w, rules, 0, "home")["wood"]
+
+
+def test_upgrade_raises_housing_and_costs(rules):
+    w = two_nations(rules)
+    k = "-3,0"
+    w["tiles"][k].update(owner=0, building="home")
+    w["nations"][0]["resources"].update(wood=500, stone=500)
+    before = W.housing(w, rules, 0)[0]
+    up = tick.upgrade_of(rules, w["tiles"][k])
+    tick.queue(w, rules, 0, {"type": "upgrade", "tile": k})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert W.level_of(w["tiles"][k]) == 2
+    assert W.housing(w, rules, 0)[0] == before - rules["buildings"]["home"]["houses_workers"] + up["houses_workers"]
+    assert w["nations"][0]["resources"]["wood"] == 500 - up["cost"]["wood"]
+
+
+def test_upgrade_stops_at_top_level_and_skips_capital(rules):
+    w = two_nations(rules)
+    k = "-3,0"
+    w["tiles"][k].update(owner=0, building="home", level=1 + len(rules["buildings"]["home"]["upgrades"]))
+    assert tick.upgrade_of(rules, w["tiles"][k]) is None
+    assert tick.upgrade_of(rules, w["tiles"][w["nations"][0]["capital"]]) is None
+
+
+def test_upgrade_fails_without_resources(rules):
+    w = two_nations(rules)
+    k = "-3,0"
+    w["tiles"][k].update(owner=0, building="home")
+    w["nations"][0]["resources"].update(wood=0, stone=0)
+    tick.queue(w, rules, 0, {"type": "upgrade", "tile": k})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert W.level_of(w["tiles"][k]) == 1
+
+
+# ---------- map generator ----------
+
+def test_default_radius_grows_with_players():
+    sizes = [W.default_radius(p) for p in (4, 8, 12, 16, 24)]
+    assert sizes == sorted(sizes) and W.default_radius(1) == 5 and W.default_radius(16) == 11
+
+
+def test_generated_map_has_every_terrain_and_is_reachable(rules):
+    for seed in (1, 2, 3):
+        w = W.new_world(rules, ["A", "B", "C", "D"], 8, seed)
+        kinds = {t["terrain"] for t in w["tiles"].values()}
+        assert {"field", "forest", "hills", "mountain", "water"} <= kinds
+        assert len(w["tiles"]) == 3 * 8 * 9 + 1

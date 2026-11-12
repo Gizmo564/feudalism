@@ -525,6 +525,14 @@ class MapView(discord.ui.View):
             label = "%s: short %s" % (b.capitalize(), money(missing)) if missing else "%s (%s)" % (
                 b.capitalize(), money(card["build_cost"][b]))
             self.button(label[:80], 4, self.build_here(b), discord.ButtonStyle.primary, disabled=bool(missing))
+        up = card.get("upgrade")
+        if up:
+            if up["queued"]:
+                self.button("Upgrade (already queued)", 4, self.upgrade_here, disabled=True)
+            elif up["missing"]:
+                self.button("Upgrade to L%d: short %s" % (up["level"], money(up["missing"]))[:80], 4, self.upgrade_here, disabled=True)
+            else:
+                self.button("Upgrade to L%d (%s)" % (up["level"], money(up["cost"]))[:80], 4, self.upgrade_here, discord.ButtonStyle.primary)
         if armies and card["can_move"]:
             self.button("Send army", 4, self.pick_army)
 
@@ -578,6 +586,9 @@ class MapView(discord.ui.View):
     async def claim_here(self, interaction):
         await self.order(interaction, self.g.claim, self.selected)
 
+    async def upgrade_here(self, interaction):
+        await self.order(interaction, self.g.upgrade, self.selected)
+
     def build_here(self, building):
         async def cb(interaction):
             await self.order(interaction, self.g.build, self.selected, building)
@@ -621,6 +632,22 @@ async def build_tiles(interaction: discord.Interaction, current: str):
     g = game_for(interaction.user.id)
     free = [k for k in W.owned(g.world, nid) if g.world["tiles"][k]["building"] is None]
     return tile_choices(free, current)
+
+
+@tree.command(description="Upgrade a home or barracks so it holds more people")
+@app_commands.describe(tile="Your tile with a home or barracks, like 3,-2")
+async def upgrade(interaction: discord.Interaction, tile: str):
+    await run(interaction, game_for(interaction.user.id).upgrade, interaction.user.id, tile.strip())
+
+
+@upgrade.autocomplete("tile")
+async def upgrade_tiles(interaction: discord.Interaction, current: str):
+    nid = my_nation(interaction)
+    if nid is None:
+        return []
+    g = game_for(interaction.user.id)
+    ok = [k for k in W.owned(g.world, nid) if tick.upgrade_of(g.rules, g.world["tiles"][k])]
+    return tile_choices(ok, current)
 
 
 @tree.command(description="Turn workers into soldiers (needs barracks room, ore and food)")
@@ -709,6 +736,8 @@ async def post_offer(tid):
     o = trade_mod.find(game.world, tid)
     if o.get("private"):
         uid = next((u for u, n in game.players.items() if n == o["to"]), None)
+        if uid is None or not game.wants_dm(uid):
+            return False
         try:
             channel = await (await client.fetch_user(int(uid))).create_dm()
         except (discord.HTTPException, TypeError, ValueError):
@@ -726,18 +755,38 @@ async def post_offer(tid):
     return True
 
 
+async def edit_card(o):
+    """Show an offer's final state on its board card (or DM) and take the buttons off."""
+    o["shown"] = True
+    try:
+        channel = client.get_channel(o["post"][0]) or await client.fetch_channel(o["post"][0])
+        msg = await channel.fetch_message(o["post"][1])
+        await msg.edit(embed=offer_embed(game, o), view=None)
+    except discord.HTTPException:
+        pass
+
+
 async def refresh_board():
     """After a night: edit board cards whose offers expired, so nobody clicks a dead button."""
     for o in game.world["trades"]:
         if o.get("post") and o["status"] != "open" and not o.get("shown"):
-            o["shown"] = True
-            try:
-                channel = client.get_channel(o["post"][0]) or await client.fetch_channel(o["post"][0])
-                msg = await channel.fetch_message(o["post"][1])
-                await msg.edit(embed=offer_embed(game, o), view=None)
-            except discord.HTTPException:
-                pass
+            await edit_card(o)
     game.save()
+
+
+async def activity_offer(server_id, tid):
+    """An offer made in the Activity: post it the same way /trade does."""
+    current_server.set(int(server_id))
+    return await post_offer(tid)
+
+
+async def activity_resolved(server_id, tid):
+    """An offer accepted or declined in the Activity: update its board card."""
+    current_server.set(int(server_id))
+    o = trade_mod.find(game.world, tid)
+    if o and o.get("post") and not o.get("shown"):
+        await edit_card(o)
+        game.save()
 
 
 @tree.command(description="Offer a trade. Leave 'to' empty to post it on the trade board for anyone with a Market.")
@@ -756,8 +805,15 @@ async def trade(interaction: discord.Interaction, give: str, get: str = "", to: 
     if g is game and await post_offer(tid):
         text += " They were sent it with buttons." if private else " It is on the trade board."
     elif private:
-        text += " I couldn't DM them, so they will see it in /status and /offers."
+        text += " They haven't turned on DMs (or I couldn't reach them), so they will see it in /status and /offers."
     await say(interaction, text)
+
+
+@tree.command(description="Turn private messages (night reports, private trade offers) on or off. They are off until you ask.")
+@app_commands.choices(setting=[app_commands.Choice(name="on", value="on"), app_commands.Choice(name="off", value="off")])
+async def dms(interaction: discord.Interaction, setting: app_commands.Choice[str]):
+    g = game_for(interaction.user.id)
+    await say(interaction, g.set_dm(interaction.user.id, setting.value == "on"))
 
 
 @tree.command(description="List the trade offers you can accept right now")
@@ -904,14 +960,18 @@ async def admin_clear(interaction: discord.Interaction):
 
 
 @admin.command(name="start", description="Start the game with everyone who joined. Reports post in this channel.")
-async def admin_start(interaction: discord.Interaction, radius: app_commands.Range[int, 3, 15] = 8):
+@app_commands.describe(radius="Map size. Leave blank to size it for the players (16 players: radius 11)",
+                       expected_players="How many players you expect, if more than have joined so far (sizes the map)")
+async def admin_start(interaction: discord.Interaction, radius: app_commands.Range[int, 3, 20] = None,
+                      expected_players: app_commands.Range[int, 2, 60] = None):
     if is_admin(interaction):
         store.set("report_channel", interaction.channel_id)
         store.set("last_tick", time.time())
-    await admin_run(interaction, game.start, radius, public=True)
+    await admin_run(interaction, game.start, radius, None, expected_players, public=True)
     if is_admin(interaction) and game.phase == "running":
         for uid, text in game.start_messages().items():
-            await dm(uid, text)
+            if game.wants_dm(uid):
+                await dm(uid, text)
 
 
 @admin.command(name="announcements", description="Choose the channel for announcements and nightly reports")
@@ -1251,7 +1311,8 @@ async def do_tick():
     if setting("dm_reports") == "1":
         prefix = "**%s**\n" % guild.name if guild else ""        # a player may be in several servers' games
         for uid in game.players:
-            await dm(uid, prefix + game.report(uid))
+            if game.wants_dm(uid):
+                await dm(uid, prefix + game.report(uid))
     store.set("last_tick_seconds", int(time.time() - started))
 
 
@@ -1335,7 +1396,8 @@ async def on_ready():
         else:
             from activity import server as activity_server
             client.activity_runner = await activity_server.start(int(ACTIVITY_PORT), str(client.application_id),
-                                                                 ACTIVITY_SECRET, games.get)
+                                                                 ACTIVITY_SECRET, games.get,
+                                                                 {"offer": activity_offer, "resolved": activity_resolved})
             print("Activity server listening on port %s" % ACTIVITY_PORT)
     print("Logged in as %s" % client.user)
     if not getattr(client, "start_told", False):

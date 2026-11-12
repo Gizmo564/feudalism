@@ -4,6 +4,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from activity import server
 from conftest import RULES_PATH  # noqa: F401  (puts the project on the path)
+from population import world as W
 from population.game import Game
 from population.store import Store
 
@@ -224,3 +225,98 @@ def test_each_server_sees_only_its_own_game(tmp_path):
         await c.close()
         return ok.status, other.status, nowhere.status
     assert asyncio.run(go()) == (200, 404, 404)
+
+
+def run_as(g, steps, hooks=None):
+    "Run steps against a game, logged in as nation 0 (user 100) unless the bearer token says another user id."
+    async def go():
+        async def asker(method, path, **kw):
+            return 200, {"id": kw["headers"]["Authorization"][7:], "username": "u"}
+        c = TestClient(TestServer(server.make_app("1", "s", only(g), asker, hooks=hooks)))
+        await c.start_server()
+        try:
+            await steps(c)
+        finally:
+            await c.close()
+    asyncio.run(go())
+
+
+def post(c, who, body):
+    return c.post("/api/order", json=body, headers={"Authorization": "Bearer %d" % who})
+
+
+def test_nation_data_and_priority_and_train(tmp_path):
+    g = make_game(tmp_path)
+
+    async def steps(c):
+        h = {"Authorization": "Bearer 100"}
+        assert (await c.get("/api/nation")).status == 401
+        data = await (await c.get("/.proxy/api/nation", headers=h)).json()
+        assert data["people"]["workers"] > 0 and data["people"]["worker_room"] >= data["people"]["workers"]
+        assert {p["resource"] for p in data["priorities"]} == set(g.rules["resources"])
+        assert data["others"] == ["Brask", "Corvain", "Dunmore"] and data["dm"] is False
+        assert data["report"] and data["train_cost"]
+        res = next(p["resource"] for p in data["priorities"] if p["resource"] != "food")
+        ok = await (await post(c, 100, {"action": "priority", "resource": res, "value": 4})).json()
+        assert ok["ok"] and g.world["nations"][0]["priorities"][res] == 4
+        assert (await post(c, 100, {"action": "priority", "resource": res, "value": 9})).status == 400
+        g.world["nations"][0]["resources"].update(food=500, ore=500)
+        assert (await (await post(c, 100, {"action": "train", "n": 1})).json())["ok"]
+        assert (await post(c, 100, {"action": "train", "n": "lots"})).status == 400
+    run_as(g, steps)
+
+
+def test_upgrade_and_dm_from_the_activity(tmp_path):
+    g = make_game(tmp_path)
+    k = next(k for k in W.owned(g.world, 0) if g.world["tiles"][k]["building"] is None)
+    g.world["tiles"][k]["building"] = "home"
+    g.world["nations"][0]["resources"].update(wood=500, stone=500)
+
+    async def steps(c):
+        h = {"Authorization": "Bearer 100"}
+        card = await (await c.get("/api/tile?k=" + k, headers=h)).json()
+        assert card["upgrade"]["level"] == 2 and not card["upgrade"]["missing"]
+        assert (await (await post(c, 100, {"action": "upgrade", "tile": k})).json())["ok"]
+        assert (await (await post(c, 100, {"action": "dm", "on": True})).json())["ok"] and g.wants_dm(100)
+        assert (await (await post(c, 100, {"action": "dm", "on": False})).json())["ok"] and not g.wants_dm(100)
+    run_as(g, steps)
+
+
+def test_trades_and_pacts_from_the_activity(tmp_path):
+    g = make_game(tmp_path)
+    for nid in (0, 1):
+        k = next(k for k, v in g.world["tiles"].items() if v["owner"] == nid and v["building"] is None)
+        g.world["tiles"][k]["building"] = "market"
+    seen = []
+
+    async def offer_hook(server_id, tid):
+        seen.append(("offer", server_id, tid))
+        return True
+
+    async def resolved_hook(server_id, tid):
+        seen.append(("resolved", server_id, tid))
+
+    async def steps(c):
+        public = await (await post(c, 100, {"action": "trade_offer", "to": "", "give": "wood 5", "get": "stone 2"})).json()
+        assert public["ok"] and "trade board" in public["message"]
+        private = await (await post(c, 100, {"action": "trade_offer", "to": "Brask", "give": "wood 3", "get": "stone 1", "private": True})).json()
+        assert private["ok"] and "buttons" in private["message"]
+        assert (await post(c, 100, {"action": "trade_offer", "to": "", "give": "", "get": "", "private": True})).status == 400
+        mine = await (await c.get("/api/nation", headers={"Authorization": "Bearer 100"})).json()
+        theirs = await (await c.get("/api/nation", headers={"Authorization": "Bearer 101"})).json()
+        assert len(mine["offers"]) == 2 and all(o["mine"] for o in mine["offers"])
+        assert len(theirs["offers"]) == 2 and not any(o["mine"] for o in theirs["offers"])
+        carol = await (await c.get("/api/nation", headers={"Authorization": "Bearer 102"})).json()
+        assert len(carol["offers"]) == 1                      # the private offer is not hers to see
+        g.world["nations"][1]["resources"]["stone"] = 50
+        tid = theirs["offers"][0]["id"]
+        assert (await (await post(c, 101, {"action": "trade_accept", "id": tid})).json())["ok"]
+        assert ("resolved", "", tid) in seen
+        pact = await (await post(c, 100, {"action": "pact_propose", "to": "Brask", "text": "No raids"})).json()
+        assert pact["ok"]
+        waiting = (await (await c.get("/api/nation", headers={"Authorization": "Bearer 101"})).json())["pacts"][0]
+        assert waiting["state"] == "waiting for you"
+        assert (await (await post(c, 101, {"action": "pact_accept", "id": waiting["id"]})).json())["ok"]
+        assert (await (await post(c, 100, {"action": "pact_break", "id": waiting["id"]})).json())["ok"]
+    run_as(g, steps, hooks={"offer": offer_hook, "resolved": resolved_hook})
+    assert [s[0] for s in seen].count("offer") == 2

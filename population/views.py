@@ -23,7 +23,8 @@ def map_view(world, rules, nid):
         shown = (not fog) or k in vis
         out.append({"k": k, "terrain": t["terrain"], "oil": shown and W.oil_shown(world, t), "visible": shown,
                     "owner": t["owner"] if shown else None,
-                    "building": t["building"] if shown else None})
+                    "building": t["building"] if shown else None,
+                    "level": W.level_of(t) if shown else 1})
     return out
 
 

@@ -84,28 +84,62 @@
   "buildings": {
     "home": {
       "cost": {
-        "wood": 10,
-        "stone": 5
+        "wood": 12,
+        "stone": 6
       },
-      "houses_workers": 10
+      "houses_workers": 10,
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 30,
+            "stone": 18
+          },
+          "houses_workers": 14
+        },
+        {
+          "cost": {
+            "wood": 60,
+            "stone": 36
+          },
+          "houses_workers": 18
+        }
+      ]
     },
     "barracks": {
       "cost": {
-        "wood": 15,
-        "stone": 15,
-        "ore": 5
+        "wood": 19,
+        "stone": 19,
+        "ore": 6
       },
-      "houses_soldiers": 10
+      "houses_soldiers": 10,
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 38,
+            "stone": 38,
+            "ore": 12
+          },
+          "houses_soldiers": 14
+        },
+        {
+          "cost": {
+            "wood": 75,
+            "stone": 75,
+            "ore": 24
+          },
+          "houses_soldiers": 18
+        }
+      ]
     },
     "market": {
       "cost": {
-        "wood": 20,
-        "stone": 10
+        "wood": 25,
+        "stone": 13
       }
     },
     "wall": {
       "cost": {
-        "stone": 20
+        "stone": 25
       },
       "defense_percent": 20
     }
@@ -176,7 +210,8 @@
     "shortfall_loss_percent": 20
   },
   "trade": {
-    "requires_market": true, "caravans": false,
+    "requires_market": true,
+    "caravans": false,
     "offer_expires_ticks": 3
   },
   "vision_radius": 2,
@@ -192,5 +227,8 @@
     "stock_share_percent": 35,
     "stock_min": 200,
     "last_nation_standing": true
+  },
+  "build": {
+    "rise_percent": 15
   }
 }

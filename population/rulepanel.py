@@ -18,6 +18,8 @@ RULES = [
      "Land an empire needs to win (it can still fall later in the game).", "game"),
     ("scarcity", "Land price rise (%)", "number", ("claim", "scarcity_percent"), 0, (0, 1000, 50),
      "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off).", "land"),
+    ("rise_percent", "Building price rise (%)", "number", ("build", "rise_percent"), 15, (0, 100, 5),
+     "Each building of a kind you already own makes the next of that kind this much dearer (of its base price).", "land"),
     ("share_percent", "Claim price (% of your stock)", "number", ("claim", "share_percent"), 0, (0, 90, 5),
      "Claiming costs this share of the wood and stone you hold, so a nation with little stone still pays little. 0 means the old fixed price.", "land"),
     ("share_stone_percent", "Claim price: stone (% of stock)", "number", ("claim", "share_stone_percent"), 10, (0, 90, 5),

@@ -2,7 +2,7 @@
 No Discord code here, so it can be tested on its own."""
 from . import advice, trade, views, world as W
 from .hexes import parse, neighbors, distance, within
-from .tick import claim_cost, foreign_army_on
+from .tick import build_cost, claim_cost, foreign_army_on, upgrade_of
 
 DIRS = {"nw": (0, -1), "ne": (1, -1), "w": (-1, 0), "e": (1, 0), "sw": (-1, 1), "se": (0, 1)}
 
@@ -53,10 +53,10 @@ def tile_card(world, rules, nid, k):
     v = info.get(k)
     if v is None:
         return {"text": "No such tile.", "can_claim": False, "builds": [], "can_move": False,
-                "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}}
+                "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}, "upgrade": None}
     if not v["visible"]:
         return {"text": "**%s** - fogged, you can't see it." % k, "can_claim": False, "builds": [], "can_move": False,
-                "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}}
+                "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}, "upgrade": None}
     lines = ["**%s** - %s" % (k, v["terrain"])]
     if v["oil"]:
         lines[0] += ", oil deposit"
@@ -77,15 +77,29 @@ def tile_card(world, rules, nid, k):
     if can_claim:
         lines.append("Claim cost: " + advice.fmt(cost) + ".")
     builds = []
+    queued = {}
+    for o in world["orders"]:
+        if o["nation"] == nid and o["type"] == "build":
+            queued[o["building"]] = queued.get(o["building"], 0) + 1
+    prices = {b: build_cost(world, rules, nid, b, queued.get(b, 0)) for b in rules["buildings"]}
     if v["owner"] == nid and v["building"] is None and not foreign_army_on(world, k, nid):
         builds = list(rules["buildings"])
-        lines.append("Build: " + "; ".join("%s (%s)" % (b, ", ".join("%d %s" % (n, r) for r, n in rules["buildings"][b]["cost"].items()))
+        lines.append("Build: " + "; ".join("%s (%s)" % (b, ", ".join("%d %s" % (n, r) for r, n in prices[b].items()))
                                             for b in builds) + ".")
+    upgrade = None
+    up = upgrade_of(rules, world["tiles"][k]) if v["owner"] == nid and not foreign_army_on(world, k, nid) else None
+    if up:
+        level = W.level_of(world["tiles"][k])
+        queued_up = any(o["nation"] == nid and o["type"] == "upgrade" and o.get("tile") == k for o in world["orders"])
+        upgrade = {"level": level + 1, "cost": up["cost"], "missing": advice.shortfall(have, up["cost"]), "queued": queued_up,
+                   "gives": {key: val for key, val in up.items() if key != "cost"}}
+        lines.append("Upgrade to level %d: %s." % (level + 1, ", ".join("%d %s" % (n, r) for r, n in up["cost"].items())))
     return {"text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water",
             "claim_cost": cost, "claim_missing": advice.shortfall(have, cost),
             "claim_queued": advice.claim_queued(world, nid) >= rules["claim"]["per_tick"],
-            "build_cost": {b: rules["buildings"][b]["cost"] for b in builds},
-            "build_missing": {b: advice.shortfall(have, rules["buildings"][b]["cost"]) for b in builds}}
+            "build_cost": {b: prices[b] for b in builds},
+            "build_missing": {b: advice.shortfall(have, prices[b]) for b in builds},
+            "upgrade": upgrade}
 
 
 def my_armies(world, nid):
