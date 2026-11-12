@@ -4,6 +4,7 @@ import io
 import logging
 import os
 import time
+import traceback
 
 import discord
 from discord import app_commands
@@ -49,12 +50,26 @@ admin = app_commands.Group(name="admin", description="Admin commands")
 tutorials = {}      # discord user id -> Tutorial. Practice games live in memory only.
 
 
-@tree.error
-async def command_failed(interaction, error):
-    """Log any crash (so `feudalism logs` shows it) and tell the player instead of leaving them hanging."""
-    logging.getLogger("feudalism").error("Command failed: %s", getattr(interaction.command, "qualified_name", "?"),
-                                         exc_info=error)
-    text = "Something went wrong on my side. The admin can see the details in the log."
+def record_error(where, interaction, error):
+    """Keep the last 20 crashes for /admin errorlog, and write the full traceback to the log."""
+    cause = getattr(error, "original", error)
+    frames = traceback.extract_tb(cause.__traceback__)
+    rows = store.get("error_log", [])
+    rows.append({"at": int(time.time()), "where": where, "user": interaction.user.id,
+                 "error": "%s: %s" % (type(cause).__name__, str(cause)[:200]),
+                 "place": "%s:%d" % (os.path.basename(frames[-1].filename), frames[-1].lineno) if frames else "?"})
+    store.set("error_log", rows[-20:])
+    logging.getLogger("feudalism").error("%s failed", where, exc_info=error)
+    return cause
+
+
+async def tell_failure(interaction, error, cause):
+    text = "Something went wrong on my side. The admin can see the details with /admin errorlog."
+    try:
+        if is_admin(interaction):                      # admins also get the actual error right here
+            text += "\n`%s: %s`" % (type(cause).__name__, str(cause)[:300])
+    except Exception:
+        pass
     try:
         if interaction.response.is_done():
             await interaction.followup.send(text, ephemeral=True)
@@ -62,6 +77,24 @@ async def command_failed(interaction, error):
             await interaction.response.send_message(text, ephemeral=True)
     except discord.HTTPException:
         pass
+
+
+@tree.error
+async def command_failed(interaction, error):
+    where = "/" + getattr(interaction.command, "qualified_name", "?")
+    await tell_failure(interaction, error, record_error(where, interaction, error))
+
+
+async def view_failed(self, interaction, error, item):
+    await tell_failure(interaction, error, record_error("a button or menu", interaction, error))
+
+
+async def modal_failed(self, interaction, error):
+    await tell_failure(interaction, error, record_error("a pop-up", interaction, error))
+
+
+discord.ui.View.on_error = view_failed          # crashes in buttons and menus are recorded too
+discord.ui.Modal.on_error = modal_failed
 
 
 def game_for(user_id):
@@ -1007,6 +1040,18 @@ async def admin_rules(interaction: discord.Interaction):
 @admin.command(name="resetrules", description="Put every rule back to the mode's defaults (next tick if the game is running)")
 async def admin_resetrules(interaction: discord.Interaction):
     await admin_run(interaction, game.reset_rules, public=True)
+
+
+@admin.command(name="errorlog", description="Show the most recent errors the bot ran into")
+async def admin_errorlog(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    rows = store.get("error_log", [])
+    if not rows:
+        return await say(interaction, "No errors recorded.")
+    lines = ["<t:%d:R> %s by <@%d>: `%s` (%s)" % (r["at"], r["where"], r["user"], r["error"], r["place"])
+             for r in reversed(rows[-10:])]
+    await say(interaction, ("**Latest errors** (newest first)\n" + "\n".join(lines))[:1990])
 
 
 @admin.command(name="expand", description="Add rings of new land to the map")

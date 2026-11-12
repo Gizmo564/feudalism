@@ -381,3 +381,29 @@ def test_rules_panel_number_entry_and_reset(bot, game):
         assert "Can't do that" in j.response.send_message.await_args.args[0]
         assert game.pending_rules == {"scarcity": 350}
     asyncio.run(go())
+
+
+def test_errors_are_recorded_and_listed(bot, game, monkeypatch):
+    async def go():
+        monkeypatch.setattr(bot, "is_admin", lambda i: True)
+        try:
+            raise ValueError("boom")
+        except ValueError as e:
+            err = e
+        i = click(7)
+        i.response.is_done = lambda: False
+        i.command = SimpleNamespace(qualified_name="admin announcements")
+        await bot.command_failed(i, err)
+        assert "boom" in i.response.send_message.await_args.args[0]
+        j = click(7)
+        j.response.is_done = lambda: False
+        await bot.view_failed(None, j, err, None)                 # a button crash is recorded the same way
+        k = click(7)
+        await bot.admin_errorlog.callback(k)
+        text = k.response.send_message.await_args.args[0]
+        assert "/admin announcements" in text and "a button or menu" in text and "ValueError: boom" in text
+        assert len(bot.store.get("error_log")) == 2
+        for _ in range(25):
+            bot.record_error("/x", click(7), err)
+        assert len(bot.store.get("error_log")) == 20              # capped
+    asyncio.run(go())
