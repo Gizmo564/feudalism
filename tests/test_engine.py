@@ -64,6 +64,7 @@ def test_late_join_on_outer_ring_with_protection(rules, world):
 # ---------- claiming ----------
 
 def test_claim_adjacent_costs_wood(rules):
+    rules["claim"]["share_percent"] = 0          # the old fixed price
     w = two_nations(rules)
     owned = len(W.owned(w, 0))
     tick.queue(w, rules, 0, {"type": "claim", "tile": "0,-1"})
@@ -656,6 +657,23 @@ def test_claim_price_rises_with_scarcity_and_falls_when_map_grows(rules):
     assert full["wood"] <= cheap["wood"] * (100 + rules["claim"]["scarcity_percent"]) // 100 + 1
     W.expand_map(w, rules, 2)                      # new land is free, so land gets cheaper again
     assert sum(tick.claim_cost(w, rules, 0).values()) < sum(full.values())
+
+
+def test_share_price_follows_your_stock_with_a_floor(rules):
+    c = rules["claim"]
+    c.update(share_percent=20, share_per_tile=0, share_min={"wood": 3, "stone": 1}, scarcity_percent=0)
+    w = two_nations(rules)
+    res = w["nations"][0]["resources"]
+    res.update(wood=100, stone=50)
+    assert tick.claim_cost(w, rules, 0) == {"wood": 20, "stone": 10}
+    res.update(wood=5, stone=0)                       # no stone: still claimable, never free
+    assert tick.claim_cost(w, rules, 0) == {"wood": 3, "stone": 1}
+    c.update(share_per_tile=5)                        # the share grows with land, up to 90%
+    res.update(wood=100, stone=100)
+    owned = len(W.owned(w, 0))
+    assert tick.claim_cost(w, rules, 0)["wood"] == 100 * (20 + 5 * owned) // 100
+    c.update(share_per_tile=1000)
+    assert tick.claim_cost(w, rules, 0)["wood"] == 90
 
 
 def test_quoted_price_is_what_you_pay(rules):
