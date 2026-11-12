@@ -14,6 +14,9 @@ db_path() {
   case "$db" in /*) echo "$db" ;; *) echo "$APP_DIR/$db" ;; esac
 }
 
+# "main at 1a2b3c4" so it is always clear which version is on the box
+where() { echo "$(git -C "$APP_DIR" branch --show-current) at $(git -C "$APP_DIR" rev-parse --short HEAD)"; }
+
 # A backup name like game-2026-11-11-180623.db (path tricks are refused)
 backup_file() {
   local name="${1:-}"
@@ -27,10 +30,10 @@ usage() {
   cat <<'EOF'
 feudalism <command>
 
-  status               is the bot running?
+  status               is the bot running? (also shows which branch it is on)
   start | stop | restart
   logs [-f]            recent log lines (-f keeps following)
-  update               get the latest code from GitHub and restart
+  update               get the latest code for the branch you are on (the one 'try' picked) and restart
   auto on | off        turn automatic updates on or off
   try <branch>         switch to a test branch from GitHub and restart (back again: feudalism try main)
   env                  edit the settings file (.env), then offer to restart
@@ -46,11 +49,11 @@ EOF
 cmd="${1:-help}"; [ $# -gt 0 ] && shift
 case "$cmd" in
   help|-h|--help) usage ;;
-  status)  $SYSTEMCTL status "$SERVICE" --no-pager -n 5 ;;
+  status)  echo "Code: $(where)"; $SYSTEMCTL status "$SERVICE" --no-pager -n 5 ;;
   start|stop|restart) $SYSTEMCTL "$cmd" "$SERVICE"; echo "Bot: $cmd done." ;;
   logs)
     if [ "${1:-}" = "-f" ]; then journalctl -u "$SERVICE" -f; else journalctl -u "$SERVICE" -n 50 --no-pager; fi ;;
-  update)  exec "$APP_DIR/install.sh" ;;
+  update)  echo "Updating the branch you are on: $(where)"; exec "$APP_DIR/install.sh" ;;
   auto)
     case "${1:-}" in
       on)  exec "$APP_DIR/install.sh" --auto ;;
