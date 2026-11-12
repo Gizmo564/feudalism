@@ -17,7 +17,15 @@ RULES = [
     ("win_share", "Win share (% of land)", "number", ("victory", "land_share_percent"), 40, (5, 100, 5),
      "Land an empire needs to win (it can still fall later in the game).", "game"),
     ("scarcity", "Land price rise (%)", "number", ("claim", "scarcity_percent"), 0, (0, 1000, 50),
-     "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off).", "game"),
+     "How much dearer land is once the whole map is claimed (200 means triple; 0 turns it off).", "land"),
+    ("share_percent", "Claim price (% of your stock)", "number", ("claim", "share_percent"), 0, (0, 90, 5),
+     "Claiming costs this share of the wood and stone you hold, so a nation with little stone still pays little. 0 means the old fixed price.", "land"),
+    ("share_per_tile", "Extra % per tile owned", "number", ("claim", "share_per_tile"), 0, (0, 10, 1),
+     "The share rises by this much for every tile you own (the total never passes 90%). Only used when the claim price share is on.", "land"),
+    ("share_min_wood", "Cheapest claim: wood", "number", ("claim", "share_min", "wood"), 3, (1, 20, 1),
+     "The least wood a claim ever costs. Only used when the claim price share is on.", "land"),
+    ("share_min_stone", "Cheapest claim: stone", "number", ("claim", "share_min", "stone"), 1, (0, 20, 1),
+     "The least stone a claim ever costs. Only used when the claim price share is on.", "land"),
     ("expiry", "Trade offer expiry (nights)", "number", ("trade", "offer_expires_ticks"), 3, (1, 10, 1),
      "How long an offer stays open.", "trade"),
     ("tick_hours", "Hours between ticks", "number", ("tick_hours",), 24, (1, 48, 1),
@@ -34,7 +42,7 @@ for _res in ("food", "wood", "stone", "ore", "oil", "livestock"):
     RULES.append(("start_" + _res, "Starting " + _res, "number", ("start", "resources", _res), 0, (0, 1000, 5),
                   "How much %s a new nation starts with. Only nations created after the change are affected." % _res, "start"))
 # the tabs of the admin's panel, in order
-TABS = [("game", "Game"), ("trade", "Trade"), ("start", "Start")]
+TABS = [("game", "Game"), ("land", "Land"), ("trade", "Trade"), ("start", "Start")]
 BY_KEY = {r[0]: r for r in RULES}
 RISKY = {"workers"}
 

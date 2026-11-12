@@ -109,6 +109,11 @@ def claim_cost(world, rules, nid):
     out = dict(c["base"])
     for r, v in c["per_tile"].items():
         out[r] = out.get(r, 0) + v * count
+    share = c.get("share_percent", 0)
+    if share:   # the price is a share of what you hold, so you can always afford some land; never below the minimum
+        share = min(90, share + c.get("share_per_tile", 0) * count)
+        have = world["nations"][nid]["resources"]
+        out = {r: max(m, have.get(r, 0) * share // 100) for r, m in c.get("share_min", {}).items()}
     scarcity = c.get("scarcity_percent", 0)
     if scarcity:   # the fuller the map, the dearer the land; at a full map prices are (100 + scarcity)% of normal
         pct = world.get("claimed_pct", W.claimed_pct(world))

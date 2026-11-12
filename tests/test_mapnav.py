@@ -330,6 +330,8 @@ def test_rules_panel(bot, game):
         assert game.pending_rules == {"fog": True} and "next tick" in view.text()
         await find(view, "Undo change").callback(click(100))
         assert game.pending_rules == {}
+        await find(view, "Land").callback(click(100))
+        menu = selects(view)[0]
         menu._values = ["scarcity"]
         await view.pick(menu)(click(100))
         await find(view, "+50").callback(click(100))
@@ -360,6 +362,8 @@ def test_rules_panel_before_the_game_starts(bot, tmp_path):
 def test_rules_panel_number_entry_and_reset(bot, game):
     async def go():
         view = bot.RulesView(100, game)
+        menu = selects(view)[0]
+        await find(view, "Land").callback(click(100))
         menu = selects(view)[0]
         menu._values = ["scarcity"]
         await view.pick(menu)(click(100))

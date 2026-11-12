@@ -143,6 +143,12 @@
       "stone": 1
     },
     "per_tick": 1,
+    "share_percent": 20,
+    "share_per_tile": 1,
+    "share_min": {
+      "wood": 3,
+      "stone": 1
+    },
     "scarcity_percent": 200
   },
   "soldier": {
