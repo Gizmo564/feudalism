@@ -417,7 +417,7 @@ def test_unseen_channel_gets_a_clear_message(bot):
         i = click(7)
         i.command = None
         err = app_commands.TransformerError("announcements", discord.AppCommandOptionType.channel,
-                                            app_commands.transformers.BaseChannelTransformer([discord.TextChannel]))
+                                            app_commands.transformers.BaseChannelTransformer(discord.TextChannel))
         await bot.command_failed(i, err)
         assert "View Channel" in i.response.send_message.await_args.args[0]
         assert bot.store.get("error_log", []) == []              # a user-side problem, not a bot crash
