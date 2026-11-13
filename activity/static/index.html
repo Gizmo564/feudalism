@@ -107,6 +107,19 @@
       #panel .grip { display: block; width: 40px; height: 4px; border-radius: 2px; background: #5a5d66; margin: 0 auto 12px; }
       h2 { font-size: 20px; }
     }
+    /* the optional paper theme: an old parchment map */
+    body.paper { --bg: #efe3c4; --panel: #f6ecd2; --line: #cdb98b; --text: #3b2f1e; --muted: #7a6a4c; --accent: #8b5a2b; --chip: #eadcb6;
+                 font-family: Georgia, "Iowan Old Style", serif; }
+    body.paper .chip { background: #f6ecd2e6; }
+    body.paper .chip.on { background: var(--accent); color: #fff; }
+    body.paper #zoom button, body.paper #legend { background: #f6ecd2f0; }
+    body.paper .btn.plain { background: #e2d2a6; }
+    body.paper .btn.off { color: #a8987a; }
+    body.paper .msg.ok { background: #d7e3bd; }
+    body.paper .msg.bad { background: #ecc9bd; }
+    body.paper .row .short { color: #a63d2f; }
+    body.paper .hchip.zero b { color: #a8987a; }
+    body.paper .btn:focus-visible, body.paper .tab:focus-visible, body.paper .chip:focus-visible { outline-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -120,6 +133,7 @@
         <div id="chips" class="overlay">
           <button class="chip on" id="terrain">Terrain</button>
           <button class="chip" id="coords">Coordinates</button>
+          <button class="chip" id="paper">Paper</button>
         </div>
         <div id="zoom" class="overlay">
           <button id="zin" aria-label="Zoom in">+</button>
@@ -131,6 +145,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=16"></script>
+  <script src="/static/app.js?v=17"></script>
 </body>
 </html>

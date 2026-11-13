@@ -12,8 +12,18 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
-const TERRAIN = {field: "#e2e8c8", forest: "#bed2aa", hills: "#e2d4b0", mountain: "#c8c6c2", water: "#dcebf7"};
-const NEUTRAL = "#ede9e0", FOG = "#c4c2ba";
+const THEMES = {   // the map's colours: the normal ones, and the paper (old parchment map) ones
+  normal: {terrain: {field: "#e2e8c8", forest: "#bed2aa", hills: "#e2d4b0", mountain: "#c8c6c2", water: "#dcebf7"}, neutral: "#ede9e0", fog: "#c4c2ba", back: "#2b2d31"},
+  paper: {terrain: {field: "#ebdfb9", forest: "#cfc795", hills: "#dcc78f", mountain: "#cbbfa5", water: "#b7cdd1"}, neutral: "#f1e6c6", fog: "#cdbf9c", back: "#e3d3a8"},
+};
+let TERRAIN = THEMES.normal.terrain, NEUTRAL = THEMES.normal.neutral, FOG = THEMES.normal.fog, BACK = THEMES.normal.back;
+function setTheme(paper) {
+  const t = THEMES[paper ? "paper" : "normal"];
+  TERRAIN = t.terrain; NEUTRAL = t.neutral; FOG = t.fog; BACK = t.back;
+  document.body.classList.toggle("paper", paper);
+  try { localStorage.setItem("paper", paper ? "1" : ""); } catch (e) {}
+}
+try { setTheme(localStorage.getItem("paper") === "1"); } catch (e) {}
 const RES_COLOUR = {food: "#8fc46b", wood: "#c28a4a", stone: "#a9a7a1", ore: "#7fa3c7", oil: "#6b5a50", livestock: "#e0a1a1", tools: "#d9a441", steel: "#9aa5b1", provisions: "#e6c27a", bricks: "#c0614a"};
 const SQRT3 = Math.sqrt(3);
 // the same little line icons the Discord map uses (drawn about 14 units wide)
@@ -380,7 +390,7 @@ function showMap(data, headers) {
   }
 
   function draw() {
-    ctx.fillStyle = "#2b2d31"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = BACK; ctx.fillRect(0, 0, W, H);
     const sx = (t) => W / 2 + (t.x - cx) * size, sy = (t) => H / 2 + (t.y - cy) * size;
     const seen = tiles.filter((t) => {
       const x = sx(t), y = sy(t);
@@ -547,6 +557,8 @@ function showMap(data, headers) {
   $("zout").onclick = () => zoom(0.8);
   $("home").onclick = () => { centreOn(data.capital); draw(); };
   $("coords").onclick = () => { coords = !coords; $("coords").classList.toggle("on", coords); draw(); };
+  $("paper").classList.toggle("on", document.body.classList.contains("paper"));
+  $("paper").onclick = () => { setTheme(!document.body.classList.contains("paper")); $("paper").classList.toggle("on", document.body.classList.contains("paper")); legend(); draw(); };
   $("terrain").onclick = () => { terrain = !terrain; $("terrain").classList.toggle("on", terrain); draw(); };
   addEventListener("resize", resize);
   ui.headers = headers; ui.refresh = refresh;
@@ -568,10 +580,11 @@ function showMap(data, headers) {
   };
   const mine = data.nations.find((n) => n.id === data.me);
   const myDark = dark(mine ? mine.color : "#888888");
-  $("legend").replaceChildren(
+  const legend = () => $("legend").replaceChildren(
     ...data.nations.map((n) => key(swatch(n.color), n.name + (n.id === data.me ? " (you)" : ""))),
     key(swatch(NEUTRAL), "Free land"), key(swatch(TERRAIN.water), "Water"),
     key(marker(CART_D, myDark, true), "Caravan"), key(marker("M0 -10L8 -7V1Q8 8 0 11Q-8 8 -8 1V-7Z", myDark, false), "Army"));
+  legend();
 
   $("status").style.display = "none";
   $("app").style.display = "flex";
