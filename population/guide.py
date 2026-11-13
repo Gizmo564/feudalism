@@ -133,12 +133,14 @@ def modes(rules):
 
 def war(rules):
     worker, soldier, _ = words(rules)
+    steps = rules["movement"].get("army_steps_on_own_land", 1)
     c = rules["combat"]
     rolls = c["roll_percent"]
     return "\n".join([
         "**Armies**",
         "/train turns %ss into %ss (each costs %s and a %s) and needs room in your barracks or capital." % (worker, soldier, cost(rules["soldier"]["train_cost"]), worker),
-        "In /zoom, pick a tile and press Send army. Armies move one tile a night.",
+        "In /zoom, pick a tile and press Send army. Armies move %s a night%s." % (
+            "one tile" if steps == 1 else "%d tiles" % steps, "" if steps == 1 else " over your own land (one tile elsewhere)"),
         "",
         "**Fighting**",
         "An army that walks onto enemy land attacks. Each side's strength is its %ss times a random %d-%d%%." % (

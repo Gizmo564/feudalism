@@ -233,6 +233,17 @@ def test_train_limited_by_barracks_room(rules):
     tick.queue(w, rules, 0, {"type": "train", "n": 5})
     tick.apply_orders(w, rules, random.Random(1))
     assert W.soldiers(w, 0) == 10  # capital holds 10 soldiers, 6 already there
+    assert [o["n"] for o in w["orders"]] == [1]   # the rest waits for the next night
+    assert any("barracks room" in e for e in w["events"]["0"])
+
+
+def test_waiting_train_order_finishes_when_room_opens(rules):
+    w = two_nations(rules)
+    tick.queue(w, rules, 0, {"type": "train", "n": 5})
+    tick.apply_orders(w, rules, random.Random(1))
+    w["tiles"]["-3,0"].update(owner=0, building="barracks")
+    tick.apply_orders(w, rules, random.Random(1))
+    assert W.soldiers(w, 0) == 11 and w["orders"] == []
 
 
 # ---------- economy ----------
@@ -1191,3 +1202,17 @@ def test_goods_cross_water_faster_by_port(rules):
     assert trade.speed_between(w, r, a, c) == land                     # no port: no route over water, so the plain speed
     w["tiles"][b].update(owner=0, building="port")
     assert trade.speed_between(w, r, a, c) == land * r["trade"]["sea_speed_percent"] // 100 == 3
+
+
+def test_armies_take_extra_steps_only_over_own_land(rules):
+    w = two_nations(rules)
+    rules["movement"]["army_steps_on_own_land"] = 2
+    for k in ("-2,0", "-1,0", "0,0"):
+        w["tiles"][k].update(owner=0, terrain="field")
+    W.add_army(w, 0, "-3,0", 3, dest="0,0")
+    tick.move_armies(w, rules, random.Random(1))
+    assert w["armies"][-1]["tile"] == "-1,0"          # two tiles over own land
+    rules["movement"]["army_steps_on_own_land"] = 1
+    w["armies"][-1].update(tile="-3,0", dest="0,0")
+    tick.move_armies(w, rules, random.Random(1))
+    assert w["armies"][-1]["tile"] == "-2,0"

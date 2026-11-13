@@ -309,18 +309,23 @@ def do_train(world, rules, n, o):
     if steel and steel_problem(world, rules, nid):
         return W.ev(world, nid, "Steel training failed: %s" % steel_problem(world, rules, nid))
     cost = train_cost(rules, steel)
-    room = W.housing(world, rules, nid)[1] - W.soldiers(world, nid)
-    count = min(o["n"], room, n["workers"] - 1)
+    limits = {"barracks room": W.housing(world, rules, nid)[1] - W.soldiers(world, nid), "workers (one must stay)": n["workers"] - 1}
     for r, v in cost.items():
         if v > 0:
-            count = min(count, n["resources"][r] // v)
-    if count <= 0:
-        return W.ev(world, nid, "Training failed: need barracks room, resources and workers")
-    for r, v in cost.items():
-        n["resources"][r] -= v * count
-    n["workers"] -= count
-    W.add_army(world, nid, n["capital"], count, steel=steel)
-    W.ev(world, nid, "You trained %d %ssoldiers (asked for %d)" % (count, "steel " if steel else "", o["n"]))
+            limits[r] = n["resources"][r] // v
+    count = max(0, min([o["n"]] + list(limits.values())))
+    word = "steel soldiers" if steel else "soldiers"
+    if count > 0:
+        for r, v in cost.items():
+            n["resources"][r] -= v * count
+        n["workers"] -= count
+        W.add_army(world, nid, n["capital"], count, steel=steel)
+    left = o["n"] - count
+    if left <= 0:
+        return W.ev(world, nid, "You trained %d %s" % (count, word))
+    why = min(limits, key=limits.get)       # the tightest limit
+    W.ev(world, nid, "You trained %d of %d %s, limited by %s. The other %d stay queued and train when there is room" % (count, o["n"], word, why, left))
+    return left
 
 
 def do_move(world, rules, n, o):
@@ -429,14 +434,17 @@ def resolve_contests(world, rules, rng):
 
 def apply_orders(world, rules, rng):
     find_contests(world, rules)
+    waiting = []
     order = list(world["nations"])
     rng.shuffle(order)
     for n in order:
         if not n["alive"]:
             continue
         for o in [x for x in world["orders"] if x["nation"] == n["id"]]:
-            {"claim": do_claim, "build": do_build, "upgrade": do_upgrade, "train": do_train, "move": do_move}[o["type"]](world, rules, n, o)
-    world["orders"] = []
+            left = {"claim": do_claim, "build": do_build, "upgrade": do_upgrade, "train": do_train, "move": do_move}[o["type"]](world, rules, n, o)
+            if o["type"] == "train" and left:       # a training order that could not finish waits for the next night
+                waiting.append(dict(o, n=left))
+    world["orders"] = waiting
 
 
 # ---------- movement and battle ----------
@@ -508,13 +516,19 @@ def move_armies(world, rules, rng):
     for a in sorted([x for x in world["armies"] if x["dest"]], key=lambda x: (rank[x["owner"]], x["id"])):
         if a not in world["armies"]:
             continue
-        step = next_step(world, a["tile"], a["dest"])
-        if step is None:
-            a["dest"] = None
-            continue
-        attack(world, rules, rng, a, step)
-        if a in world["armies"] and a["tile"] == a["dest"]:
-            a["dest"] = None
+        for i in range(rules["movement"].get("army_steps_on_own_land", 1)):   # extra steps only over your own land
+            if a not in world["armies"] or not a["dest"]:
+                break
+            step = next_step(world, a["tile"], a["dest"])
+            if step is None:
+                a["dest"] = None
+                break
+            own_land = world["tiles"][step]["owner"] == a["owner"] and world["tiles"][a["tile"]]["owner"] == a["owner"]
+            attack(world, rules, rng, a, step)
+            if a in world["armies"] and a["tile"] == a["dest"]:
+                a["dest"] = None
+            if not own_land:
+                break
     merged = []
     for a in world["armies"]:
         same = next((m for m in merged if m["owner"] == a["owner"] and m["tile"] == a["tile"]

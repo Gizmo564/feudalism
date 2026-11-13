@@ -328,7 +328,8 @@
     "casualty_percent": 50
   },
   "movement": {
-    "trade_tiles_per_tick": 2
+    "trade_tiles_per_tick": 2,
+    "army_steps_on_own_land": 2
   },
   "oil_upkeep": {
     "soldiers_per_oil": 5,
