@@ -78,7 +78,8 @@ const swatch = (colour) => el("i", {className: "sw", style: "background:" + colo
 // ---- the bars above the map: your name, your stock, what you hold ----
 function showBars(data, name) {
   const mine = data.nations.find((n) => n.id === data.me);
-  $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name, el("span", {className: "night", textContent: "Night " + data.tick}));
+  const badge = data.rank ? [el("span", {className: "rank", textContent: data.rank.title, style: "background:" + (data.rank.color || "#888")})] : [];   // each rank has its own colour
+  $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name, ...badge, el("span", {className: "night", textContent: "Night " + data.tick}));
   const raw = ["food", "wood", "stone", "ore", "oil", "coal", "livestock"];        // refined goods only show up once you have some
   ui.contests = (data.contests || []).length;
   ui.pending = data.pending || 0;

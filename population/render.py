@@ -363,7 +363,10 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             cv.rect(x0, y - 7, x0 + 16, y + 7, fill if n["alive"] else FOG, dark, 1.5)
             rank = views.rank_title(world, rules, n["id"]) if n["alive"] else None
             label = n["name"] + (" (%s)" % rank if rank else "") + ("" if n["alive"] else " - fallen")
-            cv.text(x0 + 24, y, label[:22], 12, MUTED, bold=False, anchor="lm")
+            col = views.rank_color(rules, rank) if rank else None
+            if col:                                              # a dot in the rank's colour, so each rank looks different
+                cv.circle(x0 + 28, y, 4, tuple(int(col[i:i + 2], 16) for i in (1, 3, 5)), (0, 0, 0), 0.6)
+            cv.text(x0 + (38 if col else 24), y, label[:20], 12, MUTED, bold=False, anchor="lm")
             y += 22
         y += 10
         cv.text(x0, y, "Key", 14, INK, anchor="lm")

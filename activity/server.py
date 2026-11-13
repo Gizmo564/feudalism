@@ -167,6 +167,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
         stock = world["nations"][nid]["resources"]
         return web.json_response({
             "tick": world["tick"], "me": nid, "capital": world["nations"][nid]["capital"], "nations": nations,
+            "rank": ({"title": rank, "color": views.rank_color(game.rules, rank)} if (rank := views.rank_title(world, game.rules, nid)) else None),
             "resources": [[r, stock.get(r, 0)] for r in rules["resources"]],
             "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],

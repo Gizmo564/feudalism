@@ -346,28 +346,34 @@
   "ranks": [
     {
       "title": "Lord",
-      "min_land_percent": 0
+      "min_land_percent": 0,
+      "color": "#9aa0a6"
     },
     {
       "title": "Baron",
-      "min_land_percent": 5
+      "min_land_percent": 5,
+      "color": "#5aa469"
     },
     {
       "title": "Count",
-      "min_land_percent": 8
+      "min_land_percent": 8,
+      "color": "#3f8fd2"
     },
     {
       "title": "Duke",
-      "min_land_percent": 12
+      "min_land_percent": 12,
+      "color": "#8e5fd0"
     },
     {
       "title": "King",
-      "min_land_percent": 20
+      "min_land_percent": 20,
+      "color": "#e0a53a"
     },
     {
       "title": "Emperor",
       "min_land_percent": 40,
-      "empire": true
+      "empire": true,
+      "color": "#d6453d"
     }
   ],
   "vision_radius": 2,

@@ -674,3 +674,10 @@ def test_goods_go_by_choice_is_ignored_in_modes_without_trains(game):
     game.world["tiles"][t]["building"] = "market"
     tid, _ = game.make_offer(100, "", "wood 5", "", by="train")      # feudalism has no trains: no error, no "by" on the offer
     assert "by" not in next(o for o in game.world["trades"] if o["id"] == tid)
+
+
+def test_each_rank_has_its_own_colour(feud_rules):
+    from population import views
+    colours = [r["color"] for r in feud_rules["ranks"]]
+    assert len(set(colours)) == len(colours) and all(c.startswith("#") and len(c) == 7 for c in colours)
+    assert views.rank_color(feud_rules, "Duke") == "#8e5fd0" and views.rank_color(feud_rules, "Nobody") is None

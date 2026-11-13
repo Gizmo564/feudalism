@@ -59,6 +59,11 @@ def public_standings(world, rules, nid):
     return rows
 
 
+def rank_color(rules, title):
+    """The colour (#rrggbb) of a rank title, or None."""
+    return next((r.get("color") for r in rules.get("ranks", []) if r["title"] == title), None)
+
+
 def rank_title(world, rules, nid):
     """Title earned by the share of the world's land a nation holds. Cosmetic for now."""
     if "ranks" not in rules:
