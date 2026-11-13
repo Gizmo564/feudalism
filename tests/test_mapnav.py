@@ -574,7 +574,7 @@ def test_every_slash_command_fits_discords_limits(bot):
         check(c.to_dict(bot.tree), c.name)
 
 
-def test_admin_clear_asks_first_then_wipes_unpinned_messages(bot, game, monkeypatch):
+def test_admin_wipe_asks_first_then_wipes_unpinned_messages(bot, game, monkeypatch):
     class Channel:
         id, name = 9, "announcements"
         def __init__(self):
@@ -587,13 +587,11 @@ def test_admin_clear_asks_first_then_wipes_unpinned_messages(bot, game, monkeypa
             return gone
 
     channel = Channel()
-    monkeypatch.setattr(bot.client, "get_channel", lambda i: channel)
-    bot.store.set("announce_channel", 9)
 
     async def go():
         i = click(100)
         i.permissions = SimpleNamespace(administrator=True)
-        await bot.admin_clear_announcements.callback(i)
+        await bot.admin_wipe.callback(i, channel)
         view = i.response.send_message.await_args.kwargs["view"]
         assert "can't be undone" in i.response.send_message.await_args.args[0] and channel.kept is None   # nothing yet
         press = click(100)

@@ -1027,7 +1027,7 @@ async def admin_announcements(interaction: discord.Interaction, channel: discord
 
 
 class ClearView(discord.ui.View):
-    """Asks once before wiping the announcements channel."""
+    """Asks once before wiping a channel."""
 
     def __init__(self, uid, channel):
         super().__init__(timeout=120)
@@ -1053,13 +1053,11 @@ class ClearView(discord.ui.View):
         self.stop()
 
 
-@admin.command(name="clearannouncements", description="Delete the messages in the announcements channel (for a fresh start)")
-async def admin_clear_announcements(interaction: discord.Interaction):
+@admin.command(name="wipe", description="Delete all messages in a channel (for a fresh start), keeping pinned ones")
+@app_commands.describe(channel="The channel to clear, for example the announcements, log or trade board channel")
+async def admin_wipe(interaction: discord.Interaction, channel: discord.TextChannel):
     if not is_admin(interaction):
         return await say(interaction, deny(interaction))
-    channel = announce_channel()
-    if channel is None:
-        return await say(interaction, "No announcements channel is set. Use /admin announcements first.")
     await interaction.response.send_message(
         "This deletes every message in #%s (pinned ones stay). It can't be undone. Messages older than two weeks are "
         "removed one at a time, so a long history takes a while." % channel.name,
