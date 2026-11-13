@@ -670,5 +670,7 @@ def test_pact_news_is_dmed_to_players_who_opted_in(game):
 
 
 def test_goods_go_by_choice_is_ignored_in_modes_without_trains(game):
+    t = next(k for k, v in game.world["tiles"].items() if v["owner"] == 0 and v["building"] is None)
+    game.world["tiles"][t]["building"] = "market"
     tid, _ = game.make_offer(100, "", "wood 5", "", by="train")      # feudalism has no trains: no error, no "by" on the offer
     assert "by" not in next(o for o in game.world["trades"] if o["id"] == tid)
