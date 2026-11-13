@@ -1026,6 +1026,46 @@ async def admin_announcements(interaction: discord.Interaction, channel: discord
     await say(interaction, "Announcements and nightly reports will go to #%s." % channel.name)
 
 
+class ClearView(discord.ui.View):
+    """Asks once before wiping the announcements channel."""
+
+    def __init__(self, uid, channel):
+        super().__init__(timeout=120)
+        self.uid, self.channel = uid, channel
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    @discord.ui.button(label="Yes, delete everything that isn't pinned", style=discord.ButtonStyle.danger)
+    async def yes(self, interaction, button):
+        await interaction.response.edit_message(content="Clearing #%s ..." % self.channel.name, view=None)
+        try:
+            gone = await self.channel.purge(limit=None, check=lambda m: not m.pinned)
+            text = "Cleared #%s: %d message%s deleted. Pinned messages were kept." % (self.channel.name, len(gone), "" if len(gone) == 1 else "s")
+        except discord.Forbidden:
+            text = "I can't do that in #%s. Give me Manage Messages and Read Message History there." % self.channel.name
+        await interaction.edit_original_response(content=text)
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def no(self, interaction, button):
+        await interaction.response.edit_message(content="Nothing was deleted.", view=None)
+        self.stop()
+
+
+@admin.command(name="clearannouncements", description="Delete the messages in the announcements channel (for a fresh start)")
+async def admin_clear_announcements(interaction: discord.Interaction):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    channel = announce_channel()
+    if channel is None:
+        return await say(interaction, "No announcements channel is set. Use /admin announcements first.")
+    await interaction.response.send_message(
+        "This deletes every message in #%s (pinned ones stay). It can't be undone. Messages older than two weeks are "
+        "removed one at a time, so a long history takes a while." % channel.name,
+        view=ClearView(interaction.user.id, channel), ephemeral=True)
+
+
 @admin.command(name="tradeboard", description="Choose the channel for public trade offers (empty = use announcements)")
 async def admin_tradeboard(interaction: discord.Interaction, channel: discord.TextChannel = None):
     if not is_admin(interaction):

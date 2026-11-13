@@ -14,7 +14,7 @@ Run a mode with `python3 simulate.py --rules rules/feudalism.json`.
 
 ## Running the Discord bot
 1. Developer Portal -> New Application. On the **Bot** page, Reset Token and copy it (keep it secret, never commit it). No privileged intents are needed.
-2. **Installation** page: enable Guild Install, add scopes `bot` and `applications.commands`, and permissions Send Messages, Attach Files, Manage Roles. Open the install link and add the bot to your server.
+2. **Installation** page: enable Guild Install, add scopes `bot` and `applications.commands`, and permissions Send Messages, Attach Files, Manage Roles (add Manage Messages and Read Message History to use `/admin clearannouncements`). Open the install link and add the bot to your server.
 3. In Discord, put the bot's role **above** the title roles (Lord ... Emperor) so it can assign them. Create a role named `admin` for admins (or change ADMIN_ROLE).
 4. `cp .env.example .env` and paste the token. Leave GUILD_ID blank so any server can use the bot (set it only to limit the commands to one test server).
 5. `pip install -r requirements.txt` then `python3 discord_bot.py`. On Ubuntu use `feudalism-bot.service` to keep it running.

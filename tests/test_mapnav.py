@@ -572,3 +572,36 @@ def test_every_slash_command_fits_discords_limits(bot):
                 check(o, path + " " + o["name"])
     for c in bot.tree.get_commands():
         check(c.to_dict(bot.tree), c.name)
+
+
+def test_admin_clear_asks_first_then_wipes_unpinned_messages(bot, game, monkeypatch):
+    class Channel:
+        id, name = 9, "announcements"
+        def __init__(self):
+            self.kept = None
+
+        async def purge(self, limit=None, check=None):
+            msgs = [SimpleNamespace(pinned=False), SimpleNamespace(pinned=True), SimpleNamespace(pinned=False)]
+            gone = [m for m in msgs if check(m)]
+            self.kept = len(msgs) - len(gone)
+            return gone
+
+    channel = Channel()
+    monkeypatch.setattr(bot.client, "get_channel", lambda i: channel)
+    bot.store.set("announce_channel", 9)
+
+    async def go():
+        i = click(100)
+        i.permissions = SimpleNamespace(administrator=True)
+        await bot.admin_clear_announcements.callback(i)
+        view = i.response.send_message.await_args.kwargs["view"]
+        assert "can't be undone" in i.response.send_message.await_args.args[0] and channel.kept is None   # nothing yet
+        press = click(100)
+        await view.yes.callback(press)
+        assert channel.kept == 1 and "2 messages deleted" in press.edit_original_response.await_args.kwargs["content"]
+        other = click(555)
+        assert not await view.interaction_check(other)                   # only the admin who asked can confirm
+        stop = click(100)
+        await view.no.callback(stop)
+        assert "Nothing was deleted" in stop.response.edit_message.await_args.kwargs["content"]
+    asyncio.run(go())
