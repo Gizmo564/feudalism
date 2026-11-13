@@ -1699,8 +1699,15 @@ async def sync_roles(guild):
         return
     names = [r["title"] for r in game.rules["ranks"]]
     roles = {}
-    for name in names:
-        roles[name] = discord.utils.get(guild.roles, name=name) or await guild.create_role(name=name, reason="Game title")
+    for rank in game.rules["ranks"]:
+        name, hexcol = rank["title"], rank.get("color")
+        colour = discord.Colour(int(hexcol[1:], 16)) if hexcol else discord.Colour.default()
+        role = discord.utils.get(guild.roles, name=name)
+        if role is None:
+            role = await guild.create_role(name=name, colour=colour, reason="Game title")
+        elif hexcol and role.colour != colour:
+            await role.edit(colour=colour, reason="Title colour")       # an older role gets the rank's colour too
+        roles[name] = role
     for uid, title in titles.items():
         try:
             member = await guild.fetch_member(int(uid))

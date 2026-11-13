@@ -648,3 +648,30 @@ def test_night_message_lists_what_needs_an_answer_with_buttons(bot, game):
     assert view.children[0].item.custom_id == "night:7:pact:accept:1"
     text, view = bot.night_message(game, 102, 7)          # nothing waiting for Corvain
     assert view is None and "Pact proposals" not in text
+
+
+def test_title_roles_get_the_rank_colours(bot, game):
+    import discord
+    made, edited = {}, {}
+
+    class Role:
+        def __init__(self, name, colour):
+            self.name, self.colour = name, colour
+
+        async def edit(self, colour, reason=None):
+            edited[self.name] = colour.value
+
+    class Guild:
+        roles = [Role("Duke", discord.Colour(0x123456))]            # an older role with the wrong colour
+
+        async def create_role(self, name, colour, reason=None):
+            made[name] = colour.value
+            return Role(name, colour)
+
+        async def fetch_member(self, uid):
+            raise discord.NotFound(MagicMock(status=404), "gone")
+
+    bot.game = game
+    asyncio.run(bot.sync_roles(Guild()))
+    assert made["Lord"] == 0x9aa0a6 and made["Emperor"] == 0xd6453d and "Duke" not in made
+    assert edited == {"Duke": 0x8e5fd0}
