@@ -33,6 +33,7 @@ BUILDING_ICON = {
     "toolworks": "M-4.5 4.5L1.5 -1.5M-1 -5H5V1H-1Z",
     "forge": "M-5 -2H5L3 1H-3ZM-2 1V4H2V1",
     "cookhouse": "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
+    "port": "M0 -5V4M-3 -2H3M-4.5 1Q0 6 4.5 1",
     "kiln": "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
 }
 CROWN_ICON = "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5"
@@ -399,6 +400,6 @@ def housing_tag(cv, rules, building, x, y, s, level=1):
 def fill_of(t, owner):
     if not t["visible"]:
         return FOG
-    if t["terrain"] == "water":
+    if t["terrain"] == "water" and t["building"] != "port":
         return WATER
     return nation_colours(owner)[0] if owner is not None else NEUTRAL

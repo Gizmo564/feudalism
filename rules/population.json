@@ -185,6 +185,14 @@
         "wood": 12,
         "stone": 20
       }
+    },
+    "port": {
+      "cost": {
+        "wood": 60,
+        "stone": 20,
+        "tools": 6,
+        "bricks": 4
+      }
     }
   },
   "capital": {
@@ -308,5 +316,8 @@
         "oil": 1
       }
     }
+  },
+  "port": {
+    "boat_wood": 8
   }
 }

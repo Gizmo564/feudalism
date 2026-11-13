@@ -2,7 +2,7 @@
 No Discord code here, so it can be tested on its own."""
 from . import advice, trade, views, world as W
 from .hexes import parse, neighbors, distance, within
-from .tick import build_cost, claim_cost, foreign_army_on, upgrade_of
+from .tick import build_cost, claim_cost, foreign_army_on, port_problem, upgrade_of
 
 DIRS = {"nw": (0, -1), "ne": (1, -1), "w": (-1, 0), "e": (1, 0), "sw": (-1, 1), "se": (0, 1)}
 
@@ -29,9 +29,13 @@ def pick_options(world, rules, nid, center, radius, limit=25):
     rows = []
     for k in within(center, radius):
         v = info.get(k)
-        if v is None or v["terrain"] == "water":
+        if v is None or (v["terrain"] == "water" and not v["building"] and not (v["visible"] and port_problem(world, rules, nid, k) is None)):
             continue
-        if k in can:
+        if v["terrain"] == "water" and not v["building"]:
+            rank, text = 0, "water - you can build a port here"
+        elif v["terrain"] == "water":
+            rank, text = (1, "your port") if v["owner"] == nid else (2, "port of " + world["nations"][v["owner"]]["name"])
+        elif k in can:
             rank, text = 0, "free - you can claim it"
         elif v["owner"] == nid:
             rank, text = 1, "yours" + (" - " + v["building"] if v["building"] else " - empty")
@@ -83,9 +87,17 @@ def tile_card(world, rules, nid, k):
             queued[o["building"]] = queued.get(o["building"], 0) + 1
     prices = {b: build_cost(world, rules, nid, b, queued.get(b, 0)) for b in rules["buildings"]}
     if v["owner"] == nid and v["building"] is None and not foreign_army_on(world, k, nid):
-        builds = list(rules["buildings"])
+        builds = [b for b in rules["buildings"] if b != "port"]
         lines.append("Build: " + "; ".join("%s (%s)" % (b, ", ".join("%d %s" % (n, r) for r, n in prices[b].items()))
                                             for b in builds) + ".")
+    if v["terrain"] == "water" and not v["building"] and "port" in rules["buildings"]:
+        problem = port_problem(world, rules, nid, k)
+        if problem is None:
+            builds = ["port"]
+            lines.append("Build: port (%s). Armies can cross this tile, and your land can grow across it." % ", ".join(
+                "%d %s" % (n, r) for r, n in prices["port"].items()))
+        else:
+            lines.append("No port here: %s." % problem)
     upgrade = None
     up = upgrade_of(rules, world["tiles"][k]) if v["owner"] == nid and not foreign_army_on(world, k, nid) else None
     if up:
@@ -94,7 +106,7 @@ def tile_card(world, rules, nid, k):
         upgrade = {"level": level + 1, "cost": up["cost"], "missing": advice.shortfall(have, up["cost"]), "queued": queued_up,
                    "gives": {key: val for key, val in up.items() if key != "cost"}}
         lines.append("Upgrade to level %d: %s." % (level + 1, ", ".join("%d %s" % (n, r) for r, n in up["cost"].items())))
-    return {"text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water",
+    return {"text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water" or v["building"] == "port",
             "claim_cost": cost, "claim_missing": advice.shortfall(have, cost),
             "claim_queued": advice.claim_queued(world, nid) >= rules["claim"]["per_tick"],
             "build_cost": {b: prices[b] for b in builds},

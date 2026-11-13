@@ -962,3 +962,99 @@ def test_provisions_speed_up_growth(rules):
     n["resources"].update(food=500, provisions=50)
     tick.eat_and_grow(w, rules, n)
     assert n["workers"] - 10 > plain and n["resources"]["provisions"] < 50
+
+
+def strait(rules, width=1):
+    """A map that is all water except land tile a (nation 0's, with a market) and land tile c, `width` water tiles away in a line."""
+    from population.hexes import key, parse
+    w = two_nations(rules)
+    for t in w["tiles"].values():
+        t.update(terrain="water", owner=None, building=None, oil=False)
+    a = "-3,0"
+    (aq, ar), (nq, nr) = parse(a), parse("-2,0")
+    water = [key(aq + (nq - aq) * i, ar + (nr - ar) * i) for i in range(1, width + 1)]
+    c = key(aq + (nq - aq) * (width + 1), ar + (nr - ar) * (width + 1))
+    w["tiles"][a].update(terrain="field", owner=0, building="market")
+    w["tiles"][c].update(terrain="field")
+    w["armies"] = []
+    w["nations"][0]["resources"].update(wood=500, stone=500, tools=20, bricks=20)
+    return w, a, water[0], c
+
+
+def test_port_bridges_one_water_tile(rules):
+    w, a, b, c = strait(rules)
+    assert tick.next_step(w, a, c) is None                      # no way across open water
+    tick.queue(w, rules, 0, {"type": "build", "tile": b, "building": "port"})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert w["tiles"][b]["building"] == "port" and w["tiles"][b]["owner"] == 0
+    assert tick.next_step(w, a, c) == b and tick.find_path(w, a, c) == [b, c]
+    assert tick.crosses_water(w, [b, c])
+
+
+def test_port_needs_market_and_your_land_next_to_it(rules):
+    w, a, b, c = strait(rules)
+    assert tick.port_problem(w, rules, 0, b) is None
+    assert "water" in tick.port_problem(w, rules, 0, c)           # a port goes on water
+    w["tiles"][a]["building"] = None
+    assert "market" in tick.port_problem(w, rules, 0, b)
+    w["tiles"][a]["building"] = "market"
+    w["tiles"][a]["owner"] = None
+    assert "touch" in tick.port_problem(w, rules, 0, b)
+
+
+def test_two_wide_water_needs_two_ports(rules):
+    w, a, b, c = strait(rules, width=2)
+    far = tick.find_path(w, a, c)
+    assert far is None
+    from population.hexes import neighbors
+    water2 = next(k for k in neighbors(b) if c in neighbors(k) and w["tiles"][k]["terrain"] == "water")
+    assert "touch" in tick.port_problem(w, rules, 0, water2)     # the first port has to come first
+    w["tiles"][b].update(owner=0, building="port")
+    assert tick.port_problem(w, rules, 0, water2) is None
+    w["tiles"][water2].update(owner=0, building="port")
+    assert tick.find_path(w, a, c) == [b, water2, c]
+
+
+def test_crossing_costs_a_flat_boat_fee(rules):
+    w, a, b, c = strait(rules)
+    w["tiles"][b].update(owner=0, building="port")
+    n = w["nations"][0]
+    n["resources"]["wood"] = 100
+    w["armies"].append({"id": 99, "owner": 0, "tile": a, "n": 3, "dest": None})
+    tick.queue(w, rules, 0, {"type": "move", "army": 99, "dest": c})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert n["resources"]["wood"] == 100 - rules["port"]["boat_wood"]
+    assert w["armies"][0]["dest"] == c
+
+
+def test_land_routes_cost_no_boat(rules):
+    w, a, b, c = strait(rules)
+    w["tiles"][b].update(owner=0, building="port")
+    w["tiles"][b].update(terrain="field", building=None)           # now it is just land
+    n = w["nations"][0]
+    n["resources"]["wood"] = 100
+    w["armies"].append({"id": 99, "owner": 0, "tile": a, "n": 3, "dest": None})
+    tick.queue(w, rules, 0, {"type": "move", "army": 99, "dest": c})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert n["resources"]["wood"] == 100
+
+
+def test_no_wood_no_boat(rules):
+    w, a, b, c = strait(rules)
+    w["tiles"][b].update(owner=0, building="port")
+    w["nations"][0]["resources"]["wood"] = 1
+    w["armies"].append({"id": 99, "owner": 0, "tile": a, "n": 3, "dest": None})
+    tick.queue(w, rules, 0, {"type": "move", "army": 99, "dest": c})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert w["armies"][0]["dest"] is None and w["nations"][0]["resources"]["wood"] == 1
+
+
+def test_a_captured_port_is_wrecked(rules):
+    w, a, b, c = strait(rules)
+    w["tiles"][b].update(owner=0, building="port")
+    for n in w["nations"]:
+        n["protected_until"] = 0
+    attacker = {"id": 98, "owner": 1, "tile": c, "n": 500, "dest": b}
+    w["armies"].append(attacker)
+    tick.attack(w, rules, random.Random(1), attacker, b)
+    assert w["tiles"][b]["owner"] is None and w["tiles"][b]["building"] is None

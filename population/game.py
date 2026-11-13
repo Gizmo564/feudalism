@@ -294,12 +294,17 @@ class Game:
         if building not in r["buildings"]:
             raise GameError("Unknown building '%s'. Choose from: %s." % (building, ", ".join(r["buildings"])))
         t = w["tiles"].get(k)
-        if t is None or t["owner"] != nid:
-            raise GameError("%s isn't yours. Build on land you own (pick it in /zoom)." % k)
-        if t["building"]:
-            raise GameError("%s already has a %s." % (k, t["building"]))
-        if tick.foreign_army_on(w, k, nid):
-            raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
+        if building == "port":
+            problem = tick.port_problem(w, r, nid, k)
+            if problem:
+                raise GameError("Can't build a port on %s: %s." % (k, problem))
+        else:
+            if t is None or t["owner"] != nid:
+                raise GameError("%s isn't yours. Build on land you own (pick it in /zoom)." % k)
+            if t["building"]:
+                raise GameError("%s already has a %s." % (k, t["building"]))
+            if tick.foreign_army_on(w, k, nid):
+                raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
         cost = self.build_price(nid, building)
         missing = advice.shortfall(advice.available(w, r, nid), cost)
         if missing:
@@ -445,9 +450,15 @@ class Game:
         t = w["tiles"].get(dest)
         if t is None:
             raise GameError("%s isn't on the map. Open /zoom and pick a tile from the menu." % dest)
-        if t["terrain"] == "water":
-            raise GameError("Armies can't cross water. Pick a land tile.")
+        if t["terrain"] == "water" and t["building"] != "port":
+            raise GameError("Armies can't stand in open water. Pick a land tile or one of the ports.")
         a = next(x for x in mine if x["id"] == army)
+        boat = ""
+        if tick.crosses_water(w, tick.find_path(w, a["tile"], dest)):
+            fee = self.rules.get("port", {}).get("boat_wood", 0)
+            if w["nations"][nid]["resources"].get("wood", 0) < fee:
+                raise GameError("That route crosses water over ports, and a boat costs %d wood. You don't have enough." % fee)
+            boat = " A boat will cost %d wood." % fee
         if count is not None and not 0 < count <= a["n"]:
             raise GameError("Army %d has %d %ss. Send between 1 and %d." % (army, a["n"], self.word("soldier"), a["n"]))
         order = {"type": "move", "army": army, "dest": dest}
@@ -455,8 +466,8 @@ class Game:
             order["n"] = count
         self.queue(nid, order)
         if "n" in order:
-            return "%d %ss from army %d will march toward %s (one tile a night); the rest stay." % (count, self.word("soldier"), army, dest)
-        return "Army %d will march toward %s (one tile a night)." % (army, dest)
+            return "%d %ss from army %d will march toward %s (one tile a night); the rest stay.%s" % (count, self.word("soldier"), army, dest, boat)
+        return "Army %d will march toward %s (one tile a night).%s" % (army, dest, boat)
 
     def cancel(self, uid):
         nid = self.nid(uid)

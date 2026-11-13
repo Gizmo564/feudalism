@@ -93,28 +93,53 @@ def allocate(workers, weights, cap):
     return alloc
 
 
-def next_step(world, start, dest):
-    """First tile on the shortest land path from start to dest, or None."""
+def find_path(world, start, dest):
+    """Tiles to walk from start to dest (start not included): over land only if that works, else over land and
+    ports. [] if you are already there, None if there is no way."""
     if start == dest:
-        return None
-    prev = {start: None}
-    q = deque([start])
-    while q:
-        cur = q.popleft()
-        if cur == dest:
-            break
-        for n in neighbors(cur):
-            t = world["tiles"].get(n)
-            if t is None or t["terrain"] == "water" or n in prev:
-                continue
-            prev[n] = cur
-            q.append(n)
-    if dest not in prev:
-        return None
-    step = dest
-    while prev[step] != start:
-        step = prev[step]
-    return step
+        return []
+    for ports in (False, True):
+        prev = {start: None}
+        q = deque([start])
+        while q and dest not in prev:
+            cur = q.popleft()
+            for n in neighbors(cur):
+                t = world["tiles"].get(n)
+                if t is None or n in prev or (t["terrain"] == "water" and not (ports and t["building"] == "port")):
+                    continue
+                prev[n] = cur
+                q.append(n)
+        if dest in prev:
+            path, step = [], dest
+            while step != start:
+                path.append(step)
+                step = prev[step]
+            return path[::-1]
+    return None
+
+
+def next_step(world, start, dest):
+    """First tile on the way from start to dest, or None."""
+    path = find_path(world, start, dest)
+    return path[0] if path else None
+
+
+def port_problem(world, rules, nid, k):
+    """Why nation nid can't build a port on tile k (a sentence), or None if it can."""
+    t = world["tiles"].get(k)
+    if t is None or t["terrain"] != "water":
+        return "a port goes on water"
+    if t["building"] or t["owner"] is not None:
+        return "there is already a port here"
+    if not any(world["tiles"][x]["owner"] == nid for x in neighbors(k) if x in world["tiles"]):
+        return "it must touch your land or one of your ports"
+    if not any(x["owner"] == nid and x["building"] == "market" for x in world["tiles"].values()):
+        return "you need a market first"
+    return None
+
+
+def crosses_water(world, path):
+    return any(world["tiles"][k]["terrain"] == "water" for k in path or [])
 
 
 def can_pay(res, cost):
@@ -206,9 +231,13 @@ def do_build(world, rules, n, o):
     nid = n["id"]
     k, b = o.get("tile"), o["building"]
     t = world["tiles"].get(k)
-    if t is None or t["owner"] != nid:
+    if b == "port":
+        problem = port_problem(world, rules, nid, k)
+        if problem:
+            return W.ev(world, nid, "Port on %s failed: %s" % (k, problem))
+    elif t is None or t["owner"] != nid:
         return W.ev(world, nid, "Build on %s failed: not your tile" % k)
-    if t["building"] is not None:
+    elif t["terrain"] == "water" or t["building"] is not None:
         return W.ev(world, nid, "Build on %s failed: it already has a building" % k)
     if foreign_army_on(world, k, nid):
         return W.ev(world, nid, "Build on %s failed: foreign soldiers are there" % k)
@@ -216,6 +245,7 @@ def do_build(world, rules, n, o):
     if not can_pay(n["resources"], cost):
         return W.ev(world, nid, "Build %s failed: not enough resources (need %s)" % (b, cost))
     pay(n["resources"], cost)
+    t["owner"] = nid          # a port is built on water you don't own yet, next to your land
     t["building"] = b
     t.pop("level", None)
     good = refined_good(rules, b)
@@ -263,8 +293,15 @@ def do_move(world, rules, n, o):
     nid = n["id"]
     a = next((x for x in world["armies"] if x["id"] == o.get("army") and x["owner"] == nid), None)
     t = world["tiles"].get(o.get("dest"))
-    if a is None or t is None or t["terrain"] == "water":
+    if a is None or t is None or (t["terrain"] == "water" and t["building"] != "port"):
         return W.ev(world, nid, "Move failed: bad army or destination")
+    path = find_path(world, a["tile"], o["dest"])
+    if crosses_water(world, path):          # sailing over ports costs a flat amount of wood for the boat
+        fee = rules.get("port", {}).get("boat_wood", 0)
+        if n["resources"].get("wood", 0) < fee:
+            return W.ev(world, nid, "Army %d can't sail: a boat costs %d wood" % (a["id"], fee))
+        n["resources"]["wood"] -= fee
+        W.ev(world, nid, "A boat for army %d cost %d wood" % (a["id"], fee))
     count = o.get("n")
     if count is not None and 0 < count < a["n"]:        # send only part of the army (advanced mode)
         a["n"] -= count
@@ -329,6 +366,8 @@ def attack(world, rules, rng, a, k):
         a["tile"], a["dest"] = k, None
         if owner is not None and owner != a["owner"]:
             tile["owner"], tile["building"] = a["owner"], None
+            if tile["terrain"] == "water":      # a captured port is wrecked: the water is nobody's again
+                tile["owner"] = None
             W.ev(world, owner, "%s captured your tile %s" % (me["name"], k))
             W.pub(world, "%s captured %s from %s" % (me["name"], k, world["nations"][owner]["name"]))
         W.ev(world, a["owner"], "Won the battle at %s against %s (you lost %d)" % (k, names, res["att_loss"]))

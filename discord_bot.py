@@ -694,8 +694,8 @@ async def claim_tiles(interaction: discord.Interaction, current: str):
 
 
 @tree.command(description="Build on one of your tiles")
-@app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market, wall, or a workshop")
-@app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall", "toolworks", "forge", "cookhouse", "kiln")])
+@app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market, wall, workshop, or port")
+@app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall", "toolworks", "forge", "cookhouse", "kiln", "port")])
 async def build(interaction: discord.Interaction, tile: str, building: app_commands.Choice[str]):
     await run(interaction, game_for(interaction.user.id).build, interaction.user.id, tile.strip(), building.value)
 

@@ -35,6 +35,7 @@ const BUILDING_D = {
   toolworks: "M-4.5 4.5L1.5 -1.5M-1 -5H5V1H-1Z",
   forge: "M-5 -2H5L3 1H-3ZM-2 1V4H2V1",
   cookhouse: "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
+  port: "M0 -5V4M-3 -2H3M-4.5 1Q0 6 4.5 1",
   kiln: "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
   capital: "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5",
 };
@@ -370,9 +371,9 @@ function showMap(data, headers) {
     ctx.lineJoin = "round"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     for (const t of seen) {                                          // 1. tile colours, terrain icons, buildings
       const x = sx(t), y = sy(t);
-      const mine = t.visible && t.owner !== null && t.terrain !== "water";
+      const mine = t.visible && t.owner !== null && (t.terrain !== "water" || t.building === "port");
       hex(x, y, size);
-      ctx.fillStyle = !t.visible ? FOG : t.terrain === "water" ? TERRAIN.water : mine ? color[t.owner] || "#888" : TERRAIN[t.terrain] || NEUTRAL;
+      ctx.fillStyle = !t.visible ? FOG : t.terrain === "water" && !mine ? TERRAIN.water : mine ? color[t.owner] || "#888" : TERRAIN[t.terrain] || NEUTRAL;
       ctx.fill();
       ctx.strokeStyle = "rgba(0,0,0,.25)"; ctx.lineWidth = 1; ctx.stroke();
       if (!t.visible) continue;
@@ -396,7 +397,7 @@ function showMap(data, headers) {
     }
     ctx.lineCap = "round";
     for (const t of seen) {                                          // 2. thick border where a nation's land ends
-      if (!t.visible || t.owner === null || t.terrain === "water") continue;
+      if (!t.visible || t.owner === null || (t.terrain === "water" && t.building !== "port")) continue;
       const x = sx(t), y = sy(t);
       ctx.strokeStyle = dark(color[t.owner] || "#888888"); ctx.lineWidth = Math.max(2, size * 0.1);
       for (const [dq, dr, a, b] of EDGES) {

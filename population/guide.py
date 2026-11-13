@@ -105,6 +105,11 @@ def goods(rules):
               "Tools, steel and bricks are needed for upgrades (see the resources page). Provisions feed faster growth: each one adds a spare %s "
               "on a night your %ss are growing, up to double the usual growth." % (worker, worker),
               "Nobody has to make everything. Specialise and trade at a market."]
+    if "port" in rules["buildings"]:
+        lines += ["", "**Ports**: build one on water that touches your land or another of your ports (you need a market; it costs %s). "
+                  "Armies can walk over ports and your land can grow across them. Each army trip over ports costs %d wood for a boat. "
+                  "Wide water needs a chain of ports. An enemy who captures a port wrecks it." % (
+                      cost(rules["buildings"]["port"]["cost"]), rules.get("port", {}).get("boat_wood", 0))]
     return "\n".join(lines)
 
 
