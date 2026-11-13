@@ -107,6 +107,18 @@
       #panel .grip { display: block; width: 40px; height: 4px; border-radius: 2px; background: #5a5d66; margin: 0 auto 12px; }
       h2 { font-size: 20px; }
     }
+    #over { display: none; position: absolute; inset: 0; overflow-y: auto; padding: 32px 16px; box-sizing: border-box; text-align: center; }
+    #over img { height: 200px; max-width: 80%; object-fit: contain; }
+    #over h1 { margin: 12px 0 4px; font-size: 32px; font-weight: 700; }
+    #over .sub { color: var(--muted); font-size: 15px; margin: 0 auto 20px; max-width: 520px; }
+    #over table { margin: 0 auto; border-collapse: collapse; min-width: 320px; max-width: 520px; width: 100%; font-size: 14px; text-align: left; }
+    #over th { color: var(--muted); font-size: 12px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600; }
+    #over th, #over td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+    #over td:nth-child(n+3), #over th:nth-child(n+3) { text-align: right; }
+    #over tr.me td { background: var(--panel); font-weight: 700; }
+    #over tr.out td { color: var(--muted); }
+    .row .x { border: 0; background: var(--chip); border-radius: 6px; padding: 2px 8px; font-size: 12px; flex: none; }
+    .row .x:hover { filter: brightness(1.2); }
     /* the optional paper theme: an old parchment map */
     body.paper { --bg: #efe3c4; --panel: #f6ecd2; --line: #cdb98b; --text: #3b2f1e; --muted: #7a6a4c; --accent: #8b5a2b; --chip: #eadcb6;
                  font-family: Georgia, "Iowan Old Style", serif; }
@@ -124,6 +136,7 @@
 </head>
 <body>
   <p id="status">Connecting to Discord...</p>
+  <div id="over"></div>
   <div id="app">
     <div id="top"><div id="who"></div><div id="pills"></div></div>
     <div id="hold"></div>
@@ -145,6 +158,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=17"></script>
+  <script src="/static/app.js?v=19"></script>
 </body>
 </html>

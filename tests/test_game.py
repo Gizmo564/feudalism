@@ -641,3 +641,16 @@ def test_practice_game_survives_a_restart(tmp_path):
     assert again.nights == 1 and again.start_land == t.start_land and len(again.land()) == land
     again.night()
     assert again.game.world["tick"] == 2
+
+
+def test_orders_list_and_cancel_one(game):
+    game.train(100, 1)
+    game.train(100, 1)
+    text = game.orders(100)
+    assert "1. Train 1" in text and "2. Train 1" in text
+    with pytest.raises(GameError):
+        game.cancel(100, 5)
+    assert game.cancel(100, 1).startswith("Cancelled")
+    assert game.orders(100).count("Train") == 1
+    assert game.cancel(100) == "Cleared 1 queued order."
+    assert game.orders(100) == "You have nothing queued for tonight."

@@ -291,9 +291,15 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(text, view=view, ephemeral=True)
 
 
-@tree.command(description="Clear tonight's queued orders so you can start over")
-async def cancel(interaction: discord.Interaction):
-    await run(interaction, game_for(interaction.user.id).cancel, interaction.user.id)
+@tree.command(description="See what you have queued for tonight")
+async def orders(interaction: discord.Interaction):
+    await run(interaction, game_for(interaction.user.id).orders, interaction.user.id)
+
+
+@tree.command(description="Cancel one queued order by its number from /orders, or all of them")
+@app_commands.describe(number="The order's number from /orders (leave empty to clear every order)")
+async def cancel(interaction: discord.Interaction, number: app_commands.Range[int, 1, 50] = None):
+    await run(interaction, game_for(interaction.user.id).cancel, interaction.user.id, number)
 
 
 @tree.command(description="Everyone's land and population, and how close anyone is to winning")

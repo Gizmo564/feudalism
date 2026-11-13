@@ -20,20 +20,19 @@ async def discord_request(method, path, **kwargs):
             return resp.status, await resp.json(content_type=None)
 
 
-def describe(o):
-    """One line for a queued order."""
-    kind = o["type"]
-    if kind == "claim":
-        return "Claim " + o["tile"]
-    if kind == "build":
-        return "Build %s on %s" % (o["building"], o["tile"])
-    if kind == "move":
-        return "Army %d to %s" % (o["army"], o["dest"])
-    if kind == "train":
-        return "Train %d%s" % (o["n"], " steel" if o.get("steel") else "")
-    if kind == "upgrade":
-        return "Upgrade %s" % o["tile"]
-    return kind
+describe = tick.describe_order
+
+
+def over_data(game, nid):
+    """The game over screen: who won and why, the final standings (all nations, fog or not), and whether this player won."""
+    if game.phase != "over":
+        return None
+    w = game.world
+    win = w["winner"]
+    rows = sorted(({"name": n["name"], "land": len(W.owned(w, n["id"])), "population": W.people(w, n["id"]), "alive": n["alive"], "me": n["id"] == nid}
+                   for n in w["nations"]), key=lambda r: (-r["land"], -r["population"]))
+    return {"winner": w["nations"][win["nation"]]["name"] if win else None, "reason": win["reason"] if win else "",
+            "you_won": bool(win) and win["nation"] == nid, "rows": rows}
 
 
 def nation_data(game, uid, nid):
@@ -131,8 +130,11 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             return web.json_response({"error": "not logged in"}, status=401)
         game = here(request)
         nid = game.players.get(str(user["id"])) if game else None
-        nation = game.world["nations"][nid]["name"] if game and game.phase == "running" and nid is not None else None
-        return web.json_response({"id": user["id"], "name": user.get("global_name") or user["username"], "nation": nation})
+        live = bool(game) and game.phase in ("running", "over") and nid is not None
+        nation = game.world["nations"][nid]["name"] if live else None
+        return web.json_response({"id": user["id"], "name": user.get("global_name") or user["username"], "nation": nation,
+                                  "fallen": live and not game.world["nations"][nid]["alive"],
+                                  "over": over_data(game, nid) if live else None})
 
     async def map_data(request):
         """The map exactly as this player may see it (fog of war included)."""
@@ -217,7 +219,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
                 count = body.get("n")
                 message = game.move(uid, int(body.get("army")), str(body.get("tile", "")), None if count is None else int(count))
             elif kind == "cancel":
-                message = game.cancel(uid)
+                message = game.cancel(uid, body.get("number"), body.get("text"))
             elif kind == "upgrade":
                 message = game.upgrade(uid, str(body.get("tile", "")))
             elif kind == "train":

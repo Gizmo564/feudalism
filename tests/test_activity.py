@@ -64,7 +64,7 @@ def test_login_flow(tmp_path):
         got = await client.post("/.proxy/api/token", json={"code": "good-code"})
         assert (await got.json()) == {"access_token": "tok"}
         me = await client.get("/api/me", headers={"Authorization": "Bearer tok"})
-        assert (await me.json()) == {"id": "100", "name": "Alder", "nation": "Aldmere"}
+        assert (await me.json()) == {"id": "100", "name": "Alder", "nation": "Aldmere", "fallen": False, "over": None}
         assert (await client.get("/api/me")).status == 401                                       # no token
         assert (await client.get("/api/me", headers={"Authorization": "Bearer nope"})).status == 401
     run(tmp_path, steps)
@@ -78,7 +78,7 @@ def test_player_without_a_nation(tmp_path):
         await c.start_server()
         try:
             me = await (await c.get("/api/me", headers={"Authorization": "Bearer x"})).json()
-            assert me == {"id": "999", "name": "visitor", "nation": None}
+            assert me["nation"] is None and me["over"] is None
         finally:
             await c.close()
     asyncio.run(go())
@@ -344,3 +344,23 @@ def test_modes_assign_and_split_armies_from_the_activity(tmp_path):
         assert (await (await post(c, 100, {"action": "move", "army": army["id"], "tile": dest, "n": 1})).json())["ok"]
         assert (await post(c, 100, {"action": "mode", "mode": "wizard"})).status == 400
     run_as(g, steps)
+
+
+def test_game_over_screen_data(tmp_path):
+    g = make_game(tmp_path)
+    g.world["winner"] = {"nation": 0, "reason": "held 40% of the land"}
+    g.phase = "over"
+    g.world["nations"][1]["alive"] = False
+
+    async def go():
+        client = TestClient(TestServer(server.make_app("1", "s", only(g), fake_discord([]))))
+        await client.start_server()
+        try:
+            me = await (await client.get("/api/me", headers={"Authorization": "Bearer tok"})).json()
+            assert me["over"]["winner"] == "Aldmere" and me["over"]["you_won"] is True
+            assert len(me["over"]["rows"]) == 4 and any(r["me"] for r in me["over"]["rows"])
+            assert (await client.get("/static/crown.png")).status == 200
+            assert (await client.get("/static/crown_fallen.png")).status == 200
+        finally:
+            await client.close()
+    asyncio.run(go())

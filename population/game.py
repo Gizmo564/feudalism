@@ -508,12 +508,30 @@ class Game:
             return "%d %ss from army %d will march toward %s (one tile a night); the rest stay.%s" % (count, self.word("soldier"), army, dest, boat)
         return "Army %d will march toward %s (one tile a night).%s" % (army, dest, boat)
 
-    def cancel(self, uid):
+    def orders(self, uid):
+        """What you have queued for tonight, numbered (use the number with /cancel)."""
         nid = self.nid(uid)
         mine = [o for o in self.world["orders"] if o["nation"] == nid]
-        self.world["orders"] = [o for o in self.world["orders"] if o["nation"] != nid]
+        if not mine:
+            return "You have nothing queued for tonight."
+        return "Queued for tonight:\n" + "\n".join("%d. %s" % (i + 1, tick.describe_order(o)) for i, o in enumerate(mine))
+
+    def cancel(self, uid, number=None, text=None):
+        """Clear all your queued orders, or just order `number` (as /orders numbers them). `text` guards against a changed list."""
+        nid = self.nid(uid)
+        mine = [o for o in self.world["orders"] if o["nation"] == nid]
+        if number is None:
+            self.world["orders"] = [o for o in self.world["orders"] if o["nation"] != nid]
+            self.save()
+            return "Cleared %d queued order%s." % (len(mine), "" if len(mine) == 1 else "s") if mine else "You had no queued orders."
+        if not isinstance(number, int) or not 1 <= number <= len(mine):
+            raise GameError("You have %d queued order%s. /orders shows them." % (len(mine), "" if len(mine) == 1 else "s"))
+        gone = mine[number - 1]
+        if text is not None and tick.describe_order(gone) != text:
+            raise GameError("Your orders changed. Look at the list again.")
+        self.world["orders"].remove(gone)
         self.save()
-        return "Cleared %d queued order%s." % (len(mine), "" if len(mine) == 1 else "s") if mine else "You had no queued orders."
+        return "Cancelled: %s." % tick.describe_order(gone)
 
     def priorities(self, uid, text):
         nid = self.nid(uid)

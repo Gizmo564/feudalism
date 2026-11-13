@@ -91,3 +91,5 @@ On the server, `feudalism help` lists everything:
 - **Training limits**: `/train` queues only as many as you can afford right now (counting trainings already queued tonight), and if something changes by night the report says which limit stopped it. Nothing carries over to later nights, so there is no hidden debt.
 - **Fast armies on your own land**: armies move 2 tiles a night while crossing tiles you own and stop after the first tile that is not yours (`/admin rules`, Game tab, "Army steps a night on own land"; 1 turns it off).
 - **Capital capture** (`/admin rules`, Game tab, on by default): capturing a capital takes all the rest of that nation's land and eliminates it. Its buildings are lost, as with any captured tile, and ports are wrecked.
+- **Game over screen**: when a game ends the Activity shows a crown, who won and why, and the final standings for every nation. A nation that has fallen sees its own "Your nation has fallen" screen with the slipped crown.
+- **Queued orders**: `/orders` lists what you have queued for tonight, `/cancel <number>` cancels one, and `/cancel` alone clears all. In the Activity every queued order has its own Cancel button.

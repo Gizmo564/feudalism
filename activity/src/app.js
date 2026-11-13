@@ -101,8 +101,9 @@ const button = (text, onclick, kind = "primary") => {
 function ordersBox(data, act) {
   if (!data.orders.length) return [];
   return [el("div", {className: "box"}, el("h3", {textContent: "Queued for tonight"}),
-    ...data.orders.map((o) => el("div", {className: "row"}, el("span", {textContent: o}))),
-    button("Cancel all orders", () => act({action: "cancel"}), "plain"))];
+    ...data.orders.map((o, i) => el("div", {className: "row"}, el("span", {textContent: o}),
+      el("button", {className: "x", textContent: "Cancel", title: "Cancel this order", onclick: () => act({action: "cancel", number: i + 1, text: o})}))),
+    data.orders.length > 1 ? button("Cancel all orders", () => act({action: "cancel"}), "plain") : "")];
 }
 
 function showTile(t, data, card, act, msg) {
@@ -591,6 +592,19 @@ function showMap(data, headers) {
   resize();
 }
 
+function showOver(me) {   // the game is over (or this nation has fallen): a crown, who won, and the final standings
+  const o = me.over, won = o && o.you_won;
+  const title = won ? "Victory" : o ? "Game over" : "Your nation has fallen";
+  const sub = o ? (o.winner ? o.winner + " wins: " + o.reason : "The game has ended.") : "You are out of the game. The others play on without you.";
+  const table = o ? el("table", {}, el("tr", {}, ...["#", "Nation", "Land", "People"].map((t) => el("th", {textContent: t}))),
+    ...o.rows.map((r, i) => el("tr", {className: (r.me ? "me " : "") + (r.alive ? "" : "out")},
+      ...[i + 1, r.name + (r.me ? " (you)" : "") + (r.alive ? "" : " - fallen"), r.land, r.population].map((v) => el("td", {textContent: v}))))) : "";
+  $("over").replaceChildren(el("img", {src: won ? "/static/crown.png" : "/static/crown_fallen.png", alt: ""}),
+    el("h1", {textContent: title}), el("p", {className: "sub", textContent: sub}), table);
+  $("status").style.display = "none";
+  $("over").style.display = "block";
+}
+
 async function main() {
   const {clientId} = await (await fetch("/.proxy/api/config")).json();
   const sdk = new DiscordSDK(clientId);
@@ -606,6 +620,7 @@ async function main() {
   const headers = {Authorization: "Bearer " + access_token, "X-Guild-Id": sdk.guildId || ""};   // which server this game belongs to
   const me = await (await fetch("/.proxy/api/me", {headers})).json();
   if (!me.nation) return say("Hello " + me.name + ". You are not in a running game.");
+  if (me.over || me.fallen) return showOver(me);
   const data = await (await fetch("/.proxy/api/map", {headers})).json();
   data.name = me.nation;
   showBars(data, me.nation);

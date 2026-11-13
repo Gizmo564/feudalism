@@ -12,6 +12,22 @@ ORDER_TYPES = ("claim", "build", "upgrade", "train", "move")
 
 # ---------- player actions (stored now, carried out at the next tick) ----------
 
+def describe_order(o):
+    """One line for a queued order."""
+    kind = o["type"]
+    if kind == "claim":
+        return "Claim " + o["tile"]
+    if kind == "build":
+        return "Build %s on %s" % (o["building"], o["tile"])
+    if kind == "move":
+        return "Army %d to %s" % (o["army"], o["dest"])
+    if kind == "train":
+        return "Train %d%s" % (o["n"], " steel" if o.get("steel") else "")
+    if kind == "upgrade":
+        return "Upgrade %s" % o["tile"]
+    return kind
+
+
 def queue(world, rules, nid, order):
     """Save an order. Checks that happen only at tick time (cost, adjacency) are not repeated here."""
     if not world["nations"][nid]["alive"]:
