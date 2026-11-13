@@ -513,6 +513,7 @@ class MapView(discord.ui.View):
         self.center = self.g.world["nations"][nid]["capital"]
         self.selected = None
         self.choosing_army = False
+        self.choosing_build = False
         self.layout()
 
     async def interaction_check(self, interaction):
@@ -594,6 +595,13 @@ class MapView(discord.ui.View):
             menu.callback = self.send_army(menu)
             self.add(menu, 4)
             return
+        if self.choosing_build and card["builds"]:                      # many buildings: one menu instead of a row of buttons
+            menu = discord.ui.Select(placeholder="Build what here?", options=[
+                discord.SelectOption(label=("%s: short %s" % (b.capitalize(), money(card["build_missing"][b]))) if card["build_missing"][b]
+                                     else "%s (%s)" % (b.capitalize(), money(card["build_cost"][b])), value=b) for b in card["builds"]][:25])
+            menu.callback = self.build_menu(menu)
+            self.add(menu, 4)
+            return
         if card["can_claim"]:
             if card["claim_queued"]:
                 self.button("Claim (one already queued)", 4, self.claim_here, disabled=True)
@@ -601,7 +609,9 @@ class MapView(discord.ui.View):
                 self.button("Claim: short %s" % money(card["claim_missing"]), 4, self.claim_here, disabled=True)
             else:
                 self.button("Claim (%s)" % money(card["claim_cost"]), 4, self.claim_here, discord.ButtonStyle.success)
-        for b in card["builds"]:
+        if len(card["builds"]) > 4:
+            self.button("Build...", 4, self.pick_build, discord.ButtonStyle.primary)
+        for b in card["builds"] if len(card["builds"]) <= 4 else []:
             missing = card["build_missing"][b]
             label = "%s: short %s" % (b.capitalize(), money(missing)) if missing else "%s (%s)" % (
                 b.capitalize(), money(card["build_cost"][b]))
@@ -648,8 +658,23 @@ class MapView(discord.ui.View):
     def picker(self, menu):
         async def cb(interaction):
             self.selected = menu.values[0]
-            self.choosing_army = False
+            self.choosing_army = self.choosing_build = False
             await self.redraw(interaction)
+        return cb
+
+    async def pick_build(self, interaction):
+        self.choosing_build = True
+        await self.redraw(interaction)
+
+    def build_menu(self, menu):
+        async def cb(interaction):
+            self.choosing_build = False
+            await self.order(interaction, self.g.build, self.selected, menu.values[0])
+            self.layout()                                               # the menu goes back to its button
+            try:
+                await interaction.message.edit(view=self)
+            except Exception:
+                pass
         return cb
 
     async def pick_army(self, interaction):

@@ -7,7 +7,11 @@
     "stone",
     "ore",
     "oil",
-    "livestock"
+    "livestock",
+    "tools",
+    "steel",
+    "provisions",
+    "bricks"
   ],
   "terrain": {
     "field": {
@@ -55,7 +59,11 @@
     "wood": 2,
     "stone": 2,
     "ore": 1,
-    "oil": 2
+    "oil": 2,
+    "tools": 1,
+    "steel": 1,
+    "provisions": 1,
+    "bricks": 1
   },
   "coastal_food_bonus": 1,
   "workers_per_tile": 5,
@@ -65,7 +73,11 @@
     "stone": 3,
     "ore": 2,
     "oil": 1,
-    "livestock": 1
+    "livestock": 1,
+    "tools": 0,
+    "steel": 0,
+    "provisions": 0,
+    "bricks": 0
   },
   "eat_per_person": 1,
   "food_value": {
@@ -92,14 +104,17 @@
         {
           "cost": {
             "wood": 30,
-            "stone": 18
+            "stone": 18,
+            "tools": 4
           },
           "houses_workers": 14
         },
         {
           "cost": {
             "wood": 60,
-            "stone": 36
+            "stone": 36,
+            "tools": 8,
+            "bricks": 4
           },
           "houses_workers": 18
         }
@@ -117,7 +132,8 @@
           "cost": {
             "wood": 38,
             "stone": 38,
-            "ore": 12
+            "ore": 6,
+            "steel": 4
           },
           "houses_soldiers": 14
         },
@@ -125,7 +141,9 @@
           "cost": {
             "wood": 75,
             "stone": 75,
-            "ore": 24
+            "ore": 10,
+            "steel": 8,
+            "bricks": 4
           },
           "houses_soldiers": 18
         }
@@ -142,6 +160,109 @@
         "stone": 25
       },
       "defense_percent": 20
+    },
+    "toolworks": {
+      "cost": {
+        "wood": 20,
+        "stone": 10
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 30,
+            "stone": 18
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 60,
+            "stone": 36,
+            "tools": 6
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "forge": {
+      "cost": {
+        "wood": 15,
+        "stone": 15,
+        "ore": 4
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 25,
+            "stone": 25,
+            "ore": 6
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 50,
+            "stone": 50,
+            "ore": 12,
+            "steel": 4
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "cookhouse": {
+      "cost": {
+        "wood": 18,
+        "stone": 8
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 28,
+            "stone": 12
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 55,
+            "stone": 24,
+            "provisions": 5
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "kiln": {
+      "cost": {
+        "wood": 12,
+        "stone": 20
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 20,
+            "stone": 30
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 40,
+            "stone": 60,
+            "bricks": 4
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "port": {
+      "cost": {
+        "wood": 40,
+        "stone": 20,
+        "tools": 6,
+        "bricks": 4
+      }
     }
   },
   "capital": {
@@ -158,7 +279,11 @@
       "stone": 20,
       "ore": 5,
       "oil": 0,
-      "livestock": 0
+      "livestock": 0,
+      "tools": 0,
+      "steel": 0,
+      "provisions": 0,
+      "bricks": 0
     },
     "min_spacing": 4,
     "min_land_neighbors": 5,
@@ -204,7 +329,8 @@
     "casualty_percent": 50
   },
   "movement": {
-    "trade_tiles_per_tick": 2
+    "trade_tiles_per_tick": 2,
+    "army_steps_on_own_land": 2
   },
   "oil_upkeep": {
     "soldiers_per_oil": 5,
@@ -213,7 +339,9 @@
   "trade": {
     "requires_market": true,
     "caravans": false,
-    "offer_expires_ticks": 3
+    "offer_expires_ticks": 3,
+    "water": 0,
+    "sea_speed_percent": 150
   },
   "ranks": [
     {
@@ -267,5 +395,45 @@
   },
   "build": {
     "rise_percent": 15
+  },
+  "refine_slots": 3,
+  "refine": {
+    "tools": {
+      "building": "toolworks",
+      "inputs": {
+        "wood": 1,
+        "stone": 1
+      }
+    },
+    "steel": {
+      "building": "forge",
+      "inputs": {
+        "ore": 1,
+        "oil": 1
+      }
+    },
+    "provisions": {
+      "building": "cookhouse",
+      "inputs": {
+        "livestock": 1,
+        "food": 1
+      }
+    },
+    "bricks": {
+      "building": "kiln",
+      "inputs": {
+        "stone": 1,
+        "oil": 1
+      }
+    }
+  },
+  "port": {
+    "boat_wood": 8
+  },
+  "steel_soldiers": {
+    "enabled": true,
+    "steel": 1,
+    "bonus_percent": 25,
+    "min_barracks_level": 2
   }
 }

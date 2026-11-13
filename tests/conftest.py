@@ -13,7 +13,17 @@ RULES_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 
 @pytest.fixture
 def rules():
-    return ruleset.load(RULES_PATH)
+    """The engine tests' rules: Population's victory and wording with Feudalism's refined goods, ports and steel switched on,
+    so one ruleset exercises every engine feature."""
+    r = ruleset.load(RULES_PATH)
+    f = ruleset.load(RULES_PATH.replace("population.json", "feudalism.json"))
+    for k in ("resources", "yield_per_worker", "default_priorities", "refine_slots", "refine", "port", "steel_soldiers", "movement", "buildings"):
+        r[k] = f[k]
+    r["start"]["resources"] = f["start"]["resources"]
+    r["trade"].update({k: f["trade"][k] for k in ("water", "sea_speed_percent")})
+    r.pop("terms", None)
+    ruleset.check(r)
+    return r
 
 
 @pytest.fixture

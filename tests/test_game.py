@@ -527,7 +527,7 @@ def test_upgrade_through_the_game(game):
     nid = game.nid(100)
     k = next(k for k in W.owned(game.world, nid) if game.world["tiles"][k]["building"] is None)
     game.world["tiles"][k]["building"] = "home"
-    game.world["nations"][nid]["resources"].update(wood=500, stone=500)
+    game.world["nations"][nid]["resources"].update(wood=500, stone=500, tools=500, bricks=500)
     assert "level 2" in game.upgrade(100, k)
     with pytest.raises(GameError):
         game.upgrade(100, k)                        # already queued tonight
@@ -538,7 +538,7 @@ def test_upgrade_through_the_game(game):
 def test_second_building_costs_more_when_queued(game):
     nid = game.nid(100)
     free = [k for k in W.owned(game.world, nid) if game.world["tiles"][k]["building"] is None]
-    game.world["nations"][nid]["resources"].update(wood=500, stone=500)
+    game.world["nations"][nid]["resources"].update(wood=500, stone=500, tools=500, bricks=500)
     first = game.build_price(nid, "home")
     game.build(100, free[0], "home")
     assert game.build_price(nid, "home")["wood"] > first["wood"]

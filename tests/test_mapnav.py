@@ -47,7 +47,7 @@ def test_card_for_claimable_own_and_water(game):
     assert card["can_claim"] and "Claim cost" in card["text"] and card["builds"] == []
     mine = next(k for k in w["tiles"] if w["tiles"][k]["owner"] == 0 and w["tiles"][k]["building"] is None)
     card = mapnav.tile_card(w, rules, 0, mine)
-    assert set(card["builds"]) == set(rules["buildings"]) and not card["can_claim"]
+    assert set(card["builds"]) == set(rules["buildings"]) - {"port"} and not card["can_claim"]
     cap = mapnav.tile_card(w, rules, 0, w["nations"][0]["capital"])
     assert cap["builds"] == []
 
@@ -155,9 +155,13 @@ def test_view_full_walkthrough(bot, game):
         tiles = selects(view)[1]
         tiles._values = [mine]
         await view.picker(tiles)(click(100))
+        await find(view, "Build...").callback(click(100))          # many buildings: a menu opens in the action row
+        build_menu = selects(view)[-1]
+        assert build_menu.placeholder.startswith("Build what")
+        build_menu._values = ["home"]
         i = click(100)
-        await find(view, "Home").callback(i)
-        assert "Build" in i.response.send_message.await_args.args[0]
+        await view.build_menu(build_menu)(i)
+        assert "Build" in i.response.send_message.await_args.args[0] and view.choosing_build is False
         # send an army: the button swaps the action row for an army menu
         await find(view, "Send army").callback(click(100))
         army_menu = selects(view)[-1]

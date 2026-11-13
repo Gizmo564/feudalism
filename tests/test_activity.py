@@ -273,7 +273,7 @@ def test_upgrade_and_dm_from_the_activity(tmp_path):
     g = make_game(tmp_path)
     k = next(k for k in W.owned(g.world, 0) if g.world["tiles"][k]["building"] is None)
     g.world["tiles"][k]["building"] = "home"
-    g.world["nations"][0]["resources"].update(wood=500, stone=500)
+    g.world["nations"][0]["resources"].update(wood=500, stone=500, tools=500, bricks=500)
 
     async def steps(c):
         h = {"Authorization": "Bearer 100"}
