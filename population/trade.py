@@ -43,6 +43,15 @@ def water_problem(world, rules, a, b):
             ("a port on one side" if mode == 1 else "a port on both sides"))
 
 
+def speed_between(world, rules, start, dest):
+    """Tiles a night goods travel from start to dest. A route that crosses water by ports goes sea_speed_percent as fast."""
+    from .tick import crosses_water, find_path
+    speed = rules["movement"]["trade_tiles_per_tick"]
+    if crosses_water(world, find_path(world, start, dest)):
+        speed = max(1, speed * rules["trade"].get("sea_speed_percent", 100) // 100)
+    return speed
+
+
 def need_markets(world, rules, a, b):
     if rules["trade"]["requires_market"]:
         for nid in (a, b):
@@ -100,8 +109,9 @@ def accept(world, rules, tid, by):
         need_markets(world, rules, o["from"], o["to"])
         check_side(world, rules, o["from"], o["give"])
         check_side(world, rules, o["to"], o["get"])
-    speed = rules["movement"]["trade_tiles_per_tick"]
-    dist = distance(world["nations"][o["from"]]["capital"], world["nations"][o["to"]]["capital"])
+    cap_from, cap_to = world["nations"][o["from"]]["capital"], world["nations"][o["to"]]["capital"]
+    speed = speed_between(world, rules, cap_from, cap_to)
+    dist = distance(cap_from, cap_to)
     travel = max(1, math.ceil(dist / speed))
     caravans = rules["trade"].get("caravans", False)
     sides = ((o["from"], o["to"], o["give"]), (o["to"], o["from"], o["get"]))
@@ -163,9 +173,9 @@ def move_caravans(world, rules):
     """Run after the armies have moved. Each caravan walks up to the trade speed along the land path;
     an enemy army on a tile it reaches captures it. Reaching the other capital delivers the goods."""
     from .tick import next_step
-    speed = rules["movement"]["trade_tiles_per_tick"]
     left = []
     for c in world.get("caravans", []):
+        speed = speed_between(world, rules, c["tile"], c["dest"])
         nid = raider(world, c)
         steps = 0
         while nid is None and c["tile"] != c["dest"] and steps < speed:

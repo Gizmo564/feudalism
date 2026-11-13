@@ -60,7 +60,10 @@ const swatch = (colour) => el("i", {className: "sw", style: "background:" + colo
 function showBars(data, name) {
   const mine = data.nations.find((n) => n.id === data.me);
   $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name, el("span", {className: "night", textContent: "Night " + data.tick}));
-  $("pills").replaceChildren(...data.resources.map(([r, n]) =>
+  const raw = ["food", "wood", "stone", "ore", "oil", "livestock"];        // refined goods only show up once you have some
+  ui.contests = (data.contests || []).length;
+  drawTabs();
+  $("pills").replaceChildren(...data.resources.filter(([r, n]) => raw.includes(r) || n > 0).map(([r, n]) =>
     el("div", {className: "pill"}, el("i", {style: "background:" + (RES_COLOUR[r] || "#888")}), el("span", {textContent: cap(r)}), el("b", {textContent: n}))));
   const chip = (icon, label, n) => {
     const c = el("div", {className: "hchip" + (n ? "" : " zero")}, ...(icon ? [svgIcon(ICON[icon])] : []),
@@ -74,7 +77,7 @@ function showBars(data, name) {
   $("hold").replaceChildren(
     label("Land " + total), ...["field", "forest", "hills", "mountain"].map((t) => chip(t, t, land[t] || 0)),
     el("span", {className: "hsep"}), label("Buildings " + owned),
-    ...["capital", ...types].map((b) => chip("", b, buildings[b] || 0)));
+    ...["capital", ...types].filter((b) => ["capital", "home", "barracks", "market", "wall"].includes(b) || buildings[b]).map((b) => chip("", b, buildings[b] || 0)));
 }
 
 // ---- the side panel (a bottom sheet on a phone) ----
@@ -187,7 +190,8 @@ async function send(body) {
 
 function drawTabs() {
   $("tabs").replaceChildren(...TABS.map(([id, label]) => {
-    const b = el("button", {className: "tab" + (ui.tab === id ? " on" : ""), textContent: label});
+    const alert = id === "nation" && ui.contests;                       // a dot when a tile of yours is contested
+    const b = el("button", {className: "tab" + (ui.tab === id ? " on" : "") + (alert ? " alert" : ""), textContent: label + (alert ? " \u25cf" : "")});
     b.onclick = () => { ui.tab = id; ui.msg = null; drawTabs(); showTab(); };
     return b;
   }));
@@ -214,7 +218,7 @@ async function loadNation() {
 function nationTab(n) {
   const p = n.people;
   const meter = (label, v, room) => el("div", {className: "meter"}, line(cap(label), v + " of " + room),
-    el("div", {className: "track"}, el("i", {style: "width:" + Math.min(100, room ? 100 * v / room : 0) + "%"})));
+    el("div", {className: "track"}, el("i", {className: room && v >= room ? "full" : "", style: "width:" + Math.min(100, room ? 100 * v / room : 0) + "%"})));
   // every list row is the same grid: name, minus, value, plus, about how much it makes, and a spare column, so nothing moves
   const ctl = (name, dim, minus, value, plus, est, extra, tip) => {
     const r = el("div", {className: "ctl" + (dim ? " dim" : ""), title: tip || ""}, el("span", {textContent: name}), minus,
@@ -452,6 +456,10 @@ function showMap(data, headers) {
       let x = sx(t), y = sy(t), k = size / 21 * 1.5;
       if (t.building || data.armies.some((a) => a.tile === c.tile)) { x -= size * 0.5; y -= size * 0.4; k *= 0.7; } else x -= 0.5 * k;
       cart(x, y, k, c.from);
+    }
+    for (const k of data.contested || []) {                          // 5b. contested tiles: a dashed red outline
+      const t = at[k]; if (!t || !seen.includes(t)) continue;
+      hex(sx(t), sy(t), size * 0.88); ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = "#e5484d"; ctx.lineWidth = 3; ctx.stroke(); ctx.restore();
     }
     if (selected && at[selected]) {                                  // 6. the selected tile
       hex(sx(at[selected]), sy(at[selected]), size * 0.95); ctx.strokeStyle = "#5865f2"; ctx.lineWidth = 3; ctx.stroke();

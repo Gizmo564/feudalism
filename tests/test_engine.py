@@ -1182,3 +1182,12 @@ def test_upgraded_workshop_has_more_job_slots(rules):
     tick.queue(w, rules, 0, {"type": "upgrade", "tile": k})
     tick.apply_orders(w, rules, random.Random(1))
     assert W.level_of(w["tiles"][k]) == 2 and tick.tile_cap(w, rules, k) == rules["refine_slots"] + 1
+
+
+def test_goods_cross_water_faster_by_port(rules):
+    r, w, b = watery(rules, 0)
+    a, c = w["nations"][0]["capital"], w["nations"][1]["capital"]
+    land = r["movement"]["trade_tiles_per_tick"]
+    assert trade.speed_between(w, r, a, c) == land                     # no port: no route over water, so the plain speed
+    w["tiles"][b].update(owner=0, building="port")
+    assert trade.speed_between(w, r, a, c) == land * r["trade"]["sea_speed_percent"] // 100 == 3

@@ -16,6 +16,8 @@ RULES = [
      "How fast traded goods (or caravans) travel between capitals.", "trade"),
     ("trade_water", "Trade across water", "number", ("trade", "water"), 0, (0, 2, 1),
      "0: water doesn't matter. 1: when the capitals are split by water, one side needs a port (port to coast). 2: both sides need a port (port to port).", "trade"),
+    ("sea_speed", "Sea trade speed (% of land)", "number", ("trade", "sea_speed_percent"), 150, (50, 400, 25),
+     "How fast goods travel when the route between the capitals crosses water over ports. 150 is one and a half times the trade speed.", "trade"),
     ("steel_soldiers", "Steel soldiers", "switch", ("steel_soldiers", "enabled"), True, None,
      "Players with a level 2 barracks can train steel soldiers: they cost steel and fight 25% stronger.", "game"),
     ("win_share", "Win share (% of land)", "number", ("victory", "land_share_percent"), 40, (5, 100, 5),
@@ -59,7 +61,7 @@ ADVANCED = {"hidden_oil", "caravans", "trade_speed", "scarcity", "share_stone_pe
 
 
 def applies(rules, key):
-    if key == "trade_water":
+    if key in ("trade_water", "sea_speed"):
         return "port" in rules.get("buildings", {})
     if key == "steel_soldiers":
         return "steel_soldiers" in rules

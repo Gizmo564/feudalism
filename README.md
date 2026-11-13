@@ -85,3 +85,5 @@ On the server, `feudalism help` lists everything:
 - **Trade across water** (`/admin rules`, Trade tab): 0 = water doesn't matter (default), 1 = a port on one side, 2 = ports on both sides. Only applies when water separates the capitals.
 - **Workshop upgrades**: `/upgrade` adds job slots (3, then 4, then 5).
 - **Lists that stay put**: the `/info` Economy tab shows every resource every time in one fixed-width table (priority, workers, about how much tonight), and its controls keep one width. The Activity lists use fixed columns.
+- **Sea trade speed** (`/admin rules`, Trade tab, default 150%): goods whose route between the capitals crosses water over ports travel 1.5 times as fast (3 tiles a night instead of 2). It needs a route over ports, so with trade-across-water set to 0 and no ports there is no bonus.
+- **Activity polish**: refined goods and workshop counts only show once you have some, the Nation tab gets a red dot and a "Contested tiles" box when a tile of yours is contested (contested tiles also get a dashed red outline on the map), the people meters turn amber when you hit your housing, and rows and buttons have hover and focus states.

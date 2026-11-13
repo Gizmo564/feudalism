@@ -52,7 +52,7 @@
     .tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
     .tag { display: flex; align-items: center; gap: 6px; background: var(--chip); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
     .box { background: var(--bg); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
-    .box h3 { margin: 0; font-size: 13px; font-weight: 600; }
+    .box h3 { margin: 0; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
     .row { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
     .row span:first-child { color: var(--muted); }
     .row .short { color: #f0877a; }
@@ -60,6 +60,10 @@
     .btn { border: 0; border-radius: 8px; height: 44px; padding: 0 14px; font-size: 14px; font-weight: 600; text-align: left; }
     .btn.primary { background: var(--accent); color: #fff; text-align: center; }
     .btn.plain { background: #3a3c42; }
+    .btn { transition: filter .12s, transform .06s; }
+    .btn:not(.off):hover { filter: brightness(1.15); }
+    .btn:not(.off):active { transform: scale(.97); }
+    .btn:focus-visible, .tab:focus-visible, .chip:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
     .btn.off { background: var(--chip); color: #8a8f98; cursor: default; }
     .msg { border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
     .msg.ok { background: #25412f; }
@@ -74,7 +78,13 @@
     .pair .btn { flex: 1; text-align: center; }
     .meter { display: flex; flex-direction: column; gap: 6px; }
     .track { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; }
-    .track i { display: block; height: 100%; background: var(--accent); }
+    .track i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+    .track i.full { background: #e0b050; }
+    .tab { position: relative; }
+    .tab.alert { color: #ff8a8f; }
+    .ctl { padding: 3px 4px; border-radius: 8px; }
+    .ctl:hover { background: #ffffff0a; }
+    .box + .box { margin-top: 12px; }
     .stepper { display: flex; align-items: center; gap: 10px; }
     .stepper .btn { height: 32px; width: 32px; padding: 0; text-align: center; }
     .stepper b { min-width: 14px; text-align: center; }
@@ -121,6 +131,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>
