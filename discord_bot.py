@@ -166,6 +166,10 @@ async def run(interaction, fn, *args, public=False):
     except (GameError, ValueError) as e:
         return await say(interaction, "Can't do that: %s" % e)
     await say(interaction, text, public=public)
+    owner = getattr(fn, "__self__", None)
+    if hasattr(owner, "take_notices"):          # private messages the command caused (pact news)
+        for uid, note in owner.take_notices():
+            await dm(uid, note)
 
 
 def announce_channel():
@@ -1679,7 +1683,7 @@ async def on_ready():
             from activity import server as activity_server
             client.activity_runner = await activity_server.start(int(ACTIVITY_PORT), str(client.application_id),
                                                                  ACTIVITY_SECRET, games.get,
-                                                                 {"offer": activity_offer, "resolved": activity_resolved})
+                                                                 {"offer": activity_offer, "resolved": activity_resolved, "dm": dm})
             print("Activity server listening on port %s" % ACTIVITY_PORT)
     print("Logged in as %s" % client.user)
     if not getattr(client, "start_told", False):

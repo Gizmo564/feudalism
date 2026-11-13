@@ -94,3 +94,4 @@ On the server, `feudalism help` lists everything:
 - **Game over screen**: when a game ends the Activity shows a crown, who won and why, and the final standings for every nation. A nation that has fallen sees its own "Your nation has fallen" screen with the slipped crown.
 - **Queued orders**: `/orders` lists what you have queued for tonight, `/cancel <number>` cancels one, and `/cancel` alone clears all. In the Activity every queued order has its own Cancel button.
 - **Factory reset**: `/admin factoryreset` erases the server's game, sign-ups, rules and settings. With `clear_messages` on it also deletes the bot's own messages in the announcement, trade and log channels (pinned ones stay).
+- **Pact DMs**: when a pact is proposed to you, or one you proposed is accepted, declined or withdrawn, you get a DM right away (only if you turned DMs on with `/dms on`).

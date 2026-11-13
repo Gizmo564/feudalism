@@ -582,6 +582,16 @@ class Game:
 
     # ---------- pacts (records only) ----------
 
+    def notify(self, nid, text):
+        """Queue a private message for a nation's player, if they chose DMs. The bot sends it after the command (take_notices)."""
+        uid = next((u for u, n in self.players.items() if n == nid), None)
+        if uid is not None and self.wants_dm(uid):
+            self.notices = getattr(self, "notices", []) + [(uid, text)]
+
+    def take_notices(self):
+        out, self.notices = getattr(self, "notices", []), []
+        return out
+
     def pact_propose(self, uid, to_name, text):
         nid, other = self.nid(uid), self.nation_named(to_name)
         try:
@@ -589,24 +599,29 @@ class Game:
         except ValueError as e:
             raise GameError(str(e))
         self.save()
+        self.notify(other["id"], "%s proposes pact %d: %s\nAnswer with /pact accept %d or /pact decline %d." % (
+            self.world["nations"][nid]["name"], pid, " ".join(text.split()), pid, pid))
         return "Pact %d proposed to %s. It only counts if they accept; nothing enforces it." % (pid, other["name"])
 
     def pact_accept(self, uid, pid):
         nid = self.nid(uid)
         try:
-            pacts.accept(self.world, pid, nid)
+            p = pacts.accept(self.world, pid, nid)
         except ValueError as e:
             raise GameError(str(e))
         self.save()
+        self.notify(p["a"], "%s accepted pact %d: %s" % (self.world["nations"][nid]["name"], pid, p["text"]))
         return "Pact %d is now on the public record." % pid
 
     def pact_decline(self, uid, pid):
         nid = self.nid(uid)
         try:
-            pacts.decline(self.world, pid, nid)
+            p = pacts.decline(self.world, pid, nid)
         except ValueError as e:
             raise GameError(str(e))
         self.save()
+        other = p["b"] if nid == p["a"] else p["a"]
+        self.notify(other, "%s %s pact %d: %s" % (self.world["nations"][nid]["name"], "withdrew" if nid == p["a"] else "declined", pid, p["text"]))
         return "Pact %d closed." % pid
 
     def pact_break(self, uid, pid):

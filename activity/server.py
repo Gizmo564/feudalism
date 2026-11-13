@@ -257,6 +257,8 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
                 return web.json_response({"ok": False, "message": "Unknown order."}, status=400)
         except (GameError, ValueError, TypeError) as e:
             return web.json_response({"ok": False, "message": str(e)}, status=400)
+        for to, note in game.take_notices():                # private messages this order caused (pact news)
+            await safely(hooks.get("dm"), to, note)
         game.store.set("last_activity", time.time())        # automatic updates wait while people are playing
         return web.json_response({"ok": True, "message": message})
 

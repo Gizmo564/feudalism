@@ -654,3 +654,16 @@ def test_orders_list_and_cancel_one(game):
     assert game.orders(100).count("Train") == 1
     assert game.cancel(100) == "Cleared 1 queued order."
     assert game.orders(100) == "You have nothing queued for tonight."
+
+
+def test_pact_news_is_dmed_to_players_who_opted_in(game):
+    game.set_dm(101, True)                        # Brask opts in, Aldmere does not
+    game.pact_propose(100, "Brask", "no attacks until night 30")
+    got = game.take_notices()
+    assert len(got) == 1 and got[0][0] == "101" and "proposes pact" in got[0][1]
+    assert game.take_notices() == []
+    game.set_dm(100, True)
+    game.pact_accept(101, 1)
+    assert [u for u, _ in game.take_notices()] == ["100"]
+    game.pact_propose(100, "Corvain", "trade peace")      # Corvain never opted in
+    assert game.take_notices() == []
