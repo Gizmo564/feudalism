@@ -502,7 +502,7 @@
   },
   "trade": {
     "requires_market": true,
-    "caravans": false,
+    "caravans": true,
     "offer_expires_ticks": 3,
     "water": 0,
     "sea_speed_percent": 150

@@ -172,26 +172,23 @@ def capture(world, c, nid):
 def move_caravans(world, rules):
     """Run after the armies have moved. Each caravan walks up to the trade speed along the land path;
     an enemy army on a tile it reaches captures it. Reaching the other capital delivers the goods."""
-    from .tick import next_step
+    from .tick import next_step, find_path, STATIONS
+    on_rails = lambda k: world["tiles"][k]["building"] in STATIONS        # rails of any nation: lines of different nations connect
     left = []
     for c in world.get("caravans", []):
         speed = speed_between(world, rules, c["tile"], c["dest"])
         nid = raider(world, c)
         steps, rail_left = 0, rules["movement"].get("rail_steps", 0)
         while nid is None and c["tile"] != c["dest"] and steps < speed:
-            step = next_step(world, c["tile"], c["dest"])
+            by_rail = find_path(world, c["tile"], c["dest"], on_rails) if rail_left > 0 else None
+            step = by_rail[0] if by_rail else next_step(world, c["tile"], c["dest"])      # a connected rail line is a train ride
             if step is None:
                 break
-            ends = {world["tiles"][c["tile"]]["owner"], world["tiles"][step]["owner"]}
-            on_rail = (len(ends) == 1 and ends <= {c["from"], c["to"]}                  # a rail of one of the two trading nations
-                       and world["tiles"][c["tile"]]["building"] == "rail" and world["tiles"][step]["building"] == "rail")
-            if on_rail and rail_left > 0:
-                rail_left -= 1
-                c["tile"] = step
-                nid = raider(world, c)
-                continue
             c["tile"] = step
-            steps += 1
+            if by_rail:
+                rail_left -= 1                  # train steps are free; the rest of the trip is the usual caravan walk
+            else:
+                steps += 1
             nid = raider(world, c)
         if nid is not None:
             capture(world, c, nid)

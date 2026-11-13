@@ -90,6 +90,8 @@ def resources(rules):
     if fuel:
         lines += ["", "**Fuel**: every %s working in a workshop burns %d power a night, coal first, then oil. %s. Short of fuel, workshops make less." % (
             worker, fuel["per_worker"], ", ".join("1 %s = %d power" % (r, p) for r, p in sorted(fuel["power"].items(), key=lambda x: x[1])))]
+    if rules["movement"].get("rail_steps"):
+        lines += ["", "**Rails**: armies on your own track and trade caravans on any connected rails (other nations' too) go %d extra tiles a night." % rules["movement"]["rail_steps"]]
     return "\n".join(lines)
 
 
@@ -163,14 +165,13 @@ def war(rules):
            "They march as their own armies, drawn as diamonds." % (rules["steel_soldiers"]["min_barracks_level"], rules["steel_soldiers"]["steel"],
                                                                     rules["steel_soldiers"]["bonus_percent"])]
           if rules.get("steel_soldiers", {}).get("enabled") else []),
-        *(["Rails: on your own track armies and caravans go %d extra tiles a night." % rules["movement"]["rail_steps"]] if rules["movement"].get("rail_steps") else []),
         *(["Units (/train unit; each needs its workshop): " + "; ".join(
             "%s +%s, x%g%s" % (u, cost(c["cost"]).replace(" machine_parts", " parts"), c["strength_percent"] / 100,
                                ", ignores walls" if c.get("ignore_defences") else ", rails only" if c.get("rail_only") else "")
             for u, c in rules["units"].items()) + "."]
           if rules.get("units") else []),
-        "If two nations claim the same free tile in one night it becomes contested: each can give it up or fight (/contest, the announcement buttons, or /play). "
-        "Fighters roll a duel with the soldiers they have within 3 tiles; no answer counts as fight.",
+        "Two nations claiming the same free tile in one night makes it contested: each can give up or fight (/contest or the announcement buttons). "
+        "Fighters duel with the soldiers within 3 tiles; no answer counts as fight.",
         "",
         "**Trade**",
         "/trade needs a Market on both sides. Name a nation, or leave 'to' empty to post on the trade board for anyone. Offers expire after %d nights; goods take time to arrive." % rules["trade"]["offer_expires_ticks"],

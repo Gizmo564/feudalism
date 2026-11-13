@@ -201,3 +201,20 @@ def test_auto_refine_stops_when_the_good_piles_up(rules):
     w, n = shop(rules, "factory", steel=50, planks=50, coal=50, machine_parts=500)
     n["auto"] = True
     assert "machine_parts" in tick.work_plan(w, rules, n)         # factory output is the win condition, so it never stops
+
+
+def test_caravans_ride_connected_rails_even_across_nations(rules):
+    from population import trade
+    w = two_armies_world(rules)
+    for x in range(-5, 6):                                     # one unbroken line: A's rails, then B's rails
+        w["tiles"]["%d,0" % x].update(owner=0 if x < 0 else 1, building="rail")
+    w["tiles"]["-5,0"]["building"], w["tiles"]["5,0"]["building"] = "capital", "capital"
+    trade.send_caravan(w, 0, 1, {"wood": 5})
+    trade.move_caravans(w, rules)
+    assert w["caravans"][0]["tile"] == "3,0"                   # 8 tiles in a night: 6 by train, 2 on foot
+    trade.move_caravans(w, rules)
+    assert not w["caravans"] and w["nations"][1]["resources"]["wood"] >= 5
+    w2 = two_armies_world(rules)
+    trade.send_caravan(w2, 0, 1, {"wood": 5})
+    trade.move_caravans(w2, rules)
+    assert w2["caravans"][0]["tile"] == "-3,0"                 # without rails it walks 2 tiles
