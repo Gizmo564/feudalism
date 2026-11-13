@@ -256,7 +256,7 @@ function nationTab(n) {
   const count = input("How many");
   count.type = "number"; count.min = 1; count.value = 1;
   const kinds = [["", "Plain"], ["steel", "Steel" + (n.steel.problem ? " (" + n.steel.problem + ")" : " - costs " + n.steel.cost)]];
-  if (n.tank.cost) kinds.push(["tank", "Tank" + (n.tank.problem ? " (" + n.tank.problem + ")" : " - costs " + n.tank.cost)]);
+  for (const u of n.units) kinds.push([u.unit, cap(u.unit) + (u.problem ? " (" + u.problem + ")" : " - costs " + u.cost)]);
   const kind = choose(kinds);
   const food = n.food.net >= 0 ? "+" + n.food.net : String(n.food.net);
   // advanced mode: an exact number of workers on a resource (or "auto": it follows the priorities)
@@ -294,7 +294,7 @@ function nationTab(n) {
     box("Priorities (about how much each makes tonight)", ...n.priorities.map(prio), note(advanced ? "These only decide the resources you left on auto." :
         "0 turns a resource off, 5 is top. Only the proportions matter. Greyed resources need land that makes them.")),
     box("Train " + n.soldier + "s", note("Each costs " + n.train_cost + " and a " + n.worker + ". Room for " + room + " more."), count, kind,
-        button("Train", () => send({action: "train", n: Number(count.value), steel: kind.value === "steel", tank: kind.value === "tank"}), room ? "primary" : "off")),
+        button("Train", () => send({action: "train", n: Number(count.value), steel: kind.value === "steel", unit: ["", "steel"].includes(kind.value) ? null : kind.value}), room ? "primary" : "off")),
     box("Advice", ...n.advice.map((a) => note("- " + a))),
   ];
 }
@@ -491,7 +491,7 @@ function showMap(data, headers) {
       const t = at[a.tile]; if (!t || !seen.includes(t)) continue;
       let x = sx(t), y = sy(t), k = size / 21;
       if (t.building) { x -= size * 0.5; y += size * 0.45; k *= 0.8; }
-      shield(x, y, k, a.owner, a.owner === data.me ? (a.tank ? "T" : "") + a.n : "?", a.steel);
+      shield(x, y, k, a.owner, a.owner === data.me ? (a.unit ? a.unit[0].toUpperCase() : "") + a.n : "?", a.steel);
     }
     for (const c of data.caravans || []) {                           // 5. caravans: carts, moved to the top-left corner if something else is there
       const t = at[c.tile]; if (!t || !seen.includes(t)) continue;
@@ -636,7 +636,9 @@ function showOver(me) {   // the game is over (or this nation has fallen): a cro
   const table = o ? el("table", {}, el("tr", {}, ...["#", "Nation", "Land", "People"].map((t) => el("th", {textContent: t}))),
     ...o.rows.map((r, i) => el("tr", {className: (r.me ? "me " : "") + (r.alive ? "" : "out")},
       ...[i + 1, r.name + (r.me ? " (you)" : "") + (r.alive ? "" : " - fallen"), r.land, r.population].map((v) => el("td", {textContent: v}))))) : "";
-  $("over").replaceChildren(el("img", {src: won ? "/static/crown.png" : "/static/crown_fallen.png", alt: ""}),
+  const art = me.mode === "industrialism" ? (won ? "/static/over_beam.png" : "/static/over_broken.png")   // Industrialism: a whole beam, or a broken one
+                                           : (won ? "/static/crown.png" : "/static/crown_fallen.png");
+  $("over").replaceChildren(el("img", {src: art, alt: ""}),
     el("h1", {textContent: title}), el("p", {className: "sub", textContent: sub}), table);
   $("status").style.display = "none";
   $("over").style.display = "block";
@@ -647,7 +649,8 @@ function showIntro(me) {   // first launch only: a quick look at the game and ho
   try { seen = localStorage.getItem("intro") === "1"; } catch (e) {}
   if (seen) return;
   const done = () => { try { localStorage.setItem("intro", "1"); } catch (e) {} $("intro").style.display = "none"; };
-  $("intro").replaceChildren(el("div", {className: "card"},
+  const art = me.mode === "industrialism" ? [el("div", {className: "art"}, el("img", {src: "/static/coal.png", alt: ""}), el("img", {src: "/static/i_beam.png", alt: ""}))] : [];
+  $("intro").replaceChildren(el("div", {className: "card"}, ...art,
     el("h2", {textContent: "Welcome, " + me.nation}),
     el("p", {textContent: "Everyone plays at once on one hex map. Pick tiles to claim, build, train armies and trade. Orders you give are queued and happen together at the nightly tick."}),
     el("p", {textContent: "Your nation needs food and upkeep each night. Grow, make pacts, and watch your neighbours."}),

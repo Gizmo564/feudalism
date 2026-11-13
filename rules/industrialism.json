@@ -453,7 +453,8 @@
     "min_wood_stone_near": 2,
     "start_fields": 3,
     "late_join_catchup_percent": 50,
-    "late_join_protection_ticks": 3
+    "late_join_protection_ticks": 3,
+    "min_forest_near": 2
   },
   "claim": {
     "base": {
@@ -613,14 +614,38 @@
     }
   },
   "auto_refine": true,
-  "tanks": {
-    "enabled": true,
-    "building": "engineworks",
-    "cost": {
-      "engines": 1,
-      "steel": 2
+  "units": {
+    "tank": {
+      "building": "engineworks",
+      "cost": {
+        "engines": 1,
+        "steel": 2
+      },
+      "strength_percent": 400,
+      "oil_weight": 3
     },
-    "strength_percent": 400,
-    "oil_weight": 3
-  }
+    "artillery": {
+      "building": "factory",
+      "cost": {
+        "machine_parts": 2,
+        "steel": 1
+      },
+      "strength_percent": 250,
+      "oil_weight": 2,
+      "ignore_defences": true
+    },
+    "train": {
+      "building": "engineworks",
+      "cost": {
+        "engines": 2,
+        "steel": 3,
+        "planks": 2
+      },
+      "strength_percent": 300,
+      "oil_weight": 1,
+      "rail_only": true,
+      "rail_steps": 12
+    }
+  },
+  "auto_refine_cap": 20
 }

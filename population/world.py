@@ -88,18 +88,18 @@ def is_free_land(world, k):
     return t is not None and t["terrain"] != "water" and t["owner"] is None
 
 
-def add_army(world, nid, tile, n, dest=None, steel=False, tank=False):
-    """Steel soldiers and tanks fight in armies of their own, so an army is all steel, all tanks or all plain."""
+def add_army(world, nid, tile, n, dest=None, steel=False, unit=None):
+    """Steel soldiers and each special unit (tank, artillery, train) fight in armies of their own: an army is all one kind."""
     if dest is None:
         for a in world["armies"]:
-            if a["owner"] == nid and a["tile"] == tile and a["dest"] is None and bool(a.get("steel")) == bool(steel) and bool(a.get("tank")) == bool(tank):
+            if a["owner"] == nid and a["tile"] == tile and a["dest"] is None and bool(a.get("steel")) == bool(steel) and a.get("unit") == unit:
                 a["n"] += n
                 return a
     a = {"id": world["next_army_id"], "owner": nid, "tile": tile, "n": n, "dest": dest}
     if steel:
         a["steel"] = True
-    if tank:
-        a["tank"] = True
+    if unit:
+        a["unit"] = unit
     world["next_army_id"] += 1
     world["armies"].append(a)
     return a
@@ -283,7 +283,8 @@ def good_start(world, start, k, strict=True, min_land=None):
         return True
     near = [world["tiles"][x]["terrain"] for x in within(k, 2) if x in world["tiles"]]
     return (near.count("field") >= start["min_fields_near"]
-            and near.count("forest") + near.count("hills") >= start["min_wood_stone_near"])
+            and near.count("forest") + near.count("hills") >= start["min_wood_stone_near"]
+            and near.count("forest") >= start.get("min_forest_near", 0))
 
 
 def found_nation(world, rules, name, k, resources, protected_until=0):

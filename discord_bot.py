@@ -745,8 +745,11 @@ async def assign(interaction: discord.Interaction, counts: str):
 
 
 @tree.command(description="Turn workers into soldiers (needs barracks room, ore and food)")
-async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500], steel: bool = False, tank: bool = False):
-    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count, steel, tank)
+@app_commands.describe(steel="Steel soldiers (stronger)", unit="A special unit, in games that have them")
+@app_commands.choices(unit=[app_commands.Choice(name=u, value=u) for u in ("tank", "artillery", "train")])
+async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500], steel: bool = False,
+                unit: app_commands.Choice[str] | None = None):
+    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count, steel, unit.value if unit else None)
 
 
 @tree.command(description="Give up or fight for a tile you and someone else claimed in the same night")

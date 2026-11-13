@@ -22,7 +22,7 @@ def describe_order(o):
     if kind == "move":
         return "Army %d to %s" % (o["army"], o["dest"])
     if kind == "train":
-        return "Train %d%s" % (o["n"], " tanks" if o.get("tank") else " steel" if o.get("steel") else "")
+        return "Train %d%s" % (o["n"], " " + o["unit"] + "s" if o.get("unit") else " steel" if o.get("steel") else "")
     if kind == "upgrade":
         return "Upgrade %s" % o["tile"]
     return kind
@@ -109,9 +109,9 @@ def allocate(workers, weights, cap):
     return alloc
 
 
-def find_path(world, start, dest):
+def find_path(world, start, dest, ok=None):
     """Tiles to walk from start to dest (start not included): over land only if that works, else over land and
-    ports. [] if you are already there, None if there is no way."""
+    ports. [] if you are already there, None if there is no way. ok(tile key) can rule tiles out (trains stay on rails)."""
     if start == dest:
         return []
     for ports in (False, True):
@@ -121,7 +121,7 @@ def find_path(world, start, dest):
             cur = q.popleft()
             for n in neighbors(cur):
                 t = world["tiles"].get(n)
-                if t is None or n in prev or (t["terrain"] == "water" and not (ports and t["building"] == "port")):
+                if t is None or n in prev or (ok and not ok(n)) or (t["terrain"] == "water" and not (ports and t["building"] == "port")):
                     continue
                 prev[n] = cur
                 q.append(n)
@@ -134,9 +134,9 @@ def find_path(world, start, dest):
     return None
 
 
-def next_step(world, start, dest):
+def next_step(world, start, dest, ok=None):
     """First tile on the way from start to dest, or None."""
-    path = find_path(world, start, dest)
+    path = find_path(world, start, dest, ok)
     return path[0] if path else None
 
 
@@ -316,27 +316,27 @@ def steel_problem(world, rules, nid):
     return None
 
 
-def tank_cfg(rules):
-    cfg = rules.get("tanks", {})
-    return cfg if cfg.get("enabled") else None
+def unit_cfg(rules, unit):
+    """A special unit (tank, artillery, train) as rules["units"] describes it, or None."""
+    return rules.get("units", {}).get(unit)
 
 
-def tank_problem(world, rules, nid):
-    """Why nation nid can't train tanks (a sentence), or None if it can."""
-    cfg = tank_cfg(rules)
+def unit_problem(world, rules, nid, unit):
+    """Why nation nid can't train this unit (a sentence), or None if it can."""
+    cfg = unit_cfg(rules, unit)
     if cfg is None:
-        return "this game has no tanks"
+        return "this game has no %ss" % unit
     if not any(t["owner"] == nid and t["building"] == cfg["building"] for t in world["tiles"].values()):
-        return "you need an %s" % cfg["building"]
+        return "you need a%s %s" % ("n" if cfg["building"][0] in "aeiou" else "", cfg["building"])
     return None
 
 
-def train_cost(rules, steel=False, tank=False):
+def train_cost(rules, steel=False, unit=None):
     cost = dict(rules["soldier"]["train_cost"])
     if steel:
         cost["steel"] = cost.get("steel", 0) + steel_cfg(rules)["steel"]
-    if tank:
-        for r, v in tank_cfg(rules)["cost"].items():
+    if unit:
+        for r, v in unit_cfg(rules, unit)["cost"].items():
             cost[r] = cost.get(r, 0) + v
     return cost
 
@@ -344,30 +344,30 @@ def train_cost(rules, steel=False, tank=False):
 def strength(rules, a):
     """An army's fighting strength: its soldiers, plus the steel bonus."""
     cfg = steel_cfg(rules)
-    if a.get("tank") and tank_cfg(rules):
-        return a["n"] * tank_cfg(rules)["strength_percent"] // 100
+    if a.get("unit") and unit_cfg(rules, a["unit"]):
+        return a["n"] * unit_cfg(rules, a["unit"])["strength_percent"] // 100
     return a["n"] * (100 + cfg["bonus_percent"]) // 100 if a.get("steel") and cfg else a["n"]
 
 
 def do_train(world, rules, n, o):
     nid = n["id"]
-    steel, tank = bool(o.get("steel")), bool(o.get("tank"))
+    steel, unit = bool(o.get("steel")), o.get("unit")
     if steel and steel_problem(world, rules, nid):
         return W.ev(world, nid, "Steel training failed: %s" % steel_problem(world, rules, nid))
-    if tank and tank_problem(world, rules, nid):
-        return W.ev(world, nid, "Tank training failed: %s" % tank_problem(world, rules, nid))
-    cost = train_cost(rules, steel, tank)
+    if unit and unit_problem(world, rules, nid, unit):
+        return W.ev(world, nid, "Training %ss failed: %s" % (unit, unit_problem(world, rules, nid, unit)))
+    cost = train_cost(rules, steel, unit)
     limits = {"barracks room": W.housing(world, rules, nid)[1] - W.soldiers(world, nid), "workers (one must stay)": n["workers"] - 1}
     for r, v in cost.items():
         if v > 0:
             limits[r] = n["resources"][r] // v
     count = max(0, min([o["n"]] + list(limits.values())))
-    word = "tanks" if tank else "steel soldiers" if steel else "soldiers"
+    word = unit + "s" if unit else "steel soldiers" if steel else "soldiers"
     if count > 0:
         for r, v in cost.items():
             n["resources"][r] -= v * count
         n["workers"] -= count
-        W.add_army(world, nid, n["capital"], count, steel=steel, tank=tank)
+        W.add_army(world, nid, n["capital"], count, steel=steel, unit=unit)
     left = o["n"] - count
     if left <= 0:
         return W.ev(world, nid, "You trained %d %s" % (count, word))
@@ -381,6 +381,8 @@ def do_move(world, rules, n, o):
     t = world["tiles"].get(o.get("dest"))
     if a is None or t is None or (t["terrain"] == "water" and t["building"] != "port"):
         return W.ev(world, nid, "Move failed: bad army or destination")
+    if rail_only(rules, a) and find_path(world, a["tile"], o["dest"], own_rail(world, nid)) is None:
+        return W.ev(world, nid, "Move failed: a train stays on your own connected rails")
     path = find_path(world, a["tile"], o["dest"])
     if crosses_water(world, path):          # sailing over ports costs a flat amount of wood for the boat
         fee = boat_cost(rules)
@@ -391,7 +393,7 @@ def do_move(world, rules, n, o):
     count = o.get("n")
     if count is not None and 0 < count < a["n"]:        # send only part of the army (advanced mode)
         a["n"] -= count
-        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None, steel=a.get("steel"), tank=a.get("tank"))
+        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None, steel=a.get("steel"), unit=a.get("unit"))
         return
     a["dest"] = o["dest"] if o["dest"] != a["tile"] else None
 
@@ -512,7 +514,7 @@ def attack(world, rules, rng, a, k):
     dn = sum(strength(rules, d) for d in defenders)
     an = strength(rules, a)
     terrain_only = world["tiles"][k]["terrain"]
-    if owner is not None and owner != a["owner"]:
+    if owner is not None and owner != a["owner"] and not (unit_cfg(rules, a.get("unit")) or {}).get("ignore_defences"):
         bonus = combat.defense_bonus(world, rules, k)
     else:
         bonus = rules["terrain"][terrain_only]["defense_percent"]
@@ -561,9 +563,21 @@ def attack(world, rules, rng, a, k):
     world["armies"] = [x for x in world["armies"] if x["n"] > 0]
 
 
+STATIONS = ("rail", "capital")          # a capital counts as a station, so track can start there
+
+
 def on_rail(world, k1, k2):
-    """True if both tiles hold a rail (the caller checks who owns them)."""
-    return world["tiles"][k1]["building"] == "rail" and world["tiles"][k2]["building"] == "rail"
+    """True if both tiles hold a rail or capital (the caller checks who owns them)."""
+    return world["tiles"][k1]["building"] in STATIONS and world["tiles"][k2]["building"] in STATIONS
+
+
+def rail_only(rules, a):
+    """A train: it can only move along your own connected rails."""
+    return bool(a.get("unit") and (unit_cfg(rules, a["unit"]) or {}).get("rail_only"))
+
+
+def own_rail(world, nid):
+    return lambda k: world["tiles"][k]["owner"] == nid and world["tiles"][k]["building"] in STATIONS
 
 
 def move_armies(world, rules, rng):
@@ -573,8 +587,11 @@ def move_armies(world, rules, rng):
             continue
         steps_left = rules["movement"].get("army_steps_on_own_land", 1)
         rail_left = rules["movement"].get("rail_steps", 0)      # steps along your own connected rails cost nothing, up to this many
+        ok = None
+        if rail_only(rules, a):                                 # a train only has rail steps
+            steps_left, rail_left, ok = 0, unit_cfg(rules, a["unit"]).get("rail_steps", rail_left), own_rail(world, a["owner"])
         while a in world["armies"] and a["dest"]:
-            step = next_step(world, a["tile"], a["dest"])
+            step = next_step(world, a["tile"], a["dest"], ok)
             if step is None:
                 a["dest"] = None
                 break
@@ -593,7 +610,7 @@ def move_armies(world, rules, rng):
     merged = []
     for a in world["armies"]:
         same = next((m for m in merged if m["owner"] == a["owner"] and m["tile"] == a["tile"]
-                     and m["dest"] == a["dest"] and bool(m.get("steel")) == bool(a.get("steel")) and bool(m.get("tank")) == bool(a.get("tank"))), None)
+                     and m["dest"] == a["dest"] and bool(m.get("steel")) == bool(a.get("steel")) and m.get("unit") == a.get("unit")), None)
         if same:
             same["n"] += a["n"]
         else:
@@ -608,8 +625,7 @@ def oil_upkeep(world, rules):
             continue
         away = [a for a in world["armies"]
                 if a["owner"] == n["id"] and world["tiles"][a["tile"]]["owner"] != n["id"]]
-        weight = (tank_cfg(rules) or {}).get("oil_weight", 1)          # a tank drinks more oil than a soldier
-        total = sum(a["n"] * (weight if a.get("tank") else 1) for a in away)
+        total = sum(a["n"] * (unit_cfg(rules, a["unit"]) or {}).get("oil_weight", 1) if a.get("unit") else a["n"] for a in away)   # tanks drink more
         if total == 0:
             continue
         need = math.ceil(total / cfg["soldiers_per_oil"])
@@ -690,11 +706,13 @@ def tile_plan(world, rules, n):
                 want -= take
                 workers -= take
     prio = {r: v for r, v in n["priorities"].items() if r not in fixed}
-    if n.get("auto"):                                  # auto-refine: refine whenever the inputs are in store, never when they are not
+    if n.get("auto"):          # auto-refine: refine when the inputs are in store and the good is not piling up (factory goods always count)
+        cap = rules.get("auto_refine_cap", 20)
         for r, spec in rules.get("refine", {}).items():
             if r in fixed:
                 continue
-            have = all(n["resources"].get(i, 0) >= v for i, v in spec["inputs"].items())
+            have = (all(n["resources"].get(i, 0) >= v for i, v in spec["inputs"].items())
+                    and (spec.get("output") or n["resources"].get(r, 0) < cap))
             prio[r] = max(prio.get(r, 0), 3) if have else 0
     weights, cands = {}, {}
     for k, left in room.items():

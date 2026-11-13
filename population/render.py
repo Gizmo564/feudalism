@@ -333,7 +333,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             if a["tile"] not in keys:
                 continue
             x, y = pos[a["tile"]][0] + ox, pos[a["tile"]][1] + oy
-            label = ("T" if a.get("tank") else "") + str(a["n"]) if a["owner"] == nid else "?"
+            label = (a["unit"][0].upper() if a.get("unit") else "") + str(a["n"]) if a["owner"] == nid else "?"
             w = s * (0.42 + 0.2 * len(label))
             if tidy:  # small tag in the lower-right corner of the tile
                 x, y = x + s * 0.5, y + s * 0.45

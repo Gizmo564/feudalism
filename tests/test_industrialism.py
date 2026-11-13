@@ -141,21 +141,63 @@ def test_rail_cost_never_rises_but_other_buildings_do(rules):
 
 def test_tanks_cost_more_and_fight_like_four_soldiers(rules):
     w = two_armies_world(rules)
-    assert "engineworks" in tick.tank_problem(w, rules, 0)
+    assert "engineworks" in tick.unit_problem(w, rules, 0, "tank")
     w["tiles"]["-4,0"].update(building="engineworks")
-    assert tick.tank_problem(w, rules, 0) is None
-    cost = tick.train_cost(rules, tank=True)
+    assert tick.unit_problem(w, rules, 0, "tank") is None
+    cost = tick.train_cost(rules, unit="tank")
     assert cost["engines"] == 1 and cost["steel"] == 2 and cost["ore"] == 1
     n = w["nations"][0]
     n["resources"].update(engines=2, steel=10, ore=10, food=50)
     n["workers"] = 20
     w["tiles"]["-3,0"].update(building="barracks")
-    tick.queue(w, rules, 0, {"type": "train", "n": 5, "tank": True})
+    tick.queue(w, rules, 0, {"type": "train", "n": 5, "unit": "tank"})
     tick.apply_orders(w, rules, __import__("random").Random(1))
-    tanks = [a for a in w["armies"] if a.get("tank")]
+    tanks = [a for a in w["armies"] if a.get("unit") == "tank"]
     assert sum(a["n"] for a in tanks) == 2                                  # only two engines
     assert tick.strength(rules, tanks[0]) == 8                              # each tank counts as four
 
 
 def test_boats_burn_coal(rules):
     assert tick.boat_cost(rules) == {"coal": 2}
+
+
+def test_artillery_ignores_walls_and_the_capital_bonus(rules):
+    import random
+    w = two_armies_world(rules)
+    w["tiles"]["-1,0"].update(owner=1, building="wall")
+    w["tiles"]["-1,0"]["level"] = 1
+    plain = W.add_army(w, 0, "-2,0", 10)
+    gun = W.add_army(w, 0, "-2,0", 10, unit="artillery")
+    seen = []
+    orig = tick.combat.fight
+    tick.combat.fight = lambda rules, rng, an, dn, bonus: seen.append(bonus) or orig(rules, rng, an, dn, bonus)
+    try:
+        tick.attack(w, rules, random.Random(1), plain, "-1,0")
+        w["tiles"]["-1,0"].update(owner=1, building="wall")
+        gun["tile"] = "-2,0"
+        tick.attack(w, rules, random.Random(1), gun, "-1,0")
+    finally:
+        tick.combat.fight = orig
+    assert seen[0] > seen[1] == 0                           # the wall counted against soldiers, not against guns
+
+
+def test_trains_run_along_rails_only(rules):
+    import random
+    w = two_armies_world(rules)
+    for x in range(-5, 3):
+        w["tiles"]["%d,0" % x].update(owner=0, building="rail" if x != -5 else "capital")
+    t = W.add_army(w, 0, "-5,0", 3, unit="train")
+    t["dest"] = "2,0"
+    tick.move_armies(w, rules, random.Random(1))
+    assert t["tile"] == "2,0"                               # 7 tiles in one night, more than a soldier walks
+    w["tiles"]["0,0"].update(building=None)                 # cut the line: no rail route, so the train cannot be ordered across
+    assert tick.find_path(w, "-5,0", "2,0", tick.own_rail(w, 0)) is None
+
+
+def test_auto_refine_stops_when_the_good_piles_up(rules):
+    w, n = shop(rules, "cokeworks", coal=100, coke=rules["auto_refine_cap"])
+    n["auto"] = True
+    assert "coke" not in tick.work_plan(w, rules, n)             # enough coke in store: the coal is kept for other uses
+    w, n = shop(rules, "factory", steel=50, planks=50, coal=50, machine_parts=500)
+    n["auto"] = True
+    assert "machine_parts" in tick.work_plan(w, rules, n)         # factory output is the win condition, so it never stops

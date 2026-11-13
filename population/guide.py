@@ -163,11 +163,12 @@ def war(rules):
            "They march as their own armies, drawn as diamonds." % (rules["steel_soldiers"]["min_barracks_level"], rules["steel_soldiers"]["steel"],
                                                                     rules["steel_soldiers"]["bonus_percent"])]
           if rules.get("steel_soldiers", {}).get("enabled") else []),
-        *(["Rails: your own rail tiles let armies and caravans cover up to %d tiles a night along connected track, free. "
-           "Enemies who take a tile wreck its rail." % rules["movement"]["rail_steps"]] if rules["movement"].get("rail_steps") else []),
-        *(["Tanks (/train with tank on, needs an %s): cost %s extra, count as %d soldiers in a fight, burn %dx the oil abroad." % (
-            rules["tanks"]["building"], cost(rules["tanks"]["cost"]), rules["tanks"]["strength_percent"] // 100, rules["tanks"].get("oil_weight", 1))]
-          if rules.get("tanks", {}).get("enabled") else []),
+        *(["Rails: on your own track armies and caravans go %d extra tiles a night." % rules["movement"]["rail_steps"]] if rules["movement"].get("rail_steps") else []),
+        *(["Units (/train unit; each needs its workshop): " + "; ".join(
+            "%s +%s, x%g%s" % (u, cost(c["cost"]).replace(" machine_parts", " parts"), c["strength_percent"] / 100,
+                               ", ignores walls" if c.get("ignore_defences") else ", rails only" if c.get("rail_only") else "")
+            for u, c in rules["units"].items()) + "."]
+          if rules.get("units") else []),
         "If two nations claim the same free tile in one night it becomes contested: each can give it up or fight (/contest, the announcement buttons, or /play). "
         "Fighters roll a duel with the soldiers they have within 3 tiles; no answer counts as fight.",
         "",
