@@ -41,6 +41,7 @@ def basics(rules):
         "2. Open /info, then the Economy tab, and choose what your %ss work on." % worker,
         "3. When your %ss near your housing limit, build a home." % worker,
         "4. Check /report in the morning to see what happened.",
+        "5. Turn on /dms so the bot sends you your night, pact and trade offers each morning, with buttons to answer them.",
         "",
         "/info tells you what needs attention. Stuck? Everything is in /help.",
     ])
@@ -204,7 +205,7 @@ def commands(rules):
         "/contest - give up or fight for a tile you and someone else claimed the same night",
         "/play - the clickable map (Activity)",
         "/mode basic|advanced - advanced adds /assign (exact workers per resource) and /move with a count (send part of an army)",
-        "/dms on|off - private messages (night reports, private trade offers); off until you turn them on",
+        "/dms on|off - the bot DMs you your night report, pact proposals and trade offers (with buttons to answer); off until you turn it on, and worth turning on",
         "/orders - see what you have queued for tonight",
         "/cancel - cancel one queued order by its number, or all of them",
         "/trade, /offers, /accept, /decline - deals with other players (open offers appear on the trade board)",
@@ -229,6 +230,7 @@ def welcome(rules, name):
             rules["start"]["workers"], worker, rules["start"]["soldiers"], soldier),
         "- Every night the game runs. You give orders during the day.",
         "- Use /help for the rules in seven short pages, or /tutorial to practise first.",
+        "- Tip: type /dms on and the bot will DM you each night's report, pact proposals and trade offers, with buttons to answer them.",
     ])
 
 
@@ -238,6 +240,7 @@ def started(world, rules, nid):
     return "\n".join([
         "The game has begun! **%s** has its capital at %s." % (n["name"], n["capital"]),
         "Try this first: /zoom, pick an outlined tile and claim it. Then open /info for what to do next, and /help for the rules.",
+        "Tip: /dms on makes the bot DM you each night's report, pact proposals and trade offers, with buttons to answer them.",
     ])
 
 

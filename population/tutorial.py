@@ -68,7 +68,7 @@ class Tutorial:
         queued = [o for o in w["orders"] if o["nation"] == self.nid]
         step = sum(done.values())
         if all(done.values()):
-            return "Tutorial complete! You know the basics. /tutorial stop takes you back to the real game. /help has the full rules."
+            return "Tutorial complete! You know the basics. /tutorial stop takes you back to the real game. /help has the full rules. One more tip: /dms on in the real game sends you each night's report, pact proposals and trade offers by DM, with buttons to answer them."
         if queued and not (step == 3 and not done["nights"]):
             return "Orders queued. Run /tutorial night to let the night pass and see them happen."
         if not done["claim"]:
