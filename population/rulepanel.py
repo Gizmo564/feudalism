@@ -14,6 +14,10 @@ RULES = [
      "Traded resources walk between the capitals as caravans that enemy armies can capture. Off: goods arrive safely after a delay.", "trade"),
     ("trade_speed", "Trade speed (tiles per tick)", "number", ("movement", "trade_tiles_per_tick"), 2, (1, 6, 1),
      "How fast traded goods (or caravans) travel between capitals.", "trade"),
+    ("trade_water", "Trade across water", "number", ("trade", "water"), 0, (0, 2, 1),
+     "0: water doesn't matter. 1: when the capitals are split by water, one side needs a port (port to coast). 2: both sides need a port (port to port).", "trade"),
+    ("steel_soldiers", "Steel soldiers", "switch", ("steel_soldiers", "enabled"), True, None,
+     "Players with a level 2 barracks can train steel soldiers: they cost steel and fight 25% stronger.", "game"),
     ("win_share", "Win share (% of land)", "number", ("victory", "land_share_percent"), 40, (5, 100, 5),
      "Land an empire needs to win (it can still fall later in the game).", "game"),
     ("scarcity", "Land price rise (%)", "number", ("claim", "scarcity_percent"), 0, (0, 1000, 50),
@@ -55,6 +59,10 @@ ADVANCED = {"hidden_oil", "caravans", "trade_speed", "scarcity", "share_stone_pe
 
 
 def applies(rules, key):
+    if key == "trade_water":
+        return "port" in rules.get("buildings", {})
+    if key == "steel_soldiers":
+        return "steel_soldiers" in rules
     if key == "win_share":
         return "ranks" in rules and rules["victory"].get("land_share_percent") is not None
     return True

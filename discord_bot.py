@@ -371,44 +371,38 @@ class InfoView(discord.ui.View):
             return
         if self.tab != "economy":
             return
-        nation = self.g.world["nations"][self.g.nid(self.uid)]
+        world, rules = self.g.world, self.g.rules
+        nation = world["nations"][self.g.nid(self.uid)]
         prios = nation["priorities"]
         advanced = nation.get("mode", "basic") == "advanced"
-        can = infopage.available(self.g.world, self.g.rules, self.g.nid(self.uid))
-        if self.resource not in can:
-            self.resource = can[0]
+        can = infopage.available(world, rules, self.g.nid(self.uid))
+        plan = tick.work_plan(world, rules, nation)
+        # the same controls in the same places whatever you pick: every resource is in the menu, and the five buttons
+        # always have the same short labels padded to one width, so nothing jumps around
         menu = discord.ui.Select(placeholder="Pick a resource...", row=1, options=[
-            discord.SelectOption(label=r.capitalize(), value=r, description="priority %d of 5" % prios[r],
-                                 default=r == self.resource) for r in can])
+            discord.SelectOption(label=r.capitalize(), value=r, default=r == self.resource,
+                                 description=("priority %d of 5, about %+d a night" % (prios.get(r, 0), infopage.estimate(world, rules, nation, plan, r)))
+                                 + ("" if r in can else " (no land yet)")) for r in rules["resources"]])
         menu.callback = self.pick(menu)
         self.add_item(menu)
+
+        def pad(text, width=6):
+            return text.center(width, "\u2007")
         if advanced:
             fixed = nation.get("assign", {}).get(self.resource)
-            placed = tick.work_plan(self.g.world, self.g.rules, nation).get(self.resource, (0, 0))[0]
-            shown = placed if fixed is None else fixed
-            text = "%s: %s" % (self.resource, "auto (%d)" % placed if fixed is None else "%d set" % fixed)
-            minus = discord.ui.Button(label="-", row=2, disabled=shown <= 0)
-            minus.callback = self.count(shown - 1)
-            label = discord.ui.Button(label=text, row=2, disabled=True)
-            plus = discord.ui.Button(label="+", row=2)
-            plus.callback = self.count(shown + 1)
-            auto = discord.ui.Button(label="Auto", row=2, disabled=fixed is None)
-            auto.callback = self.count(None)
-            for item in (minus, label, plus, auto):
-                self.add_item(item)
+            shown = plan.get(self.resource, (0, 0))[0] if fixed is None else fixed
+            buttons = [("Off", self.count(0), shown <= 0), ("-", self.count(shown - 1), shown <= 0),
+                       ("%d%s" % (shown, "" if fixed is not None else " auto"), None, True),
+                       ("+", self.count(shown + 1), False), ("Auto", self.count(None), fixed is None)]
         else:
-            value = prios[self.resource]
-            off = discord.ui.Button(label="Off", row=2, disabled=value <= 0)
-            off.callback = self.change(to=0)
-            minus = discord.ui.Button(label="-", row=2, disabled=value <= 0)
-            minus.callback = self.change(-1)
-            label = discord.ui.Button(label="%s: %d/5" % (self.resource, value), row=2, disabled=True)
-            plus = discord.ui.Button(label="+", row=2, disabled=value >= 5)
-            plus.callback = self.change(1)
-            top = discord.ui.Button(label="Max", row=2, disabled=value >= 5)
-            top.callback = self.change(to=5)
-            for item in (off, minus, label, plus, top):
-                self.add_item(item)
+            value = prios.get(self.resource, 0)
+            buttons = [("Off", self.change(to=0), value <= 0), ("-", self.change(-1), value <= 0),
+                       ("%d/5" % value, None, True), ("+", self.change(1), value >= 5), ("Max", self.change(to=5), value >= 5)]
+        for label, callback, off in buttons:
+            b = discord.ui.Button(label=pad(label), row=2, disabled=off)
+            if callback:
+                b.callback = callback
+            self.add_item(b)
         mode = discord.ui.Button(label="Switch to %s mode" % ("basic" if advanced else "advanced"), row=3)
         mode.callback = self.toggle_mode(advanced)
         self.add_item(mode)
@@ -739,8 +733,24 @@ async def assign(interaction: discord.Interaction, counts: str):
 
 
 @tree.command(description="Turn workers into soldiers (needs barracks room, ore and food)")
-async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500]):
-    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count)
+async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500], steel: bool = False):
+    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count, steel)
+
+
+@tree.command(description="Give up or fight for a tile you and someone else claimed in the same night")
+@app_commands.describe(tile="The contested tile, like 3,-2", choice="Give it up, or fight for it")
+@app_commands.choices(choice=[app_commands.Choice(name="give it up", value="yield"), app_commands.Choice(name="fight", value="fight")])
+async def contest(interaction: discord.Interaction, tile: str, choice: app_commands.Choice[str]):
+    await run(interaction, game_for(interaction.user.id).contest, interaction.user.id, tile.strip(), choice.value)
+
+
+@contest.autocomplete("tile")
+async def contest_tiles(interaction: discord.Interaction, current: str):
+    nid = my_nation(interaction)
+    if nid is None:
+        return []
+    g = game_for(interaction.user.id)
+    return tile_choices([c["tile"] for c in g.contests(nid)], current)
 
 
 @tree.command(description="March an army toward a tile (attacks if it is enemy land)")
@@ -810,6 +820,68 @@ class TradeButton(discord.ui.DynamicItem[discord.ui.Button], template=r"trade:(?
         game.save()
         await interaction.response.edit_message(embed=offer_embed(game, o), view=None)
         await interaction.followup.send(text, ephemeral=True)
+
+
+class ContestButton(discord.ui.DynamicItem[discord.ui.Button], template=r"contest:(?P<act>yield|fight):(?P<tile>-?\d+,-?\d+)"):
+    """Give up / Fight under the announcement of a contested tile. Only the nations that claimed it can press them."""
+
+    def __init__(self, act, tile):
+        give = act == "yield"
+        super().__init__(discord.ui.Button(label="Give it up" if give else "Fight for it",
+                                           style=discord.ButtonStyle.secondary if give else discord.ButtonStyle.danger,
+                                           custom_id="contest:%s:%s" % (act, tile)))
+        self.act, self.tile = act, tile
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["act"], match["tile"])
+
+    async def callback(self, interaction):
+        try:
+            text = game_for(interaction.user.id).contest(interaction.user.id, self.tile, self.act)
+        except (GameError, ValueError) as e:
+            return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+        await interaction.response.send_message(text, ephemeral=True)
+
+
+def contest_view(tile):
+    view = discord.ui.View(timeout=None)
+    view.add_item(ContestButton("yield", tile))
+    view.add_item(ContestButton("fight", tile))
+    return view
+
+
+def contest_text(g, tile, c):
+    names = " and ".join(g.world["nations"][i]["name"] for i in c["nations"])
+    return ("**%s is contested** between %s: they claimed it in the same night.\n"
+            "Each of you can give it up or fight for it before the next night (buttons below, /contest, or the Nation tab in /play). "
+            "If more than one of you fights, the soldiers each side has within 3 tiles of it roll a duel and the loser loses some. "
+            "No answer counts as fight. If everyone gives up the tile is free again." % (tile, names))
+
+
+async def post_contests():
+    """After a night: announce each new contested tile with its buttons, and close the cards of settled ones."""
+    for k, c in sorted(game.world.get("contested", {}).items()):
+        if c.get("post"):
+            continue
+        channel = announce_channel()
+        if channel is None:
+            continue
+        try:
+            msg = await channel.send(contest_text(game, k, c), view=contest_view(k))
+        except discord.HTTPException:
+            continue
+        c["post"] = [msg.channel.id, msg.id]
+    for done in game.world.pop("contested_done", []):
+        if not done.get("post"):
+            continue
+        try:
+            channel = client.get_channel(done["post"][0]) or await client.fetch_channel(done["post"][0])
+            msg = await channel.fetch_message(done["post"][1])
+            await msg.edit(content="**%s was contested.** %s" % (done["tile"], done["result"]), view=None)
+        except discord.HTTPException:
+            pass
+    game.save()
 
 
 def offer_view(tid):
@@ -1453,6 +1525,7 @@ async def do_tick():
         for i in range(0, len(text), 1900):
             await log.send(text[i:i + 1900])
     await refresh_board()
+    await post_contests()
     if setting("dm_reports") == "1":
         prefix = "**%s**\n" % guild.name if guild else ""        # a player may be in several servers' games
         for uid in game.players:
@@ -1520,7 +1593,7 @@ async def on_interaction(interaction: discord.Interaction):
 
 @client.event
 async def on_ready():
-    client.add_dynamic_items(TradeButton)
+    client.add_dynamic_items(TradeButton, ContestButton)
     if not getattr(client, "commands_synced", False):       # on_ready can fire again after a reconnect
         client.commands_synced = True
         if ACTIVITY_PORT:

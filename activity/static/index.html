@@ -79,6 +79,13 @@
     .stepper .btn { height: 32px; width: 32px; padding: 0; text-align: center; }
     .stepper b { min-width: 14px; text-align: center; }
     .dim { opacity: .45; }
+    .ctl { display: grid; grid-template-columns: minmax(64px, 1fr) 32px 40px 32px 78px 48px; gap: 6px; align-items: center; font-size: 14px; }
+    .ctl > span:first-child { color: var(--muted); }
+    .ctl b { text-align: center; font-variant-numeric: tabular-nums; }
+    .ctl .btn { height: 32px; width: 32px; padding: 0; text-align: center; }
+    .ctl .btn.auto { width: 48px; font-size: 12px; }
+    .ctl .est { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
+    .contest { display: grid; gap: 6px; padding-bottom: 8px; }
     .text { white-space: pre-wrap; font-size: 13px; line-height: 1.45; }
     @media (max-width: 700px) {
       #top { height: 52px; gap: 12px; }
@@ -114,6 +121,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=13"></script>
+  <script src="/static/app.js?v=15"></script>
 </body>
 </html>

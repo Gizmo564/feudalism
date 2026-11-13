@@ -362,8 +362,9 @@ def test_economy_lists_only_what_your_land_makes(game):
             game.world["tiles"][k].update(terrain="field", oil=False)
     can = infopage.available(game.world, game.rules, 0)
     assert set(can) == {"food", "livestock"}
-    eco = dict((a, b) for a, b, _ in game.info_page(100, "economy")["fields"])["Priorities"]
-    assert "food" in eco and "wood" not in eco
+    eco = game.info_page(100, "economy")["fields"][0][1].splitlines()
+    assert len(eco) == len(game.rules["resources"]) + 2                      # every resource, always: the page keeps its size
+    assert "no land" not in next(l for l in eco if " food " in l) and "no land" in next(l for l in eco if " wood " in l)
     land = dict((a, b) for a, b, _ in game.info_page(100, "land")["fields"])
     assert "What your land can make" in land and "Stock" in land
     assert "food" in land["What your land can make"] and "wood" not in land["What your land can make"]

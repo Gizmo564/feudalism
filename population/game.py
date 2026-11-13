@@ -273,6 +273,8 @@ class Game:
             raise GameError("%s is water, and nobody can claim water." % k)
         if t["owner"] == nid:
             raise GameError("%s is already yours." % k)
+        if k in w.get("contested", {}):
+            raise GameError("%s is contested right now. The players claiming it are choosing whether to give it up or fight." % k)
         if t["owner"] is not None:
             raise GameError("%s belongs to %s. To take it, send an army there (/zoom, then Send army)." % (
                 k, w["nations"][t["owner"]]["name"]))
@@ -355,13 +357,16 @@ class Game:
         self.queue(nid, {"type": "upgrade", "tile": tile})
         return "Upgrade of the %s on %s to level %d queued. Cost: %s." % (t["building"], tile, W.level_of(t) + 1, self.fmt(up["cost"]))
 
-    def train(self, uid, n):
+    def train(self, uid, n, steel=False):
         nid = self.nid(uid)
         w, r = self.world, self.rules
         me = w["nations"][nid]
+        if steel and tick.steel_problem(w, r, nid):
+            raise GameError("Can't train steel %ss: %s." % (self.word("soldier"), tick.steel_problem(w, r, nid)))
+        cost = tick.train_cost(r, steel)
         room = W.housing(w, r, nid)[1] - W.soldiers(w, nid)
         can = min(n, room, me["workers"] - 1)
-        for res, v in r["soldier"]["train_cost"].items():
+        for res, v in cost.items():
             if v > 0:
                 can = min(can, me["resources"].get(res, 0) // v)
         if can <= 0:
@@ -370,13 +375,41 @@ class Game:
                 reasons.append("no room: build a barracks")
             if me["workers"] <= 1:
                 reasons.append("not enough %ss" % self.word("worker"))
-            short = advice.shortfall(me["resources"], r["soldier"]["train_cost"])
+            short = advice.shortfall(me["resources"], cost)
             if short:
                 reasons.append("short of %s" % self.fmt(short))
             raise GameError("Can't train any %ss right now: %s." % (self.word("soldier"), "; ".join(reasons) or "nothing available"))
-        self.queue(nid, {"type": "train", "n": n})
+        order = {"type": "train", "n": n}
+        if steel:
+            order["steel"] = True
+        self.queue(nid, order)
         note = "" if can >= n else " (you asked for %d, but only %d fit right now)" % (n, can)
-        return "Training %d %ss queued%s." % (can, self.word("soldier"), note)
+        return "Training %d %s%ss queued%s." % (can, "steel " if steel else "", self.word("soldier"), note)
+
+    def contests(self, nid):
+        """Tiles contested with you: [{"tile", "against": [names], "choice": "yield"/"fight"/None}]."""
+        out = []
+        for k, c in sorted(self.world.get("contested", {}).items()):
+            if nid in c["nations"]:
+                out.append({"tile": k, "against": [self.world["nations"][i]["name"] for i in c["nations"] if i != nid],
+                            "choice": c["choices"].get(str(nid))})
+        return out
+
+    def contest(self, uid, tile, choice):
+        """Give up a contested tile ("yield") or fight for it ("fight"). You can change your mind until the night."""
+        nid = self.nid(uid)
+        c = self.world.get("contested", {}).get(tile)
+        if c is None or nid not in c["nations"]:
+            raise GameError("%s isn't contested with you. /contest only works on tiles you and someone else claimed in the same night." % tile)
+        if choice not in ("yield", "fight"):
+            raise GameError("Choose yield or fight.")
+        c["choices"][str(nid)] = choice
+        self.world["nations"][nid]["active"] = True
+        self.save()
+        if choice == "yield":
+            return "You will give up %s. If the others give up too it goes back to being free." % tile
+        return ("You will fight for %s. If someone else fights too, the soldiers each of you has within 3 tiles roll a duel when the night starts; "
+                "the loser loses some of them." % tile)
 
     def mode_of(self, uid):
         return self.world["nations"][self.nid(uid)].get("mode", "basic")

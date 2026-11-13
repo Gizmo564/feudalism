@@ -62,6 +62,15 @@ def available(world, rules, nid):
     return [r for r in rules["resources"] if r in found] or list(rules["resources"])
 
 
+def estimate(world, rules, n, plan, res):
+    """About how much of a resource tonight's work makes. Workshops can't make more than the store allows."""
+    amount = plan.get(res, (0, 0))[1]
+    spec = rules.get("refine", {}).get(res)
+    if spec:
+        amount = min([amount] + [n["resources"].get(i, 0) // v for i, v in spec["inputs"].items()])
+    return amount
+
+
 def pct(part, whole):
     return "%d%%" % (100 * part // whole) if whole else "0%"
 
@@ -128,22 +137,20 @@ def page(world, rules, nid, tab="overview", resource="food"):
     elif tab == "economy":
         out["description"] = ("Pick a resource below, then press - or + to change how many %ss work on it "
                               "(0 turns it off, 5 is top). Only the proportions matter." % worker)
-        out["fields"] = [
-            ("Priorities", "\n".join("%s %s `%s` %d%s" % (icon(r), r, dots(n["priorities"][r]), n["priorities"][r],
-                                                        "  ◀" if r == resource else "") for r in can)
-             + ("\nOther resources need land that makes them." if len(can) < len(rules["resources"]) else ""), True),
-            ("Output tonight", "\n".join("%s %s +%d (%d %ss)" % (icon(r), r, income[r], plan[r][0], worker)
-                                          for r in rules["resources"] if r in plan) or "Nothing.", True),
-        ]
+        advanced = n.get("mode") == "advanced"
+        fixed = n.get("assign", {}) if advanced else {}
+        rows = []
+        for r in rules["resources"]:       # always every resource, one fixed-width row each, so the page never changes size
+            note = "" if r in can else " no land"
+            exact = "set %2d" % fixed[r] if r in fixed else ("auto  " if advanced else "      ")
+            rows.append("%s %-10s %s %d %s %2dw %+4d%s" % ("▶" if r == resource else " ", r, dots(n["priorities"].get(r, 0)),
+                                                         n["priorities"].get(r, 0), exact, plan.get(r, (0, 0))[0],
+                                                         estimate(world, rules, n, plan, r), note))
+        out["fields"] = [("Resource - priority - workers - about tonight", "```\n" + "\n".join(rows) + "\n```", False)]
         net, nights = advice.food_balance(world, rules, nid)
         balance = "%s Food %+d a night" % (icon("food"), net)
         balance += "" if nights is None else ", lasts about %d night%s" % (nights, "" if nights == 1 else "s")
         out["fields"].append(("Balance", balance + "\n" + (trend_text(world, rules, nid) or "Trends appear after the first night."), False))
-        if n.get("mode") == "advanced":
-            fixed = n.get("assign", {})
-            out["fields"].append(("Worker counts (advanced)", "\n".join(
-                "%s %s: %d set, %d working" % (icon(r), r, c, plan.get(r, (0, 0))[0]) for r, c in fixed.items())
-                or "None set by hand. Use /assign, for example 'food 8, wood 4'.", False))
         out["fields"].append(("Stock", stock_lines(), False))
     elif tab == "land":
         terrain, buildings = {}, {}

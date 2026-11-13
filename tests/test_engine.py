@@ -109,20 +109,65 @@ def test_claim_needs_resources(rules):
     assert w["tiles"]["0,-1"]["owner"] is None
 
 
-def test_claim_contest_gives_tile_to_one_nation(rules):
+def contest_world(rules):
+    """Nations 0 and 1 both queue a claim of the free tile 0,0 for tonight."""
     w = blank_world(rules)
     W.found_nation(w, rules, "A", "-2,0", dict(rules["start"]["resources"]))
     W.found_nation(w, rules, "B", "2,0", dict(rules["start"]["resources"]))
     for nid in (0, 1):
         give(w, nid, wood=100, stone=100)
-        w["tiles"]["0,0"]["owner"] = None
+    w["tiles"]["0,0"]["owner"] = None
     w["tiles"]["-1,0"]["owner"] = 0
     w["tiles"]["1,0"]["owner"] = 1
     for nid in (0, 1):
         tick.queue(w, rules, nid, {"type": "claim", "tile": "0,0"})
+    return w
+
+
+def test_same_claim_makes_the_tile_contested(rules):
+    w = contest_world(rules)
     tick.apply_orders(w, rules, random.Random(2))
-    assert w["tiles"]["0,0"]["owner"] in (0, 1)
-    assert sum(n["resources"]["wood"] < 100 for n in w["nations"]) == 1
+    assert w["tiles"]["0,0"]["owner"] is None and w["contested"]["0,0"]["nations"] == [0, 1]
+    assert all(n["resources"]["wood"] == 100 for n in w["nations"])        # nobody paid yet
+    assert any("contested" in e for e in w["events"]["0"]) and any("contested" in e for e in w["events"]["1"])
+
+
+def test_contested_tile_one_gives_up_the_other_gets_it(rules):
+    w = contest_world(rules)
+    tick.apply_orders(w, rules, random.Random(2))
+    w["contested"]["0,0"]["choices"] = {"0": "yield", "1": "fight"}
+    tick.resolve_contests(w, rules, random.Random(2))
+    assert w["tiles"]["0,0"]["owner"] == 1 and "0,0" not in w["contested"]
+    assert w["nations"][1]["resources"]["wood"] < 100 and w["nations"][0]["resources"]["wood"] == 100
+
+
+def test_contested_tile_everyone_gives_up(rules):
+    w = contest_world(rules)
+    tick.apply_orders(w, rules, random.Random(2))
+    w["contested"]["0,0"]["choices"] = {"0": "yield", "1": "yield"}
+    tick.resolve_contests(w, rules, random.Random(2))
+    assert w["tiles"]["0,0"]["owner"] is None and not w["contested"]
+
+
+def test_contested_tile_duel_goes_to_the_stronger_side(rules):
+    wins = {0: 0, 1: 0}
+    for seed in range(20):
+        w = contest_world(rules)
+        tick.apply_orders(w, rules, random.Random(seed))
+        W.add_army(w, 0, "-1,0", 40)
+        W.add_army(w, 1, "1,0", 2)
+        tick.resolve_contests(w, rules, random.Random(seed))                    # nobody answered: both fight
+        wins[w["tiles"]["0,0"]["owner"]] += 1
+    assert wins[0] > wins[1]
+
+
+def test_nobody_else_can_claim_a_contested_tile(rules):
+    w = contest_world(rules)
+    tick.apply_orders(w, rules, random.Random(2))
+    from population.game import Game
+    tick.queue(w, rules, 0, {"type": "claim", "tile": "0,0"})
+    tick.apply_orders(w, rules, random.Random(3))
+    assert w["tiles"]["0,0"]["owner"] is None
 
 
 # ---------- buildings ----------
@@ -1058,3 +1103,82 @@ def test_a_captured_port_is_wrecked(rules):
     w["armies"].append(attacker)
     tick.attack(w, rules, random.Random(1), attacker, b)
     assert w["tiles"][b]["owner"] is None and w["tiles"][b]["building"] is None
+
+
+# ---------- trade across water ----------
+
+def watery(rules, mode):
+    r = dict(rules, trade=dict(rules["trade"], water=mode))
+    w, a, b, c = strait(r)
+    for nid, k in ((0, a), (1, c)):
+        w["nations"][nid]["capital"] = k
+        w["tiles"][k].update(owner=nid, terrain="field")
+    w["tiles"][a]["building"] = "market"
+    w["tiles"][c]["building"] = "market"
+    return r, w, b
+
+
+def test_water_trade_is_open_by_default(rules):
+    r, w, b = watery(rules, 0)
+    assert trade.water_problem(w, r, 0, 1) is None
+
+
+def test_water_trade_needs_a_port_on_one_side(rules):
+    r, w, b = watery(rules, 1)
+    assert "port" in trade.water_problem(w, r, 0, 1)
+    w["tiles"][b].update(owner=0, building="port")
+    assert trade.water_problem(w, r, 0, 1) is None
+
+
+def test_water_trade_port_to_port_needs_both(rules):
+    from population.hexes import neighbors
+    r, w, b = watery(rules, 2)
+    w["tiles"][b].update(owner=0, building="port")
+    assert "both" in trade.water_problem(w, r, 0, 1)
+    other = next(k for k in neighbors(w["nations"][1]["capital"]) if w["tiles"][k]["terrain"] == "water")
+    w["tiles"][other].update(owner=1, building="port")
+    assert trade.water_problem(w, r, 0, 1) is None
+
+
+# ---------- steel soldiers ----------
+
+def test_steel_soldiers_need_a_level_two_barracks_and_steel(rules):
+    w = two_nations(rules)
+    w["tiles"]["-3,0"].update(owner=0, building="barracks")
+    assert "level" in tick.steel_problem(w, rules, 0)
+    w["tiles"]["-3,0"]["level"] = 2
+    assert tick.steel_problem(w, rules, 0) is None
+    n = w["nations"][0]
+    n["workers"] = 20
+    n["resources"].update(food=100, ore=10, steel=3)
+    tick.queue(w, rules, 0, {"type": "train", "n": 5, "steel": True})
+    tick.apply_orders(w, rules, random.Random(1))
+    steel = [a for a in w["armies"] if a["owner"] == 0 and a.get("steel")]
+    assert sum(a["n"] for a in steel) == 3 and n["resources"]["steel"] == 0       # only as many as the steel allowed
+
+
+def test_steel_soldiers_can_be_switched_off(rules):
+    off = dict(rules, steel_soldiers=dict(rules["steel_soldiers"], enabled=False))
+    w = two_nations(off)
+    assert "off" in tick.steel_problem(w, off, 0)
+
+
+def test_steel_armies_fight_stronger_and_stay_apart(rules):
+    plain = {"n": 10, "owner": 0}
+    steel = {"n": 10, "owner": 0, "steel": True}
+    assert tick.strength(rules, plain) == 10
+    assert tick.strength(rules, steel) == 10 * (100 + rules["steel_soldiers"]["bonus_percent"]) // 100
+    w = two_nations(rules)
+    W.add_army(w, 0, "-3,0", 4)
+    W.add_army(w, 0, "-3,0", 4, steel=True)
+    assert len([a for a in w["armies"] if a["owner"] == 0 and a["tile"] == "-3,0"]) == 2
+
+
+def test_upgraded_workshop_has_more_job_slots(rules):
+    w, n = refinery_world(rules, "toolworks", wood=500, stone=500, tools=10)
+    k = "-3,0"
+    assert tick.tile_cap(w, rules, k) == rules["refine_slots"]
+    n["resources"].update(wood=500, stone=500)
+    tick.queue(w, rules, 0, {"type": "upgrade", "tile": k})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert W.level_of(w["tiles"][k]) == 2 and tick.tile_cap(w, rules, k) == rules["refine_slots"] + 1

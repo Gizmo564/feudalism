@@ -88,13 +88,16 @@ def is_free_land(world, k):
     return t is not None and t["terrain"] != "water" and t["owner"] is None
 
 
-def add_army(world, nid, tile, n, dest=None):
+def add_army(world, nid, tile, n, dest=None, steel=False):
+    """Steel soldiers fight in armies of their own, so an army is all steel or all plain."""
     if dest is None:
         for a in world["armies"]:
-            if a["owner"] == nid and a["tile"] == tile and a["dest"] is None:
+            if a["owner"] == nid and a["tile"] == tile and a["dest"] is None and bool(a.get("steel")) == bool(steel):
                 a["n"] += n
                 return a
     a = {"id": world["next_army_id"], "owner": nid, "tile": tile, "n": n, "dest": dest}
+    if steel:
+        a["steel"] = True
     world["next_army_id"] += 1
     world["armies"].append(a)
     return a

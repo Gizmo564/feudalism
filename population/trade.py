@@ -25,11 +25,32 @@ def check_side(world, rules, nid, side):
             raise ValueError("tile %s has soldiers on it" % k)
 
 
+def water_problem(world, rules, a, b):
+    """A sentence if the two nations may not trade because water separates their capitals and the rules want ports."""
+    mode = rules["trade"].get("water", 0)
+    if not mode:
+        return None
+    from .tick import crosses_water, find_path
+    path = find_path(world, world["nations"][a]["capital"], world["nations"][b]["capital"])
+    if path is not None and not crosses_water(world, path):
+        return None                                        # a land route: no ports needed
+
+    def has_port(nid):
+        return any(t["owner"] == nid and t["building"] == "port" for t in world["tiles"].values())
+    if (has_port(a) or has_port(b)) if mode == 1 else (has_port(a) and has_port(b)):
+        return None
+    return ("water splits your capitals, and trade across it needs %s" %
+            ("a port on one side" if mode == 1 else "a port on both sides"))
+
+
 def need_markets(world, rules, a, b):
     if rules["trade"]["requires_market"]:
         for nid in (a, b):
             if not has_market(world, nid):
                 raise ValueError("%s needs a Market to trade" % world["nations"][nid]["name"])
+    problem = water_problem(world, rules, a, b)
+    if problem:
+        raise ValueError(problem)
 
 
 def offer(world, rules, frm, to, give, get):

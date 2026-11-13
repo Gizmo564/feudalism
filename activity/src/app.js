@@ -39,6 +39,7 @@ const BUILDING_D = {
   kiln: "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
   capital: "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5",
 };
+const DIAMOND = new Path2D("M0 -12L10 0L0 12L-10 0Z");
 const SHIELD = new Path2D("M0 -10L8 -7V1Q8 8 0 11Q-8 8 -8 1V-7Z");
 const PATH = Object.fromEntries(Object.entries({...ICON, ...BUILDING_D}).map(([k, d]) => [k, new Path2D(d)]));
 // for each hex side: the neighbour across it and the two corners it joins (corner i is at angle 60*i - 30 degrees)
@@ -133,7 +134,7 @@ function showTile(t, data, card, act, msg) {
     const up = card.upgrade;
     if (up) {
       const short = Object.keys(up.missing).length > 0;
-      const gain = Object.entries(up.gives).map(([k, v]) => "holds " + v + (k === "houses_workers" ? " " + data.worker + "s" : " " + data.soldier + "s")).join(", ");
+      const gain = Object.entries(up.gives).map(([k, v]) => k === "slots" ? "gets " + v + " job slots" : "holds " + v + (k === "houses_workers" ? " " + data.worker + "s" : " " + data.soldier + "s")).join(", ");
       things.push(el("div", {className: "box"}, el("h3", {textContent: "Upgrade to level " + up.level}),
         ...Object.entries(up.cost).map(([r, n]) => row(r, n, r in up.missing)),
         el("div", {className: "note", textContent: "Then it " + gain + "."}),
@@ -214,30 +215,41 @@ function nationTab(n) {
   const p = n.people;
   const meter = (label, v, room) => el("div", {className: "meter"}, line(cap(label), v + " of " + room),
     el("div", {className: "track"}, el("i", {style: "width:" + Math.min(100, room ? 100 * v / room : 0) + "%"})));
+  // every list row is the same grid: name, minus, value, plus, about how much it makes, and a spare column, so nothing moves
+  const ctl = (name, dim, minus, value, plus, est, extra, tip) => {
+    const r = el("div", {className: "ctl" + (dim ? " dim" : ""), title: tip || ""}, el("span", {textContent: name}), minus,
+                 el("b", {textContent: value}), plus, el("span", {className: "est", textContent: est}), extra || el("span"));
+    return r;
+  };
+  const made = (amount) => amount ? "+" + amount + "/night" : "";
   const prio = (pr) => {
-    const row = el("div", {className: "row" + (pr.can ? "" : " dim")}, el("span", {textContent: cap(pr.resource)}));
     const step = (d) => button(d > 0 ? "+" : "-", () => send({action: "priority", resource: pr.resource, value: pr.value + d}),
                                !pr.can || pr.value + d < 0 || pr.value + d > 5 ? "off" : "plain");
-    const ctl = el("span", {className: "stepper"}, step(-1), el("b", {textContent: pr.value}), step(1));
-    row.append(ctl);
-    return row;
+    return ctl(cap(pr.resource), !pr.can, step(-1), String(pr.value), step(1), made(pr.amount));
   };
   const room = Math.max(0, p.soldier_room - p.soldiers);
   const count = input("How many");
   count.type = "number"; count.min = 1; count.value = 1;
+  const kind = choose([["", "Plain"], ["steel", "Steel" + (n.steel.problem ? " (" + n.steel.problem + ")" : " - costs " + n.steel.cost)]]);
   const food = n.food.net >= 0 ? "+" + n.food.net : String(n.food.net);
   // advanced mode: an exact number of workers on a resource (or "auto": it follows the priorities)
   const exact = (res) => {
     const set = n.assign[res], working = n.working[res] || 0, room = n.room[res] || 0;
-    const row = el("div", {className: "row" + (room ? "" : " dim")}, el("span", {textContent: cap(res) + (room ? " (room for " + room + ")" : "")}));
     const step = (d) => button(d > 0 ? "+" : "-", () => send({action: "assign", resource: res, count: Math.max(0, (set === undefined ? working : set) + d)}),
                                !room ? "off" : "plain");
-    const label = set === undefined ? "auto " + working : set + (working < set ? " (" + working + " fit)" : "");
     const auto = button("Auto", () => send({action: "assign", resource: res, count: null}), set === undefined ? "off" : "plain");
-    row.append(el("span", {className: "stepper"}, step(-1), el("b", {textContent: label}), step(1), auto));
-    return row;
+    auto.classList.add("auto");
+    const pr = n.priorities.find((x) => x.resource === res);
+    const tip = (room ? "Room for " + room + " workers. " : "No land for this yet. ") + (set !== undefined && working < set ? working + " of the " + set + " fit." : "");
+    return ctl(cap(res), !room, step(-1), String(set === undefined ? working : set), step(1), made(pr && pr.amount), auto, tip);
   };
   const advanced = n.mode === "advanced";
+  const contestRow = (c) => el("div", {className: "contest"},
+    note(c.tile + " is contested with " + c.against.join(", ") + ". Give it up, or fight: the soldiers each side has within 3 tiles roll a duel when the night starts. No answer counts as fight."),
+    el("div", {className: "pair"},
+      button("Give up", () => send({action: "contest", tile: c.tile, choice: "yield"}), c.choice === "yield" ? "off" : "plain"),
+      button("Fight", () => send({action: "contest", tile: c.tile, choice: "fight"}), c.choice === "fight" ? "off" : "primary")),
+    note(c.choice ? "You chose to " + (c.choice === "yield" ? "give it up." : "fight.") : "You haven't chosen yet."));
   const modeBox = box("Mode: " + (advanced ? "advanced" : "basic"),
     note(advanced ? "You set exact worker counts. Resources left on auto follow the priorities below. Counts are kept if you go back to basic."
                   : "Priorities decide who works on what. Advanced lets you set exact worker counts and send part of an army."),
@@ -246,15 +258,16 @@ function nationTab(n) {
     ...(!advanced && !n.advanced_ok ? [note("An admin has switched advanced mode off on this server.")] : []));
   return [
     modeBox,
+    ...(n.contests.length ? [box("Contested tiles", ...n.contests.map(contestRow))] : []),
     ...(advanced ? [box("Workers on each resource", ...n.priorities.map((pr) => exact(pr.resource)),
         note("A tile holds a fixed number of workers, so a count can't go past the room shown. 0 turns a resource off."))] : []),
     box("People", meter(n.worker + "s", p.workers, p.worker_room), meter(n.soldier + "s", p.soldiers, p.soldier_room)),
     box("Work tonight", ...(n.work.length ? n.work.map((w) => line(cap(w.resource), w.workers + " working, +" + w.amount)) : [note("Nobody is working.")]),
         line("Food", food + " a night" + (n.food.nights == null ? "" : ", lasts about " + n.food.nights + " nights"))),
-    box("Priorities", ...n.priorities.map(prio), note(advanced ? "These only decide the resources you left on auto." :
+    box("Priorities (about how much each makes tonight)", ...n.priorities.map(prio), note(advanced ? "These only decide the resources you left on auto." :
         "0 turns a resource off, 5 is top. Only the proportions matter. Greyed resources need land that makes them.")),
-    box("Train " + n.soldier + "s", note("Each costs " + n.train_cost + " and a " + n.worker + ". Room for " + room + " more."), count,
-        button("Train", () => send({action: "train", n: Number(count.value)}), room ? "primary" : "off")),
+    box("Train " + n.soldier + "s", note("Each costs " + n.train_cost + " and a " + n.worker + ". Room for " + room + " more."), count, kind,
+        button("Train", () => send({action: "train", n: Number(count.value), steel: kind.value === "steel"}), room ? "primary" : "off")),
     box("Advice", ...n.advice.map((a) => note("- " + a))),
   ];
 }
@@ -343,10 +356,11 @@ function showMap(data, headers) {
   }
 
   // army: the nation's dark colour with a white outline, the soldier count inside (a "?" for other nations' armies)
-  function shield(x, y, k, owner, label) {
+  function shield(x, y, k, owner, label, steel) {
     ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
-    ctx.fillStyle = dark(color[owner] || "#888888"); ctx.fill(SHIELD);
-    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke(SHIELD);
+    const shape = steel ? DIAMOND : SHIELD;                         // steel soldiers: a diamond with a silver rim
+    ctx.fillStyle = dark(color[owner] || "#888888"); ctx.fill(shape);
+    ctx.strokeStyle = steel ? "#cfd6de" : "#fff"; ctx.lineWidth = steel ? 3 : 2; ctx.lineJoin = "round"; ctx.stroke(shape);
     ctx.fillStyle = "#fff"; ctx.font = "bold 10px Inter, system-ui, sans-serif"; ctx.fillText(label, 0, 1);
     ctx.restore();
   }
@@ -431,7 +445,7 @@ function showMap(data, headers) {
       const t = at[a.tile]; if (!t || !seen.includes(t)) continue;
       let x = sx(t), y = sy(t), k = size / 21;
       if (t.building) { x -= size * 0.5; y += size * 0.45; k *= 0.8; }
-      shield(x, y, k, a.owner, a.owner === data.me ? String(a.n) : "?");
+      shield(x, y, k, a.owner, a.owner === data.me ? String(a.n) : "?", a.steel);
     }
     for (const c of data.caravans || []) {                           // 5. caravans: carts, moved to the top-left corner if something else is there
       const t = at[c.tile]; if (!t || !seen.includes(t)) continue;

@@ -99,6 +99,7 @@ def find(view, label=None, kind=None):
     """A button by its label, or by the start of it (action buttons carry their cost)."""
     for c in view.children:
         text = getattr(c, "label", None)
+        text = text.strip("\u2007") if text else text                # the controls are padded to one width
         if label is not None and text is not None and (text == label or text.startswith(label + " (")
                                                       or text.startswith(label + ":")):
             return c
@@ -205,8 +206,10 @@ def test_info_view_tabs_and_priority_buttons(bot, game):
         other = next(r for r in infopage.available(game.world, game.rules, 0) if r != "food")     # the map decides what is near
         menu._values = [other]
         await view.pick(menu)(click(100))
-        want = "%s: %d/5" % (other, game.world["nations"][0]["priorities"][other])
-        assert view.resource == other and any(getattr(c, "label", None) == want for c in view.children)
+        want = "%d/5" % game.world["nations"][0]["priorities"][other]
+        assert view.resource == other and find(view, want) is not None
+        sizes = {len(c.label) for c in view.children if getattr(c, "row", None) == 2}
+        assert len(sizes) == 1                                          # the five controls always have the same width
         assert view.embed().title.startswith("Aldmere")
         for tab in ("Land", "Military", "Overview"):
             await find(view, tab).callback(click(100))

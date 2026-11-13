@@ -95,8 +95,8 @@ def goods(rules):
         return "This ruleset has no refined goods."
     lines = ["**Refined goods**",
              "A workshop turns raw resources into a refined good. It makes nothing until %ss work in it: %d slots, 1 good per %s a night, "
-             "never more than the inputs in your store allow. A new workshop starts on priority 2; change it in /info or /assign." % (
-                 worker, rules["refine_slots"], worker), ""]
+             "never more than the inputs in your store allow. A new workshop starts on priority 2; change it in /info or /assign. "
+             "/upgrade adds slots (up to 5)." % (worker, rules["refine_slots"], worker), ""]
     for good, spec in refine.items():
         lines.append("%s: %s makes it from %s. Build cost: %s." % (
             good.capitalize(), spec["building"].capitalize(), " + ".join("%d %s" % (v, k) for k, v in spec["inputs"].items()),
@@ -108,7 +108,7 @@ def goods(rules):
     if "port" in rules["buildings"]:
         lines += ["", "**Ports**: build one on water that touches your land or another of your ports (you need a market; it costs %s). "
                   "Armies can walk over ports and your land can grow across them. Each army trip over ports costs %d wood for a boat. "
-                  "Wide water needs a chain of ports. An enemy who captures a port wrecks it." % (
+                  "Wide water needs a chain of ports. An enemy who captures a port wrecks it. Admins can make trade across water need a port on one or both sides." % (
                       cost(rules["buildings"]["port"]["cost"]), rules.get("port", {}).get("boat_wood", 0))]
     return "\n".join(lines)
 
@@ -150,6 +150,12 @@ def war(rules):
         "Armies on your own land cost nothing. Armies on land that isn't yours cost 1 oil per %d %ss a night. "
         "If you run short, each army abroad loses %d%% of its %ss." % (
             rules["oil_upkeep"]["soldiers_per_oil"], soldier, rules["oil_upkeep"]["shortfall_loss_percent"], soldier),
+        *(["Steel soldiers: with a barracks at level %d, /train with steel on makes soldiers that cost %d extra steel and fight %d%% stronger. "
+           "They march as their own armies, drawn as diamonds." % (rules["steel_soldiers"]["min_barracks_level"], rules["steel_soldiers"]["steel"],
+                                                                    rules["steel_soldiers"]["bonus_percent"])]
+          if rules.get("steel_soldiers", {}).get("enabled") else []),
+        "If two nations claim the same free tile in one night it becomes contested: each can give it up or fight (/contest, the announcement buttons, or /play). "
+        "Fighters roll a duel with the soldiers they have within 3 tiles; no answer counts as fight.",
         "",
         "**Trade**",
         "/trade needs a Market on both sides. Name a nation, or leave 'to' empty to post on the trade board for anyone. Offers expire after %d nights; goods take time to arrive." % rules["trade"]["offer_expires_ticks"],
@@ -191,6 +197,8 @@ def commands(rules):
         "/status - a quick summary",
         "/standings - who is ahead",
         "/claim, /build, /upgrade, /train, /move, /priorities - the typed versions of orders",
+        "/contest - give up or fight for a tile you and someone else claimed the same night",
+        "/play - the clickable map (Activity)",
         "/mode basic|advanced - advanced adds /assign (exact workers per resource) and /move with a count (send part of an army)",
         "/dms on|off - private messages (night reports, private trade offers); off until you turn them on",
         "/cancel - clear tonight's orders and start again",

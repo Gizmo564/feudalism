@@ -5,7 +5,7 @@ from collections import deque
 
 from . import world as W
 from . import combat, trade, victory
-from .hexes import neighbors
+from .hexes import distance, neighbors
 
 ORDER_TYPES = ("claim", "build", "upgrade", "train", "move")
 
@@ -208,6 +208,8 @@ def do_claim(world, rules, n, o):
     nid = n["id"]
     k = o.get("tile")
     t = world["tiles"].get(k)
+    if k in world.get("contested", {}):
+        return W.ev(world, nid, "Claim of %s skipped: it is contested, and the players involved are deciding who gets it" % k)
     if n["claims_this_tick"] >= rules["claim"]["per_tick"]:
         return W.ev(world, nid, "Claim of %s skipped: only %d claim(s) per tick" % (k, rules["claim"]["per_tick"]))
     if t is None or t["terrain"] == "water":
@@ -272,9 +274,41 @@ def do_upgrade(world, rules, n, o):
     W.ev(world, nid, "You upgraded the %s on %s to level %d" % (t["building"], k, t["level"]))
 
 
+def steel_cfg(rules):
+    cfg = rules.get("steel_soldiers", {})
+    return cfg if cfg.get("enabled") else None
+
+
+def steel_problem(world, rules, nid):
+    """Why nation nid can't train steel soldiers (a sentence), or None if it can."""
+    cfg = steel_cfg(rules)
+    if cfg is None:
+        return "steel soldiers are switched off on this server"
+    best = max([W.level_of(t) for t in world["tiles"].values() if t["owner"] == nid and t["building"] == "barracks"] or [0])
+    if best < cfg["min_barracks_level"]:
+        return "you need a barracks upgraded to level %d" % cfg["min_barracks_level"]
+    return None
+
+
+def train_cost(rules, steel=False):
+    cost = dict(rules["soldier"]["train_cost"])
+    if steel:
+        cost["steel"] = cost.get("steel", 0) + steel_cfg(rules)["steel"]
+    return cost
+
+
+def strength(rules, a):
+    """An army's fighting strength: its soldiers, plus the steel bonus."""
+    cfg = steel_cfg(rules)
+    return a["n"] * (100 + cfg["bonus_percent"]) // 100 if a.get("steel") and cfg else a["n"]
+
+
 def do_train(world, rules, n, o):
     nid = n["id"]
-    cost = rules["soldier"]["train_cost"]
+    steel = bool(o.get("steel"))
+    if steel and steel_problem(world, rules, nid):
+        return W.ev(world, nid, "Steel training failed: %s" % steel_problem(world, rules, nid))
+    cost = train_cost(rules, steel)
     room = W.housing(world, rules, nid)[1] - W.soldiers(world, nid)
     count = min(o["n"], room, n["workers"] - 1)
     for r, v in cost.items():
@@ -285,8 +319,8 @@ def do_train(world, rules, n, o):
     for r, v in cost.items():
         n["resources"][r] -= v * count
     n["workers"] -= count
-    W.add_army(world, nid, n["capital"], count)
-    W.ev(world, nid, "You trained %d soldiers (asked for %d)" % (count, o["n"]))
+    W.add_army(world, nid, n["capital"], count, steel=steel)
+    W.ev(world, nid, "You trained %d %ssoldiers (asked for %d)" % (count, "steel " if steel else "", o["n"]))
 
 
 def do_move(world, rules, n, o):
@@ -305,12 +339,96 @@ def do_move(world, rules, n, o):
     count = o.get("n")
     if count is not None and 0 < count < a["n"]:        # send only part of the army (advanced mode)
         a["n"] -= count
-        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None)
+        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None, steel=a.get("steel"))
         return
     a["dest"] = o["dest"] if o["dest"] != a["tile"] else None
 
 
+# ---------- contested claims: two nations claim the same free tile in one night ----------
+
+SOLDIER_RANGE = 3          # soldiers this close to a contested tile count in the duel
+
+
+def find_contests(world, rules):
+    """Pull claim orders for the same free tile by two or more nations out of the night. The tile stays free and is
+    'contested' until each of them chooses to give it up or fight (see resolve_contests)."""
+    claims = {}
+    for o in world["orders"]:
+        if o["type"] == "claim" and world["nations"][o["nation"]]["alive"]:
+            claims.setdefault(o.get("tile"), set()).add(o["nation"])
+    for k, ids in sorted(claims.items()):
+        t = world["tiles"].get(k)
+        if len(ids) < 2 or t is None or t["terrain"] == "water" or t["owner"] is not None or k in world.get("contested", {}):
+            continue
+        ids = sorted(ids)
+        world.setdefault("contested", {})[k] = {"nations": ids, "choices": {}}
+        world["orders"] = [o for o in world["orders"] if not (o["type"] == "claim" and o.get("tile") == k)]
+        names = " and ".join(world["nations"][i]["name"] for i in ids)
+        for i in ids:
+            W.ev(world, i, "%s is contested between %s. Give it up or fight for it (in /play or /contest) before the next night; "
+                 "no answer counts as fight." % (k, names))
+        W.pub(world, "%s is contested between %s" % (k, names))
+
+
+def soldiers_near(world, rules, nid, k):
+    return sum(strength(rules, a) for a in world["armies"] if a["owner"] == nid and distance(a["tile"], k) <= SOLDIER_RANGE)
+
+
+def lose_soldiers_near(world, nid, k, count):
+    for a in sorted((a for a in world["armies"] if a["owner"] == nid and distance(a["tile"], k) <= SOLDIER_RANGE),
+                    key=lambda a: (distance(a["tile"], k), a["id"])):
+        if count <= 0:
+            break
+        t = min(a["n"], count)
+        a["n"] -= t
+        count -= t
+    world["armies"] = [a for a in world["armies"] if a["n"] > 0]
+
+
+def resolve_contests(world, rules, rng):
+    """Start of a night: settle every contested tile. Nations that gave it up are out; one left gets it,
+    several left fight a duel (a roll like combat, using the soldiers they have near the tile; the winner keeps
+    the tile, the losers lose soldiers)."""
+    done = world.setdefault("contested_done", [])
+    for k in sorted(world.get("contested", {})):
+        c = world["contested"].pop(k)
+        names = world["nations"]
+        left = [i for i in c["nations"] if world["nations"][i]["alive"] and c["choices"].get(str(i)) != "yield"]
+        if not left:
+            for i in c["nations"]:
+                W.ev(world, i, "Nobody fought for %s, so it is free again" % k)
+            W.pub(world, "%s: everyone gave it up, so it is free again" % k)
+            done.append({"tile": k, "post": c.get("post"), "result": "Given up by everyone, free again."})
+            continue
+        winner = left[0]
+        for other in left[1:]:
+            a, d = soldiers_near(world, rules, winner, k), soldiers_near(world, rules, other, k)
+            if a == 0 and d == 0:
+                win, lose = (winner, other) if rng.random() < 0.5 else (other, winner)
+            else:
+                res = combat.fight(rules, rng, a, d, 0)
+                win, lose = (winner, other) if res["attacker_wins"] else (other, winner)
+                loss_a, loss_d = res["att_loss"], res["def_loss"]
+                lose_soldiers_near(world, winner, k, loss_a)
+                lose_soldiers_near(world, other, k, loss_d)
+                W.ev(world, winner, "Duel for %s against %s: you lost %d soldiers" % (k, names[other]["name"], loss_a))
+                W.ev(world, other, "Duel for %s against %s: you lost %d soldiers" % (k, names[winner]["name"], loss_d))
+            W.ev(world, lose, "You lost the duel for %s to %s" % (k, names[win]["name"]))
+            winner = win
+        if len(left) > 1:
+            W.pub(world, "%s won the fight for %s" % (names[winner]["name"], k))
+        else:
+            W.pub(world, "%s got %s: the others gave it up" % (names[winner]["name"], k))
+        n = names[winner]
+        before = world["tiles"][k]["owner"]
+        do_claim(world, rules, n, {"tile": k})
+        got = world["tiles"][k]["owner"] == winner and before is None
+        done.append({"tile": k, "post": c.get("post"), "result": "%s %s." % (
+            names[winner]["name"], "now owns it" if got else "won it but could not take it (cost or position)")})
+
+
 def apply_orders(world, rules, rng):
+    find_contests(world, rules)
     order = list(world["nations"])
     rng.shuffle(order)
     for n in order:
@@ -338,15 +456,19 @@ def attack(world, rules, rng, a, k):
     if owner == a["owner"] and not defenders:
         a["tile"] = k
         return
-    dn = sum(d["n"] for d in defenders)
+    dn_real = sum(d["n"] for d in defenders)
+    dn = sum(strength(rules, d) for d in defenders)
+    an = strength(rules, a)
     terrain_only = world["tiles"][k]["terrain"]
     if owner is not None and owner != a["owner"]:
         bonus = combat.defense_bonus(world, rules, k)
     else:
         bonus = rules["terrain"][terrain_only]["defense_percent"]
-    res = combat.fight(rules, rng, a["n"], dn, bonus)
-    a["n"] -= res["att_loss"]
-    left = res["def_loss"]
+    res = combat.fight(rules, rng, an, dn, bonus)
+    att_real = min(a["n"], -(-res["att_loss"] * a["n"] // an)) if an and res["att_loss"] else 0   # losses are counted in strength
+    a["n"] -= att_real
+    res["att_loss"] = att_real
+    left = res["def_loss"] * dn_real // dn if dn else 0
     for d in sorted(defenders, key=lambda d: d["id"]):
         t = min(d["n"], left)
         d["n"] -= t
@@ -396,7 +518,7 @@ def move_armies(world, rules, rng):
     merged = []
     for a in world["armies"]:
         same = next((m for m in merged if m["owner"] == a["owner"] and m["tile"] == a["tile"]
-                     and m["dest"] == a["dest"]), None)
+                     and m["dest"] == a["dest"] and bool(m.get("steel")) == bool(a.get("steel"))), None)
         if same:
             same["n"] += a["n"]
         else:
@@ -441,8 +563,9 @@ def refined_good(rules, building):
 
 def tile_cap(world, rules, k):
     """Workers one tile holds: a workshop has a few job slots, land holds workers_per_tile."""
-    if refined_good(rules, world["tiles"][k]["building"]):
-        return rules["refine_slots"]
+    t = world["tiles"][k]
+    if refined_good(rules, t["building"]):
+        return W.spec_at(rules["buildings"][t["building"]], W.level_of(t)).get("slots", rules["refine_slots"])
     return rules["workers_per_tile"]
 
 
@@ -612,6 +735,7 @@ def run_tick(world, rules):
     rng = random.Random(world["seed"] * 1000003 + world["tick"])
     for n in world["nations"]:
         n["claims_this_tick"] = 0
+    resolve_contests(world, rules, rng)
     apply_orders(world, rules, rng)
     move_armies(world, rules, rng)
     trade.move_caravans(world, rules)

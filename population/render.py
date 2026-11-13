@@ -336,6 +336,8 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
                 hh = s * 0.4
             top = y - hh / 2 if tidy else y + s * 0.3
             cv.rect(x - w / 2, top, x + w / 2, top + hh, (255, 255, 255), nation_colours(a["owner"])[1], 1.5)
+            if a.get("steel"):          # steel soldiers: a second, inner outline
+                cv.rect(x - w / 2 + 3, top + 3, x + w / 2 - 3, top + hh - 3, (255, 255, 255), nation_colours(a["owner"])[1], 1)
             cv.text(x, top + hh / 2, label, s * 0.26 if tidy else s * 0.3, INK)
 
         for c in views.caravans_view(world, rules, nid):             # a small white cart badge, top-left of its tile

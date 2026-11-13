@@ -30,7 +30,7 @@ def describe(o):
     if kind == "move":
         return "Army %d to %s" % (o["army"], o["dest"])
     if kind == "train":
-        return "Train %d" % o["n"]
+        return "Train %d%s" % (o["n"], " steel" if o.get("steel") else "")
     if kind == "upgrade":
         return "Upgrade %s" % o["tile"]
     return kind
@@ -66,10 +66,13 @@ def nation_data(game, uid, nid):
         "alive": n["alive"], "worker": game.word("worker"), "soldier": game.word("soldier"),
         "people": {"workers": n["workers"], "worker_room": hw, "soldiers": soldiers, "soldier_room": hs},
         "work": [{"resource": res, "workers": c, "amount": a} for res, (c, a) in sorted(plan.items(), key=lambda x: -x[1][0])],
-        "priorities": [{"resource": res, "value": n["priorities"][res], "can": res in can} for res in r["resources"]],
+        "priorities": [{"resource": res, "value": n["priorities"].get(res, 0), "can": res in can, "amount": infopage.estimate(w, r, n, plan, res)}
+                       for res in r["resources"]],
         "food": {"net": net, "nights": nights},
         "advice": advice.advice(w, r, nid),
         "train_cost": game.fmt(r["soldier"]["train_cost"]),
+        "steel": {"problem": tick.steel_problem(w, r, nid), "cost": game.fmt(tick.train_cost(r, True)) if tick.steel_cfg(r) else ""},
+        "contests": game.contests(nid),
         "report": game.report(uid), "standings": standings,
         "offers": offers, "pacts": pact_rows,
         "others": [m["name"] for m in w["nations"] if m["id"] != nid],
@@ -162,7 +165,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
                        "oil": bool(t["oil"]), "visible": t["visible"], "level": t.get("level", 1)} for t in tiles],
-            "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"],
+            "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"], "steel": bool(a.get("steel")),
                         "dest": a["dest"] if a["owner"] == nid else None} for a in armies],
             "orders": [describe(o) for o in world["orders"] if o["nation"] == nid],
             "soldier": game.word("soldier"), "worker": game.word("worker"), "mode": world["nations"][nid].get("mode", "basic"),
@@ -216,7 +219,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             elif kind == "upgrade":
                 message = game.upgrade(uid, str(body.get("tile", "")))
             elif kind == "train":
-                message = game.train(uid, int(body.get("n")))
+                message = game.train(uid, int(body.get("n")), bool(body.get("steel")))
             elif kind == "priority":
                 message = game.set_priority(uid, str(body.get("resource", "")), int(body.get("value")))
             elif kind == "trade_offer":
@@ -242,6 +245,8 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             elif kind == "assign":
                 count = body.get("count")
                 message = game.set_assign(uid, str(body.get("resource", "")), None if count is None else int(count))
+            elif kind == "contest":
+                message = game.contest(uid, str(body.get("tile", "")), str(body.get("choice", "")))
             elif kind == "dm":
                 message = game.set_dm(uid, bool(body.get("on")))
             else:
