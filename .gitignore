@@ -6,3 +6,4 @@ __pycache__/
 activity/node_modules/
 activity/package*.json
 .DS_Store
+practice/

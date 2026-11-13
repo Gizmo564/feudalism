@@ -625,3 +625,16 @@ def test_send_part_of_an_army(game):
     assert sum(a["n"] for a in mine) == total and len(mine) == 2
     assert sorted(a["n"] for a in mine) == [2, total - 2]
     assert [a for a in mine if a["dest"] == dest][0]["n"] == 2
+
+
+def test_practice_game_survives_a_restart(tmp_path):
+    from population.tutorial import Tutorial
+    path = str(tmp_path / "7.db")
+    t = Tutorial(7, seed=3, path=path)
+    t.night()
+    land = len(t.land())
+    t.game.store.db.close()
+    again = Tutorial(7, path=path)                      # the bot came back up
+    assert again.nights == 1 and again.start_land == t.start_land and len(again.land()) == land
+    again.night()
+    assert again.game.world["tick"] == 2

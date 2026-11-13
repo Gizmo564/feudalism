@@ -60,7 +60,29 @@ admin = app_commands.Group(name="admin", description="Admin commands")
 
 # ---------- small helpers ----------
 
-tutorials = {}      # discord user id -> Tutorial. Practice games live in memory only.
+tutorials = {}      # discord user id -> Tutorial. Each is kept in a small file in PRACTICE_DIR so a restart doesn't end it.
+PRACTICE_DIR = os.environ.get("PRACTICE_DIR", "practice")
+
+
+def practice_path(user_id):
+    return os.path.join(PRACTICE_DIR, "%d.db" % user_id)
+
+
+def load_practice_games(max_days=14):
+    """After a restart: bring back practice games, and forget ones nobody has touched for two weeks."""
+    if not os.path.isdir(PRACTICE_DIR):
+        return
+    for name in sorted(os.listdir(PRACTICE_DIR)):
+        stem, path = name[:-3], os.path.join(PRACTICE_DIR, name)
+        if not (name.endswith(".db") and stem.isdigit()):
+            continue
+        if time.time() - os.path.getmtime(path) > max_days * 86400:
+            os.remove(path)
+            continue
+        try:
+            tutorials[int(stem)] = Tutorial(int(stem), path=path)
+        except Exception:
+            traceback.print_exc()           # a broken file just means that practice game is gone
 
 
 def record_error(where, interaction, error):
@@ -650,13 +672,13 @@ async def upgrade_tiles(interaction: discord.Interaction, current: str):
     return tile_choices(ok, current)
 
 
-@tree.command(description="Basic: work priorities decide everything. Advanced: you also set exact worker counts and split armies.")
+@tree.command(description="Basic: priorities decide the work. Advanced: exact worker counts and split armies.")
 @app_commands.choices(mode=[app_commands.Choice(name="basic", value="basic"), app_commands.Choice(name="advanced", value="advanced")])
 async def mode(interaction: discord.Interaction, mode: app_commands.Choice[str]):
     await run(interaction, game_for(interaction.user.id).set_mode, interaction.user.id, mode.value)
 
 
-@tree.command(description="Advanced mode: set exact workers per resource, like 'food 8, wood 4'. 'auto' goes back to priorities.")
+@tree.command(description="Advanced mode: exact workers per resource, like 'food 8, wood 4' ('auto' clears).")
 @app_commands.describe(counts="Pairs like 'food 8, wood 4', or 'auto' to clear them all")
 async def assign(interaction: discord.Interaction, counts: str):
     await run(interaction, game_for(interaction.user.id).assign, interaction.user.id, counts)
@@ -896,7 +918,11 @@ practice = app_commands.Group(name="tutorial", description="Practise in a privat
 @practice.command(name="start", description="Start a private practice game against two simple rivals")
 async def tutorial_start(interaction: discord.Interaction):
     mode = (game.rules or {}).get("name", "feudalism").lower()
-    t = Tutorial(interaction.user.id, mode if mode in Game.modes() else "feudalism")
+    os.makedirs(PRACTICE_DIR, exist_ok=True)
+    path = practice_path(interaction.user.id)
+    if os.path.exists(path):
+        os.remove(path)                     # starting again means a fresh game
+    t = Tutorial(interaction.user.id, mode if mode in Game.modes() else "feudalism", path=path)
     tutorials[interaction.user.id] = t
     await say(interaction, "Practice game started. Nothing here touches the real game, and every command now works on this "
                            "practice realm until you type /tutorial stop.\n\n" + t.hint())
@@ -919,12 +945,17 @@ async def tutorial_hint(interaction: discord.Interaction):
 
 @practice.command(name="stop", description="Leave the practice game and go back to the real one")
 async def tutorial_stop(interaction: discord.Interaction):
-    if tutorials.pop(interaction.user.id, None) is None:
+    t = tutorials.pop(interaction.user.id, None)
+    if t is None:
         return await say(interaction, "You have no practice game.")
+    t.game.store.db.close()
+    if os.path.exists(practice_path(interaction.user.id)):
+        os.remove(practice_path(interaction.user.id))
     await say(interaction, "Practice game closed. Your commands now work on the real game again.")
 
 
 tree.add_command(practice)
+load_practice_games()
 
 
 # ---------- admin commands (need the admin role) ----------

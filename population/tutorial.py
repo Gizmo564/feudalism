@@ -1,5 +1,5 @@
-"""A private practice game: you plus two scripted rivals, run on a throwaway in-memory database.
-No Discord code here."""
+"""A private practice game: you plus two scripted rivals. Kept in memory, or in a small file if a path is given so
+it survives a bot restart. No Discord code here."""
 import random
 
 from . import bot
@@ -11,17 +11,25 @@ RIVALS = (("Rival North", 0.1), ("Rival South", 0.3))
 
 
 class Tutorial:
-    def __init__(self, uid, mode="feudalism", seed=None):
+    def __init__(self, uid, mode="feudalism", seed=None, path=None):
         self.uid = str(uid)
-        self.game = Game(Store(":memory:"))
+        self.nid = 0
+        self.game = Game(Store(path or ":memory:"))
+        saved = self.game.store.get("tutorial")
+        if saved:                                   # a practice game from before a restart: pick up where it was
+            self.nights, self.start_land = saved["nights"], saved["start_land"]
+            return
         self.game.open_signup(mode)
         self.game.join(self.uid, "Your Realm")
         for i, (name, _) in enumerate(RIVALS):
             self.game.join("rival%d" % i, name)
         self.game.start(5, seed=seed)
-        self.nid = 0
         self.nights = 0
         self.start_land = len(self.land())
+        self.save()
+
+    def save(self):
+        self.game.store.set("tutorial", {"nights": self.nights, "start_land": self.start_land})
 
     def land(self):
         return [k for k, t in self.game.world["tiles"].items() if t["owner"] == self.nid]
@@ -33,7 +41,9 @@ class Tutorial:
             if w["nations"][i]["alive"]:
                 bot.act(w, rules, i, aggression, random.Random(w["seed"] * 7 + w["tick"] * 31 + i))
         self.nights += 1
-        return self.game.run_tick()
+        text = self.game.run_tick()
+        self.save()
+        return text
 
     def done(self):
         w = self.game.world
@@ -47,6 +57,8 @@ class Tutorial:
         """The next thing to try, as a short message."""
         w = self.game.world
         done = self.done()
+        if self.game.phase == "over":
+            return "The practice game ended because someone won. Type /tutorial stop, then /tutorial start to play another."
         if not w["nations"][self.nid]["alive"]:
             return "Your practice realm fell. Type /tutorial stop, then /tutorial start to try again."
         queued = [o for o in w["orders"] if o["nation"] == self.nid]

@@ -223,6 +223,23 @@ def test_help_view_has_every_page(bot, game):
     asyncio.run(go())
 
 
+def test_practice_game_comes_back_after_a_bot_restart(bot, game):
+    async def go():
+        uid = 5151
+        await bot.tutorial_start.callback(click(uid))
+        await bot.tutorial_night.callback(click(uid))
+        bot.tutorials[uid].game.store.db.close()
+        bot.tutorials.clear()                              # what a restart does to memory
+        bot.load_practice_games()
+        back = bot.tutorials[uid]
+        assert back.nights == 1 and back.game.world["tick"] == 1
+        await bot.tutorial_stop.callback(click(uid))
+        bot.tutorials.clear()
+        bot.load_practice_games()
+        assert uid not in bot.tutorials                    # stopping really removes it
+    asyncio.run(go())
+
+
 def test_practice_game_takes_over_commands_until_stopped(bot, game):
     from population import advice
 
@@ -543,3 +560,15 @@ def test_botstats_are_for_the_bot_owner_only(bot, monkeypatch):
         await bot.admin_botstats.callback(i)
         assert "of 20 allowed" in i.response.send_message.await_args.args[0]
     asyncio.run(go())
+
+
+def test_every_slash_command_fits_discords_limits(bot):
+    "Discord refuses the whole command sync if any description is over 100 characters, so no new command would appear."
+    def check(x, path):
+        assert len(x["description"]) <= 100, (path, len(x["description"]))
+        for o in x.get("options", []):
+            assert len(o["description"]) <= 100, (path, o["name"], len(o["description"]))
+            if o.get("type") in (1, 2):
+                check(o, path + " " + o["name"])
+    for c in bot.tree.get_commands():
+        check(c.to_dict(bot.tree), c.name)
