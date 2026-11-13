@@ -131,7 +131,7 @@ function showTile(t, data, card, act, msg) {
       const n = names[t.owner];
       tags.append(el("span", {className: "tag"}, swatch(n ? n.color : "#888"), (n ? n.name : "Unknown") + (t.owner === data.me ? " (you)" : "")));
     }
-    tags.append(el("span", {className: "tag", textContent: t.building ? cap(t.building) + (t.level > 1 ? " (level " + t.level + ")" : "") : "No building"}));
+    tags.append(el("span", {className: "tag", title: (card.notes || {})[t.building] || "", textContent: t.building ? cap(t.building) + (t.level > 1 ? " (level " + t.level + ")" : "") : "No building"}));
     if (t.oil) tags.append(el("span", {className: "tag", textContent: "Oil deposit"}));
     out.push(tags);
     for (const line of card.text.split("\n").filter((l) => l.startsWith("Caravan:")))
@@ -151,7 +151,9 @@ function showTile(t, data, card, act, msg) {
         ...card.builds.map((b) => {
           const short = Object.keys(card.build_missing[b] || {}).length > 0;
           const cost = Object.entries(card.build_cost[b]).map(([r, n]) => n + " " + r).join(", ");
-          return button(cap(b) + " - " + cost, () => act({action: "build", tile: t.k, building: b}), short ? "off" : "plain");
+          const btn = button(cap(b) + " - " + cost, () => act({action: "build", tile: t.k, building: b}), short ? "off" : "plain");
+          btn.title = (card.notes || {})[b] || "";                       // hover: what it does
+          return btn;
         }),
         el("div", {className: "note", textContent: "Greyed out: you cannot pay for it yet."})));
     }

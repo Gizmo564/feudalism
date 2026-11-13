@@ -323,3 +323,10 @@ def test_trade_by_train_or_caravan(rules):
     tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 5}}, {}, "train")
     trade.accept(w, rules, tid, 1)
     assert t["cargo"] == {"wood": 5}
+
+
+def test_building_hover_notes_say_what_each_building_does(rules):
+    from population import mapnav
+    notes = mapnav.building_notes(blank_world(rules, radius=2), rules)
+    assert set(rules["buildings"]) <= set(notes) and all(notes[b] for b in rules["buildings"])
+    assert "steel" in notes["forge"] and "ore" in notes["forge"] and "factory output" in notes["factory"]

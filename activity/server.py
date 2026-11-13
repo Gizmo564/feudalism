@@ -189,7 +189,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             return web.json_response({"error": "not in a running game"}, status=404)
         card = mapnav.tile_card(game.world, game.rules, nid, request.query.get("k", ""))
         keys = ("text", "can_claim", "builds", "can_move", "claim_cost", "claim_missing", "claim_queued", "build_cost",
-                "build_missing", "upgrade")
+                "build_missing", "upgrade", "notes")
         return web.json_response({k: card[k] for k in keys})
 
     async def nation(request):

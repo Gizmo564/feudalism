@@ -50,16 +50,49 @@ def pick_options(world, rules, nid, center, radius, limit=25):
     return [(k, text) for _, _, k, text in rows[:limit]]
 
 
+def building_notes(world, rules):
+    """One plain sentence per building saying what it does, built from the rules (shown as a hover in the Activity)."""
+    word = lambda r: r.replace("_", " ")
+    out = {}
+    for b, spec in rules["buildings"].items():
+        bits = []
+        if spec.get("houses_workers"):
+            bits.append("Houses %d people who work and eat." % spec["houses_workers"])
+        if spec.get("houses_soldiers"):
+            bits.append("Houses %d soldiers." % spec["houses_soldiers"])
+        if spec.get("defense_percent"):
+            bits.append("Soldiers defending this tile fight %d%% stronger." % spec["defense_percent"])
+        refine = rules.get("refine", {})
+        for good, r in refine.items():
+            if r["building"] == b:
+                bits.append("Workers here make %s from %s (a few job slots; it only works when the inputs are in store)." % (
+                    word(good), ", ".join("%d %s" % (n, word(i)) for i, n in r["inputs"].items())))
+                if r.get("output"):
+                    bits.append("What it makes counts as factory output, a way to win.")
+        for u, c in rules.get("units", {}).items():
+            if c.get("building") == b:
+                bits.append("Needed to train %ss." % u)
+        if b == "market":
+            bits.append("Needed on both sides to trade.")
+        if b == "port":
+            bits.append("Armies and your land can cross water here.")
+        if b == "rail":
+            bits.append("Armies move quickly along connected rails. Trains run on any nation's rails. Can be laid on free land next to your line.")
+        out[b] = " ".join(bits)
+    out["capital"] = "Your capital: it houses people and soldiers, defends well, and is the station trains and caravans start from."
+    return out
+
+
 def tile_card(world, rules, nid, k):
     """What a tile is and what you can do there: {"text", "can_claim", "builds", "can_move", "claim_cost",
     "claim_missing", "claim_queued", "build_cost", "build_missing"}. "missing" is what you can't pay yet."""
     info = {v["k"]: v for v in views.map_view(world, rules, nid)}
     v = info.get(k)
     if v is None:
-        return {"text": "No such tile.", "can_claim": False, "builds": [], "can_move": False,
+        return {"notes": {}, "text": "No such tile.", "can_claim": False, "builds": [], "can_move": False,
                 "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}, "upgrade": None}
     if not v["visible"]:
-        return {"text": "**%s** - fogged, you can't see it." % k, "can_claim": False, "builds": [], "can_move": False,
+        return {"notes": {}, "text": "**%s** - fogged, you can't see it." % k, "can_claim": False, "builds": [], "can_move": False,
                 "claim_cost": {}, "claim_missing": {}, "claim_queued": False, "build_cost": {}, "build_missing": {}, "upgrade": None}
     lines = ["**%s** - %s" % (k, v["terrain"])]
     if v["oil"]:
@@ -111,7 +144,7 @@ def tile_card(world, rules, nid, k):
         upgrade = {"level": level + 1, "cost": up["cost"], "missing": advice.shortfall(have, up["cost"]), "queued": queued_up,
                    "gives": {key: val for key, val in up.items() if key != "cost"}}
         lines.append("Upgrade to level %d: %s." % (level + 1, ", ".join("%d %s" % (n, r) for r, n in up["cost"].items())))
-    return {"text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water" or v["building"] == "port",
+    return {"notes": building_notes(world, rules), "text": "\n".join(lines), "can_claim": can_claim, "builds": builds, "can_move": v["terrain"] != "water" or v["building"] == "port",
             "claim_cost": cost, "claim_missing": advice.shortfall(have, cost),
             "claim_queued": advice.claim_queued(world, nid) >= rules["claim"]["per_tick"],
             "build_cost": {b: prices[b] for b in builds},
