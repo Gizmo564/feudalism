@@ -363,9 +363,17 @@ class InfoView(discord.ui.View):
                                   else discord.ButtonStyle.secondary)
             b.callback = self.switch(tab)
             self.add_item(b)
+        if self.tab == "overview":
+            for n in (1, 5, 10):
+                b = discord.ui.Button(label="Train %d" % n, row=1)
+                b.callback = self.train(n)
+                self.add_item(b)
+            return
         if self.tab != "economy":
             return
-        prios = self.g.world["nations"][self.g.nid(self.uid)]["priorities"]
+        nation = self.g.world["nations"][self.g.nid(self.uid)]
+        prios = nation["priorities"]
+        advanced = nation.get("mode", "basic") == "advanced"
         can = infopage.available(self.g.world, self.g.rules, self.g.nid(self.uid))
         if self.resource not in can:
             self.resource = can[0]
@@ -374,18 +382,36 @@ class InfoView(discord.ui.View):
                                  default=r == self.resource) for r in can])
         menu.callback = self.pick(menu)
         self.add_item(menu)
-        value = prios[self.resource]
-        off = discord.ui.Button(label="Off", row=2, disabled=value <= 0)
-        off.callback = self.change(to=0)
-        minus = discord.ui.Button(label="-", row=2, disabled=value <= 0)
-        minus.callback = self.change(-1)
-        label = discord.ui.Button(label="%s: %d/5" % (self.resource, value), row=2, disabled=True)
-        plus = discord.ui.Button(label="+", row=2, disabled=value >= 5)
-        plus.callback = self.change(1)
-        top = discord.ui.Button(label="Max", row=2, disabled=value >= 5)
-        top.callback = self.change(to=5)
-        for item in (off, minus, label, plus, top):
-            self.add_item(item)
+        if advanced:
+            fixed = nation.get("assign", {}).get(self.resource)
+            placed = tick.work_plan(self.g.world, self.g.rules, nation).get(self.resource, (0, 0))[0]
+            shown = placed if fixed is None else fixed
+            text = "%s: %s" % (self.resource, "auto (%d)" % placed if fixed is None else "%d set" % fixed)
+            minus = discord.ui.Button(label="-", row=2, disabled=shown <= 0)
+            minus.callback = self.count(shown - 1)
+            label = discord.ui.Button(label=text, row=2, disabled=True)
+            plus = discord.ui.Button(label="+", row=2)
+            plus.callback = self.count(shown + 1)
+            auto = discord.ui.Button(label="Auto", row=2, disabled=fixed is None)
+            auto.callback = self.count(None)
+            for item in (minus, label, plus, auto):
+                self.add_item(item)
+        else:
+            value = prios[self.resource]
+            off = discord.ui.Button(label="Off", row=2, disabled=value <= 0)
+            off.callback = self.change(to=0)
+            minus = discord.ui.Button(label="-", row=2, disabled=value <= 0)
+            minus.callback = self.change(-1)
+            label = discord.ui.Button(label="%s: %d/5" % (self.resource, value), row=2, disabled=True)
+            plus = discord.ui.Button(label="+", row=2, disabled=value >= 5)
+            plus.callback = self.change(1)
+            top = discord.ui.Button(label="Max", row=2, disabled=value >= 5)
+            top.callback = self.change(to=5)
+            for item in (off, minus, label, plus, top):
+                self.add_item(item)
+        mode = discord.ui.Button(label="Switch to %s mode" % ("basic" if advanced else "advanced"), row=3)
+        mode.callback = self.toggle_mode(advanced)
+        self.add_item(mode)
 
     async def refresh(self, interaction):
         self.layout()
@@ -400,6 +426,34 @@ class InfoView(discord.ui.View):
     def pick(self, menu):
         async def cb(interaction):
             self.resource = menu.values[0]
+            await self.refresh(interaction)
+        return cb
+
+    def train(self, n):
+        async def cb(interaction):
+            try:
+                text = self.g.train(self.uid, n)
+            except (GameError, ValueError) as e:
+                return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+            await interaction.response.edit_message(embed=self.embed(), view=self)
+            await interaction.followup.send(text, ephemeral=True)
+        return cb
+
+    def count(self, value):
+        async def cb(interaction):
+            try:
+                self.g.set_assign(self.uid, self.resource, value)
+            except (GameError, ValueError) as e:
+                return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+            await self.refresh(interaction)
+        return cb
+
+    def toggle_mode(self, advanced):
+        async def cb(interaction):
+            try:
+                self.g.set_mode(self.uid, "basic" if advanced else "advanced")
+            except (GameError, ValueError) as e:
+                return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
             await self.refresh(interaction)
         return cb
 

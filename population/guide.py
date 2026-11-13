@@ -157,7 +157,7 @@ def commands(rules):
         "**Commands**",
         "/zoom - your map: pan, zoom, pick a tile, claim, build, send armies",
         "/map - the whole map",
-        "/info - your nation in detail, and set priorities",
+        "/info - your nation in detail: switch mode, set priorities or exact counts, train soldiers",
         "/report - what happened to you last night",
         "/status - a quick summary",
         "/standings - who is ahead",

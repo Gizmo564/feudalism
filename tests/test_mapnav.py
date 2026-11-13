@@ -182,12 +182,12 @@ def test_failed_order_is_reported_not_raised(bot, game):
 def test_info_view_tabs_and_priority_buttons(bot, game):
     async def go():
         view = bot.InfoView(100, game)
-        assert [c.label for c in view.children] == ["Overview", "Economy", "Land", "Military"]
+        assert [c.label for c in view.children][:4] == ["Overview", "Economy", "Land", "Military"]
         assert view.embed().fields[0].name == "People"
         i = click(100)
         await find(view, "Economy").callback(i)
         i.response.edit_message.assert_awaited()
-        assert view.tab == "economy" and len(view.children) == 4 + 1 + 5
+        assert view.tab == "economy" and len(view.children) == 4 + 1 + 5 + 1
         start = game.world["nations"][0]["priorities"]["food"]            # 5 by default: "+" is greyed out
         assert find(view, "+").disabled and not find(view, "-").disabled
         await find(view, "-").callback(click(100))
@@ -208,6 +208,30 @@ def test_info_view_tabs_and_priority_buttons(bot, game):
         for tab in ("Land", "Military", "Overview"):
             await find(view, tab).callback(click(100))
         assert await view.interaction_check(click(999)) is False
+    asyncio.run(go())
+
+
+def test_info_view_advanced_counts_mode_and_train(bot, game):
+    async def go():
+        view = bot.InfoView(100, game)
+        assert [c.label for c in view.children][-3:] == ["Train 1", "Train 5", "Train 10"]
+        await find(view, "Economy").callback(click(100))
+        await find(view, "Switch to advanced mode").callback(click(100))
+        assert game.world["nations"][0]["mode"] == "advanced"
+        assert find(view, "Switch to basic mode") and find(view, "Auto").disabled
+        await find(view, "+").callback(click(100))
+        fixed = game.world["nations"][0]["assign"]["food"]
+        assert fixed >= 1 and not find(view, "Auto").disabled
+        await find(view, "-").callback(click(100))
+        assert game.world["nations"][0]["assign"]["food"] == fixed - 1
+        await find(view, "Auto").callback(click(100))
+        assert game.world["nations"][0]["assign"].get("food") is None
+        await find(view, "Switch to basic mode").callback(click(100))
+        assert game.world["nations"][0]["mode"] == "basic"
+        await find(view, "Overview").callback(click(100))
+        i = click(100)
+        await find(view, "Train 1").callback(i)
+        assert i.response.edit_message.await_count + i.response.send_message.await_count >= 1
     asyncio.run(go())
 
 
