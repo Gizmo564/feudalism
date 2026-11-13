@@ -193,6 +193,7 @@
     }
   },
   "combat": {
+    "capital_takes_all_land": true,
     "roll_percent": [
       80,
       90,

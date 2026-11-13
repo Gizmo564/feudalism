@@ -90,3 +90,4 @@ On the server, `feudalism help` lists everything:
 - **Paper theme**: a "Paper" button on the Activity map switches the whole page to an old parchment-map look (remembered per browser).
 - **Training limits**: `/train` queues only as many as you can afford right now (counting trainings already queued tonight), and if something changes by night the report says which limit stopped it. Nothing carries over to later nights, so there is no hidden debt.
 - **Fast armies on your own land**: armies move 2 tiles a night while crossing tiles you own and stop after the first tile that is not yours (`/admin rules`, Game tab, "Army steps a night on own land"; 1 turns it off).
+- **Capital capture** (`/admin rules`, Game tab, on by default): capturing a capital takes all the rest of that nation's land and eliminates it. Its buildings are lost, as with any captured tile, and ports are wrecked.

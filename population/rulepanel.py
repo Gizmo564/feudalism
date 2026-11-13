@@ -20,6 +20,8 @@ RULES = [
      "How fast goods travel when the route between the capitals crosses water over ports. 150 is one and a half times the trade speed.", "trade"),
     ("army_steps", "Army steps a night on own land", "number", ("movement", "army_steps_on_own_land"), 1, (1, 4, 1),
      "How many tiles an army can move in a night while it travels over your own land. It always stops after the first tile that isn't yours.", "game"),
+    ("capital_takes_all", "Capturing a capital takes all land", "switch", ("combat", "capital_takes_all_land"), False, None,
+     "The nation that captures a capital takes the rest of that nation's land too, and the loser is out of the game.", "game"),
     ("steel_soldiers", "Steel soldiers", "switch", ("steel_soldiers", "enabled"), True, None,
      "Players with a level 2 barracks can train steel soldiers: they cost steel and fight 25% stronger.", "game"),
     ("win_share", "Win share (% of land)", "number", ("victory", "land_share_percent"), 40, (5, 100, 5),

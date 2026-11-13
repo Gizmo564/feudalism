@@ -491,11 +491,17 @@ def attack(world, rules, rng, a, k):
         world["armies"] = [x for x in world["armies"] if x["n"] > 0]
         a["tile"], a["dest"] = k, None
         if owner is not None and owner != a["owner"]:
+            was_capital = tile["building"] == "capital"
             tile["owner"], tile["building"] = a["owner"], None
             if tile["terrain"] == "water":      # a captured port is wrecked: the water is nobody's again
                 tile["owner"] = None
             W.ev(world, owner, "%s captured your tile %s" % (me["name"], k))
             W.pub(world, "%s captured %s from %s" % (me["name"], k, world["nations"][owner]["name"]))
+            if was_capital and rules["combat"].get("capital_takes_all_land"):
+                loser = world["nations"][owner]
+                knock_out(world, loser, a["owner"])
+                W.ev(world, a["owner"], "You captured the capital of %s and took all their land" % loser["name"])
+                W.ev(world, owner, "Your capital fell, and with it everything you held")
         W.ev(world, a["owner"], "Won the battle at %s against %s (you lost %d)" % (k, names, res["att_loss"]))
         for d in defenders:
             W.ev(world, d["owner"], "Lost the battle at %s to %s" % (k, me["name"]))
@@ -728,15 +734,22 @@ def eliminate(world, rules):
         if not n["alive"]:
             continue
         if not W.owned(world, n["id"]) and W.soldiers(world, n["id"]) == 0 or W.people(world, n["id"]) == 0:
-            n["alive"] = False
-            for k, t in world["tiles"].items():
-                if t["owner"] == n["id"]:
-                    t["owner"], t["building"] = None, None
-            world["armies"] = [a for a in world["armies"] if a["owner"] != n["id"]]
-            for o in world["trades"]:
-                if o["status"] == "open" and n["id"] in (o["from"], o["to"]):
-                    o["status"] = "cancelled"
-            W.pub(world, "%s has been eliminated" % n["name"])
+            knock_out(world, n, None)
+
+
+def knock_out(world, n, taker):
+    """Take a nation out of the game. Its land goes to `taker` (a nation id) or becomes nobody's."""
+    n["alive"] = False
+    for k, t in world["tiles"].items():
+        if t["owner"] == n["id"]:
+            t["owner"], t["building"] = taker, None
+            if taker is not None and t["terrain"] == "water":      # ports are wrecked, as when one is captured
+                t["owner"] = None
+    world["armies"] = [a for a in world["armies"] if a["owner"] != n["id"]]
+    for o in world["trades"]:
+        if o["status"] == "open" and n["id"] in (o["from"], o["to"]):
+            o["status"] = "cancelled"
+    W.pub(world, "%s has been eliminated" % n["name"])
 
 
 def run_tick(world, rules):

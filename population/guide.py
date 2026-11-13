@@ -147,6 +147,8 @@ def war(rules):
             soldier, min(rolls), max(rolls)),
         "Defenders get bonuses: terrain (%s), walls, and the capital. A tie goes to the defender. Both sides lose %ss." % (
             ", ".join("%s +%d%%" % (k, v["defense_percent"]) for k, v in rules["terrain"].items() if v["defense_percent"]), soldier),
+        *(["Capture a capital and you take all the rest of that nation's land too, and it is out of the game."]
+          if rules["combat"].get("capital_takes_all_land") else []),
         "",
         "**Oil**",
         "Armies on your own land cost nothing. Armies on land that isn't yours cost 1 oil per %d %ss a night. "

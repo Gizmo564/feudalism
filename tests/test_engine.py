@@ -1207,3 +1207,29 @@ def test_armies_take_extra_steps_only_over_own_land(rules):
     w["armies"][-1].update(tile="-3,0", dest="0,0")
     tick.move_armies(w, rules, random.Random(1))
     assert w["armies"][-1]["tile"] == "-2,0"
+
+
+def test_capturing_a_capital_takes_all_the_land(rules):
+    w = two_nations(rules)
+    w["tiles"]["3,0"].update(owner=1, building="home")
+    w["armies"] = [a for a in w["armies"] if a["owner"] == 0]
+    w["armies"][0].update(n=40, tile="1,0")
+    assert rules["combat"]["capital_takes_all_land"]
+    tick.queue(w, rules, 0, {"type": "move", "army": w["armies"][0]["id"], "dest": "2,0"})
+    tick.apply_orders(w, rules, random.Random(1))
+    tick.move_armies(w, rules, random.Random(1))
+    assert w["nations"][1]["alive"] is False
+    assert w["tiles"]["3,0"]["owner"] == 0 and w["tiles"]["3,0"]["building"] is None
+    assert not W.owned(w, 1)
+
+
+def test_capital_capture_rule_can_be_off(rules):
+    w = two_nations(rules)
+    rules["combat"]["capital_takes_all_land"] = False
+    w["tiles"]["3,0"].update(owner=1, building="home")
+    w["armies"] = [a for a in w["armies"] if a["owner"] == 0]
+    w["armies"][0].update(n=40, tile="1,0")
+    tick.queue(w, rules, 0, {"type": "move", "army": w["armies"][0]["id"], "dest": "2,0"})
+    tick.apply_orders(w, rules, random.Random(1))
+    tick.move_armies(w, rules, random.Random(1))
+    assert w["nations"][1]["alive"] and w["tiles"]["3,0"]["owner"] == 1
