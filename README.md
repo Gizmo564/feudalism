@@ -26,7 +26,7 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 - `/zoom` – interactive map: pan, zoom, pick a tile, then Claim / Build / Send army. A layers menu toggles terrain icons, buildings and housing numbers.
 - `/info` – your nation in four tabs (Overview, Economy, Land, Military) with alerts at the top; change work priorities with the buttons on the Economy tab.
 - `/report` – what happened to you last night. `/status`, `/standings`, `/map` – quick views.
-- `/help` – how to play in six short pages. `/cancel` – clear tonight's orders.
+- `/help` – how to play in seven short pages. `/cancel` – clear tonight's orders.
 - `/claim`, `/build`, `/upgrade`, `/train`, `/move`, `/priorities`, `/trade`, `/offers`, `/accept`, `/decline` – typed versions of orders. `/trade` with no `to` posts an open offer on the trade board (Accept/Decline buttons; `/admin tradeboard` picks the channel, else announcements).
 - `/pact propose|accept|decline|break|list` – promises between nations, kept as a public record and never enforced. Orders are checked when you give them, with a message saying what to do instead.
 - `/tutorial start|night|hint|stop` – a private practice game against two simple rivals. While it is on, every command works on the practice realm.

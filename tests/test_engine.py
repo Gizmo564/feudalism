@@ -862,7 +862,7 @@ def test_upgrade_raises_housing_and_costs(rules):
     w = two_nations(rules)
     k = "-3,0"
     w["tiles"][k].update(owner=0, building="home")
-    w["nations"][0]["resources"].update(wood=500, stone=500)
+    w["nations"][0]["resources"].update(wood=500, stone=500, tools=50)
     before = W.housing(w, rules, 0)[0]
     up = tick.upgrade_of(rules, w["tiles"][k])
     tick.queue(w, rules, 0, {"type": "upgrade", "tile": k})
@@ -903,3 +903,62 @@ def test_generated_map_has_every_terrain_and_is_reachable(rules):
         kinds = {t["terrain"] for t in w["tiles"].values()}
         assert {"field", "forest", "hills", "mountain", "water"} <= kinds
         assert len(w["tiles"]) == 3 * 8 * 9 + 1
+
+
+def refinery_world(rules, building, **stock):
+    """Nation 0 owns a workshop on -3,0 with plenty of workers and the given stock."""
+    w = two_nations(rules)
+    w["tiles"]["-3,0"].update(owner=0, building=building)
+    n = w["nations"][0]
+    n["workers"] = 12
+    n["resources"].update(stock)
+    return w, n
+
+
+def test_workshop_needs_a_worker_and_inputs(rules):
+    w, n = refinery_world(rules, "toolworks", wood=10, stone=10, tools=0)
+    n["priorities"].update(tools=5, food=0, wood=0, stone=0, ore=0, oil=0, livestock=0)
+    plan = tick.work_plan(w, rules, n)
+    assert plan["tools"][0] == rules["refine_slots"]                        # only a few job slots per workshop
+    tick.produce(w, rules, n)
+    assert n["resources"]["tools"] == rules["refine_slots"]
+    assert n["resources"]["wood"] == 10 - rules["refine_slots"] and n["resources"]["stone"] == 10 - rules["refine_slots"]
+
+
+def test_workshop_makes_nothing_without_inputs(rules):
+    w, n = refinery_world(rules, "forge", ore=0, oil=0, tools=0, steel=0)
+    n["priorities"].update(steel=5)
+    tick.produce(w, rules, n)
+    assert n["resources"]["steel"] == 0
+
+
+def test_no_workshop_no_refined_goods(rules):
+    w = two_nations(rules)
+    n = w["nations"][0]
+    n["resources"].update(wood=50, stone=50)
+    n["priorities"].update(tools=5)
+    assert "tools" not in tick.work_plan(w, rules, n)
+
+
+def test_building_a_workshop_turns_its_priority_on(rules):
+    w = two_nations(rules)
+    n = w["nations"][0]
+    n["resources"].update(wood=500, stone=500, ore=50)
+    assert n["priorities"]["steel"] == 0
+    w["tiles"]["-3,0"].update(owner=0)
+    tick.queue(w, rules, 0, {"type": "build", "tile": "-3,0", "building": "forge"})
+    tick.apply_orders(w, rules, random.Random(1))
+    assert w["tiles"]["-3,0"]["building"] == "forge" and n["priorities"]["steel"] > 0
+
+
+def test_provisions_speed_up_growth(rules):
+    w = two_nations(rules)
+    n = w["nations"][0]
+    n["workers"] = 10
+    n["resources"].update(food=500, provisions=0)
+    tick.eat_and_grow(w, rules, n)
+    plain = n["workers"] - 10
+    n["workers"] = 10
+    n["resources"].update(food=500, provisions=50)
+    tick.eat_and_grow(w, rules, n)
+    assert n["workers"] - 10 > plain and n["resources"]["provisions"] < 50

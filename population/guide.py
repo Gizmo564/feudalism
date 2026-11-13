@@ -2,7 +2,7 @@
 Numbers come from the ruleset, so they stay right when the rules change. No Discord code here."""
 from . import advice, victory, world as W
 
-HELP_TABS = ("basics", "resources", "modes", "war", "winning", "commands")
+HELP_TABS = ("basics", "resources", "goods", "modes", "war", "winning", "commands")
 
 
 def claim_text(rules):
@@ -54,13 +54,17 @@ def resources(rules):
             lines.append("%s: %s" % (terrain, ", ".join(spec["produces"])))
     lines.append("Oil comes only from oil deposits (1 in about %d land tiles)." % rules["oil_deposit_one_in"])
     lines += ["", "Up to %d %ss work one tile. Each makes: %s." % (
-        rules["workers_per_tile"], worker, ", ".join("%d %s" % (v, k) for k, v in rules["yield_per_worker"].items())),
+        rules["workers_per_tile"], worker, ", ".join("%d %s" % (v, k) for k, v in rules["yield_per_worker"].items()
+                                                      if k not in rules.get("refine", {}))),
         "Food: every person eats %d a night. Without it people starve. Livestock counts as %d food when you run short." % (
             rules["eat_per_person"], rules["food_value"].get("livestock", 1)),
         "", "**What things cost**",
         claim_text(rules),
         "Only %d claim a night." % rules["claim"]["per_tick"]]
+    workshops = {spec["building"] for spec in rules.get("refine", {}).values()}
     for name, spec in rules["buildings"].items():
+        if name in workshops:
+            continue
         effect = []
         if spec.get("houses_workers"):
             effect.append("houses %d %ss" % (spec["houses_workers"], worker))
@@ -81,6 +85,26 @@ def resources(rules):
     lines.append("Your capital houses %d %ss and %d %ss and gets +%d%% defence." % (
         cap["houses_workers"], worker, cap["houses_soldiers"], soldier, cap["defense_percent"]))
     lines += ["", "**Priorities** (0 to 5) say how your %ss are shared between resources. Only the proportions matter." % worker]
+    return "\n".join(lines)
+
+
+def goods(rules):
+    worker, _, _ = words(rules)
+    refine = rules.get("refine", {})
+    if not refine:
+        return "This ruleset has no refined goods."
+    lines = ["**Refined goods**",
+             "A workshop turns raw resources into a refined good. It makes nothing until %ss work in it: %d slots, 1 good per %s a night, "
+             "never more than the inputs in your store allow. A new workshop starts on priority 2; change it in /info or /assign." % (
+                 worker, rules["refine_slots"], worker), ""]
+    for good, spec in refine.items():
+        lines.append("%s: %s makes it from %s. Build cost: %s." % (
+            good.capitalize(), spec["building"].capitalize(), " + ".join("%d %s" % (v, k) for k, v in spec["inputs"].items()),
+            cost(rules["buildings"][spec["building"]]["cost"])))
+    lines += ["",
+              "Tools, steel and bricks are needed for upgrades (see the resources page). Provisions feed faster growth: each one adds a spare %s "
+              "on a night your %ss are growing, up to double the usual growth." % (worker, worker),
+              "Nobody has to make everything. Specialise and trade at a market."]
     return "\n".join(lines)
 
 
@@ -171,7 +195,7 @@ def commands(rules):
     ])
 
 
-PAGES = {"basics": basics, "resources": resources, "modes": modes, "war": war, "winning": winning, "commands": commands}
+PAGES = {"basics": basics, "resources": resources, "goods": goods, "modes": modes, "war": war, "winning": winning, "commands": commands}
 
 
 def help_page(rules, tab):
@@ -186,7 +210,7 @@ def welcome(rules, name):
         "- When the game starts you get a capital, a few fields, %d %ss and %d %ss." % (
             rules["start"]["workers"], worker, rules["start"]["soldiers"], soldier),
         "- Every night the game runs. You give orders during the day.",
-        "- Use /help for the rules in six short pages, or /tutorial to practise first.",
+        "- Use /help for the rules in seven short pages, or /tutorial to practise first.",
     ])
 
 

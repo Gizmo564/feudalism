@@ -14,7 +14,7 @@ function el(tag, props = {}, ...kids) {
 
 const TERRAIN = {field: "#e2e8c8", forest: "#bed2aa", hills: "#e2d4b0", mountain: "#c8c6c2", water: "#dcebf7"};
 const NEUTRAL = "#ede9e0", FOG = "#c4c2ba";
-const RES_COLOUR = {food: "#8fc46b", wood: "#c28a4a", stone: "#a9a7a1", ore: "#7fa3c7", oil: "#6b5a50", livestock: "#e0a1a1"};
+const RES_COLOUR = {food: "#8fc46b", wood: "#c28a4a", stone: "#a9a7a1", ore: "#7fa3c7", oil: "#6b5a50", livestock: "#e0a1a1", tools: "#d9a441", steel: "#9aa5b1", provisions: "#e6c27a", bricks: "#c0614a"};
 const SQRT3 = Math.sqrt(3);
 // the same little line icons the Discord map uses (drawn about 14 units wide)
 const ICON = {
@@ -32,6 +32,10 @@ const BUILDING_D = {
   barracks: "M-4.5 -4.5L3 3M4.5 -4.5L-3 3M-1 3L3 -1M-3 -1L1 3",
   market: "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
   wall: "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
+  toolworks: "M-4.5 4.5L1.5 -1.5M-1 -5H5V1H-1Z",
+  forge: "M-5 -2H5L3 1H-3ZM-2 1V4H2V1",
+  cookhouse: "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
+  kiln: "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
   capital: "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5",
 };
 const SHIELD = new Path2D("M0 -10L8 -7V1Q8 8 0 11Q-8 8 -8 1V-7Z");

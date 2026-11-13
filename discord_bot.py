@@ -469,7 +469,7 @@ class InfoView(discord.ui.View):
 
 
 class HelpView(discord.ui.View):
-    """Six short help pages, one button each."""
+    """Seven short help pages, one button each."""
 
     def __init__(self, uid, g):
         super().__init__(timeout=900)
@@ -490,11 +490,11 @@ class HelpView(discord.ui.View):
 
 DIR_BUTTONS = {"nw": "\u2196", "ne": "\u2197", "w": "\u2190", "e": "\u2192", "sw": "\u2199", "se": "\u2198"}
 LAYERS = (("icons", "Terrain icons", "Draw a small picture on each tile"),
-          ("buildings", "Buildings", "Show homes, barracks, markets and walls"),
+          ("buildings", "Buildings", "Show homes, barracks, markets, walls and workshops"),
           ("people", "Housing numbers", "Label buildings with how many people they house"),
           ("production", "Production", "Show what each of your tiles makes tonight"),
           ("coords", "Coordinates", "Label every tile with its number"))
-LETTER = {"food": "F", "livestock": "L", "wood": "W", "stone": "S", "ore": "O", "oil": "Oi"}
+LETTER = {"food": "F", "livestock": "L", "wood": "W", "stone": "S", "ore": "O", "oil": "Oi", "tools": "T", "steel": "St", "provisions": "P", "bricks": "B"}
 
 
 class MapView(discord.ui.View):
@@ -694,8 +694,8 @@ async def claim_tiles(interaction: discord.Interaction, current: str):
 
 
 @tree.command(description="Build on one of your tiles")
-@app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market or wall")
-@app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall")])
+@app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market, wall, or a workshop")
+@app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall", "toolworks", "forge", "cookhouse", "kiln")])
 async def build(interaction: discord.Interaction, tile: str, building: app_commands.Choice[str]):
     await run(interaction, game_for(interaction.user.id).build, interaction.user.id, tile.strip(), building.value)
 

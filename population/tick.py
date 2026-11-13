@@ -218,6 +218,9 @@ def do_build(world, rules, n, o):
     pay(n["resources"], cost)
     t["building"] = b
     t.pop("level", None)
+    good = refined_good(rules, b)
+    if good and n["priorities"].get(good, 0) == 0:
+        n["priorities"][good] = 2      # a new workshop starts working without a trip to the priorities
     W.ev(world, nid, "You built a %s on %s" % (b, k))
 
 
@@ -389,8 +392,26 @@ def oil_upkeep(world, rules):
 
 # ---------- economy ----------
 
+def refined_good(rules, building):
+    """The refined good a workshop building makes (tools for a toolworks), or None for any other building."""
+    for good, spec in rules.get("refine", {}).items():
+        if spec["building"] == building:
+            return good
+    return None
+
+
+def tile_cap(world, rules, k):
+    """Workers one tile holds: a workshop has a few job slots, land holds workers_per_tile."""
+    if refined_good(rules, world["tiles"][k]["building"]):
+        return rules["refine_slots"]
+    return rules["workers_per_tile"]
+
+
 def candidates(world, rules, k):
     t = world["tiles"][k]
+    good = refined_good(rules, t["building"])
+    if good:
+        return [good]
     res = list(rules["terrain"][t["terrain"]]["produces"])
     if t["oil"]:
         res.append("oil")
@@ -407,8 +428,8 @@ def tile_plan(world, rules, n):
     Advanced mode: the exact counts in n["assign"] go first. Everyone left works by priority, but only on
     resources with no count of their own (a resource set to 0 is off)."""
     nid = n["id"]
-    cap = rules["workers_per_tile"]
-    room = {k: cap for k in W.owned(world, nid) if world["tiles"][k]["building"] is None}
+    room = {k: tile_cap(world, rules, k) for k in W.owned(world, nid)
+            if world["tiles"][k]["building"] is None or refined_good(rules, world["tiles"][k]["building"])}
     plan = {}
 
     def put(k, r, cnt):
@@ -457,8 +478,19 @@ def work_plan(world, rules, n):
 
 
 def produce(world, rules, n):
-    for r, (_, amount) in work_plan(world, rules, n).items():
-        n["resources"][r] += amount
+    """Raw resources first, then workshops turn what is in the store into refined goods (never more than the inputs allow)."""
+    plan = work_plan(world, rules, n)
+    res, refine = n["resources"], rules.get("refine", {})
+    for r, (_, amount) in plan.items():
+        if r not in refine:
+            res[r] = res.get(r, 0) + amount
+    for r, (_, amount) in plan.items():
+        if r in refine:
+            inputs = refine[r]["inputs"]
+            made = min([amount] + [res.get(i, 0) // v for i, v in inputs.items()])
+            for i, v in inputs.items():
+                res[i] -= v * made
+            res[r] = res.get(r, 0) + made
 
 
 def eat_and_grow(world, rules, n):
@@ -490,8 +522,13 @@ def eat_and_grow(world, rules, n):
     else:
         grow = max(1, n["workers"] * rules["growth"]["percent"] // 100)
         per = rules["eat_per_person"] * rules["growth"]["reserve_ticks"]
-        grow = min(grow, housing_w - n["workers"], res["food"] // per if per else grow)
-        n["workers"] += max(0, grow)
+        room = min(housing_w - n["workers"], res["food"] // per if per else grow)
+        grow = max(0, min(grow, room))
+        extra = max(0, min(res.get("provisions", 0), grow, room - grow))    # provisions: one spare peasant each, up to double growth
+        if extra:
+            res["provisions"] -= extra
+            W.ev(world, nid, "Provisions fed faster growth: %d extra people" % extra)
+        n["workers"] += grow + extra
     over = W.soldiers(world, nid) - housing_s
     if over > 0:
         cut = max(1, over * rules["over_housing_shrink_percent"] // 100)

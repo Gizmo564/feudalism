@@ -4,9 +4,11 @@ from . import advice, render, tick, victory, views, world as W
 
 TABS = ("overview", "economy", "land", "military")
 ICON = {"food": "\U0001f33e", "wood": "\U0001fab5", "stone": "\U0001faa8", "ore": "⛏️",
-        "oil": "\U0001f6e2️", "livestock": "\U0001f404"}
+        "oil": "\U0001f6e2️", "livestock": "\U0001f404",
+        "tools": "\U0001f527", "steel": "⚙️", "provisions": "\U0001f35e", "bricks": "\U0001f9f1"}
 SQUARE = {"food": "\U0001f7e9", "wood": "\U0001f7eb", "stone": "⬜", "ore": "\U0001f7e6",
-          "oil": "⬛", "livestock": "\U0001f7e8"}
+          "oil": "⬛", "livestock": "\U0001f7e8",
+          "tools": "\U0001f7e7", "steel": "\U0001f7ea", "provisions": "\U0001f536", "bricks": "\U0001f7e5"}
 WIDTH = 10
 
 
@@ -35,7 +37,7 @@ def stacked(plan, workers):
 
 def tile_output(world, rules, k):
     """Most a tile can give in a night per resource it could make: full workforce on it, one resource."""
-    cap = rules["workers_per_tile"]
+    cap = tick.tile_cap(world, rules, k)
     out = {}
     for r in tick.candidates(world, rules, k):
         out[r] = cap * rules["yield_per_worker"][r] + (cap * rules["coastal_food_bonus"] if r == "food" and tick.is_coastal(world, k) else 0)
@@ -46,7 +48,7 @@ def makeable(world, rules, nid):
     """{resource: (tiles that can make it, most a night)} for your tiles with no building on them."""
     found = {}
     for k in W.owned(world, nid):
-        if world["tiles"][k]["building"] is not None:
+        if world["tiles"][k]["building"] is not None and not tick.refined_good(rules, world["tiles"][k]["building"]):
             continue
         for r, amount in tile_output(world, rules, k).items():
             tiles, best = found.get(r, (0, 0))

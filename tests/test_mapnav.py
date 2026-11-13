@@ -241,7 +241,7 @@ def test_info_view_advanced_counts_mode_and_train(bot, game):
 def test_help_view_has_every_page(bot, game):
     async def go():
         view = bot.HelpView(100, game)
-        assert len(view.children) == len(bot.guide.HELP_TABS) == 6
+        assert len(view.children) == len(bot.guide.HELP_TABS) == 7
         for button in view.children:
             i = click(100)
             await button.callback(i)

@@ -30,6 +30,10 @@ BUILDING_ICON = {
     "barracks": "M-4.5 -4.5L3 3M4.5 -4.5L-3 3M-1 3L3 -1M-3 -1L1 3",   # crossed swords
     "market": "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
     "wall": "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
+    "toolworks": "M-4.5 4.5L1.5 -1.5M-1 -5H5V1H-1Z",
+    "forge": "M-5 -2H5L3 1H-3ZM-2 1V4H2V1",
+    "cookhouse": "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
+    "kiln": "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
 }
 CROWN_ICON = "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5"
 CARAVAN_ICON = "M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3"

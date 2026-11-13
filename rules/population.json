@@ -7,7 +7,11 @@
     "stone",
     "ore",
     "oil",
-    "livestock"
+    "livestock",
+    "tools",
+    "steel",
+    "provisions",
+    "bricks"
   ],
   "terrain": {
     "field": {
@@ -41,15 +45,25 @@
       "defense_percent": 0
     }
   },
-  "terrain_weights": {"field": 40, "forest": 20, "hills": 15, "mountain": 15, "water": 10},
-  "oil_deposit_one_in": 12,
+  "terrain_weights": {
+    "field": 40,
+    "forest": 20,
+    "hills": 15,
+    "mountain": 15,
+    "water": 10
+  },
+  "oil_deposit_one_in": 8,
   "yield_per_worker": {
     "food": 5,
     "livestock": 2,
     "wood": 2,
     "stone": 2,
     "ore": 1,
-    "oil": 2
+    "oil": 2,
+    "tools": 1,
+    "steel": 1,
+    "provisions": 1,
+    "bricks": 1
   },
   "coastal_food_bonus": 1,
   "workers_per_tile": 5,
@@ -59,7 +73,11 @@
     "stone": 3,
     "ore": 2,
     "oil": 1,
-    "livestock": 1
+    "livestock": 1,
+    "tools": 0,
+    "steel": 0,
+    "provisions": 0,
+    "bricks": 0
   },
   "eat_per_person": 1,
   "food_value": {
@@ -86,14 +104,17 @@
         {
           "cost": {
             "wood": 30,
-            "stone": 18
+            "stone": 18,
+            "tools": 4
           },
           "houses_workers": 14
         },
         {
           "cost": {
             "wood": 60,
-            "stone": 36
+            "stone": 36,
+            "tools": 8,
+            "bricks": 4
           },
           "houses_workers": 18
         }
@@ -111,7 +132,8 @@
           "cost": {
             "wood": 38,
             "stone": 38,
-            "ore": 12
+            "ore": 6,
+            "steel": 4
           },
           "houses_soldiers": 14
         },
@@ -119,7 +141,9 @@
           "cost": {
             "wood": 75,
             "stone": 75,
-            "ore": 24
+            "ore": 10,
+            "steel": 8,
+            "bricks": 4
           },
           "houses_soldiers": 18
         }
@@ -136,6 +160,31 @@
         "stone": 25
       },
       "defense_percent": 20
+    },
+    "toolworks": {
+      "cost": {
+        "wood": 20,
+        "stone": 10
+      }
+    },
+    "forge": {
+      "cost": {
+        "wood": 15,
+        "stone": 15,
+        "ore": 4
+      }
+    },
+    "cookhouse": {
+      "cost": {
+        "wood": 18,
+        "stone": 8
+      }
+    },
+    "kiln": {
+      "cost": {
+        "wood": 12,
+        "stone": 20
+      }
     }
   },
   "capital": {
@@ -152,7 +201,11 @@
       "stone": 20,
       "ore": 5,
       "oil": 0,
-      "livestock": 0
+      "livestock": 0,
+      "tools": 0,
+      "steel": 0,
+      "provisions": 0,
+      "bricks": 0
     },
     "min_spacing": 4,
     "min_land_neighbors": 5,
@@ -224,5 +277,36 @@
   },
   "build": {
     "rise_percent": 15
+  },
+  "refine_slots": 3,
+  "refine": {
+    "tools": {
+      "building": "toolworks",
+      "inputs": {
+        "wood": 1,
+        "stone": 1
+      }
+    },
+    "steel": {
+      "building": "forge",
+      "inputs": {
+        "ore": 1,
+        "oil": 1
+      }
+    },
+    "provisions": {
+      "building": "cookhouse",
+      "inputs": {
+        "livestock": 1,
+        "food": 1
+      }
+    },
+    "bricks": {
+      "building": "kiln",
+      "inputs": {
+        "stone": 1,
+        "oil": 1
+      }
+    }
   }
 }
