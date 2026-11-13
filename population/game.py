@@ -364,11 +364,17 @@ class Game:
         if steel and tick.steel_problem(w, r, nid):
             raise GameError("Can't train steel %ss: %s." % (self.word("soldier"), tick.steel_problem(w, r, nid)))
         cost = tick.train_cost(r, steel)
-        room = W.housing(w, r, nid)[1] - W.soldiers(w, nid)
-        can = min(n, room, me["workers"] - 1)
+        mine = [o for o in w["orders"] if o["nation"] == nid and o["type"] == "train"]   # trainings already queued tonight count against the limits
+        queued = sum(o["n"] for o in mine)
+        spent = {}
+        for o in mine:
+            for res, v in tick.train_cost(r, bool(o.get("steel"))).items():
+                spent[res] = spent.get(res, 0) + v * o["n"]
+        room = W.housing(w, r, nid)[1] - W.soldiers(w, nid) - queued
+        can = max(0, min(n, room, me["workers"] - 1 - queued))
         for res, v in cost.items():
             if v > 0:
-                can = min(can, me["resources"].get(res, 0) // v)
+                can = min(can, max(0, me["resources"].get(res, 0) - spent.get(res, 0)) // v)
         if can <= 0:
             reasons = []
             if room <= 0:
@@ -379,7 +385,7 @@ class Game:
             if short:
                 reasons.append("short of %s" % self.fmt(short))
             raise GameError("Can't train any %ss right now: %s." % (self.word("soldier"), "; ".join(reasons) or "nothing available"))
-        order = {"type": "train", "n": n}
+        order = {"type": "train", "n": can}
         if steel:
             order["steel"] = True
         self.queue(nid, order)

@@ -233,17 +233,8 @@ def test_train_limited_by_barracks_room(rules):
     tick.queue(w, rules, 0, {"type": "train", "n": 5})
     tick.apply_orders(w, rules, random.Random(1))
     assert W.soldiers(w, 0) == 10  # capital holds 10 soldiers, 6 already there
-    assert [o["n"] for o in w["orders"]] == [1]   # the rest waits for the next night
+    assert w["orders"] == []   # nothing carries over to the next night
     assert any("barracks room" in e for e in w["events"]["0"])
-
-
-def test_waiting_train_order_finishes_when_room_opens(rules):
-    w = two_nations(rules)
-    tick.queue(w, rules, 0, {"type": "train", "n": 5})
-    tick.apply_orders(w, rules, random.Random(1))
-    w["tiles"]["-3,0"].update(owner=0, building="barracks")
-    tick.apply_orders(w, rules, random.Random(1))
-    assert W.soldiers(w, 0) == 11 and w["orders"] == []
 
 
 # ---------- economy ----------

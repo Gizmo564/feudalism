@@ -324,8 +324,7 @@ def do_train(world, rules, n, o):
     if left <= 0:
         return W.ev(world, nid, "You trained %d %s" % (count, word))
     why = min(limits, key=limits.get)       # the tightest limit
-    W.ev(world, nid, "You trained %d of %d %s, limited by %s. The other %d stay queued and train when there is room" % (count, o["n"], word, why, left))
-    return left
+    W.ev(world, nid, "You trained %d of %d %s, limited by %s" % (count, o["n"], word, why))
 
 
 def do_move(world, rules, n, o):
@@ -434,17 +433,14 @@ def resolve_contests(world, rules, rng):
 
 def apply_orders(world, rules, rng):
     find_contests(world, rules)
-    waiting = []
     order = list(world["nations"])
     rng.shuffle(order)
     for n in order:
         if not n["alive"]:
             continue
         for o in [x for x in world["orders"] if x["nation"] == n["id"]]:
-            left = {"claim": do_claim, "build": do_build, "upgrade": do_upgrade, "train": do_train, "move": do_move}[o["type"]](world, rules, n, o)
-            if o["type"] == "train" and left:       # a training order that could not finish waits for the next night
-                waiting.append(dict(o, n=left))
-    world["orders"] = waiting
+            {"claim": do_claim, "build": do_build, "upgrade": do_upgrade, "train": do_train, "move": do_move}[o["type"]](world, rules, n, o)
+    world["orders"] = []
 
 
 # ---------- movement and battle ----------
