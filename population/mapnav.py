@@ -2,7 +2,7 @@
 No Discord code here, so it can be tested on its own."""
 from . import advice, trade, views, world as W
 from .hexes import parse, neighbors, distance, within
-from .tick import build_cost, claim_cost, foreign_army_on, port_problem, upgrade_of
+from .tick import build_cost, claim_cost, foreign_army_on, port_problem, rail_site_problem, upgrade_of
 
 DIRS = {"nw": (0, -1), "ne": (1, -1), "w": (-1, 0), "e": (1, 0), "sw": (-1, 1), "se": (0, 1)}
 
@@ -90,6 +90,11 @@ def tile_card(world, rules, nid, k):
         builds = [b for b in rules["buildings"] if b != "port"]
         lines.append("Build: " + "; ".join("%s (%s)" % (b, ", ".join("%d %s" % (n, r) for r, n in prices[b].items()))
                                             for b in builds) + ".")
+    if v["owner"] is None and v["terrain"] != "water" and not v["building"] and "rail" in rules["buildings"] \
+            and rail_site_problem(world, rules, nid, k) is None and not foreign_army_on(world, k, nid):
+        builds = ["rail"]
+        lines.append("Build: rail (%s). Track over free land stays unclaimed and links your lines." % ", ".join(
+            "%d %s" % (n, r) for r, n in prices["rail"].items()))
     if v["terrain"] == "water" and not v["building"] and "port" in rules["buildings"]:
         problem = port_problem(world, rules, nid, k)
         if problem is None:

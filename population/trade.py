@@ -62,9 +62,14 @@ def need_markets(world, rules, a, b):
         raise ValueError(problem)
 
 
-def offer(world, rules, frm, to, give, get):
+def offer(world, rules, frm, to, give, get, by=None):
     """`frm` gives `give` and asks `to` for `get`. Each is {"resources": {...}, "tiles": [...]}.
-    to=None is an open offer: the first nation with a Market that accepts it gets the deal."""
+    to=None is an open offer: the first nation with a Market that accepts it gets the deal.
+    by is how the goods travel: "train", "caravan", or None for a train if one is free, else a caravan."""
+    if by not in (None, "train", "caravan"):
+        raise ValueError("goods go by train or by caravan")
+    if by == "train" and (not rules.get("units", {}).get("train") or (give.get("resources") and find_train(world, rules, frm) is None)):
+        raise ValueError("you need a train waiting at your capital to send goods by train")
     if frm == to:
         raise ValueError("you cannot trade with yourself")
     for nid in (frm, to):
@@ -76,6 +81,8 @@ def offer(world, rules, frm, to, give, get):
     check_side(world, rules, frm, give)
     o = {"id": world["next_trade_id"], "from": frm, "to": to, "give": give, "get": get,
          "tick": world["tick"], "status": "open"}
+    if by:
+        o["by"] = by
     world["next_trade_id"] += 1
     world["trades"].append(o)
     if to is not None:
@@ -117,12 +124,18 @@ def accept(world, rules, tid, by):
     sides = ((o["from"], o["to"], o["give"]), (o["to"], o["from"], o["get"]))
     if caravans and any(side.get("resources") for _, _, side in sides) and not land_route(world, o["from"], o["to"]):
         raise ValueError("there is no land route between the two capitals, so caravans cannot carry the goods")
+    by = o.get("by")
+    if by == "train" and caravans:
+        for sender, receiver, side in sides:
+            if side.get("resources") and not train_route(world, rules, sender, receiver):
+                raise ValueError("%s has no train waiting at their capital with a rail line to the other capital" % world["nations"][sender]["name"])
     for sender, receiver, side in sides:
         res = {r: n for r, n in side.get("resources", {}).items() if n > 0}
         for r, n in res.items():
             world["nations"][sender]["resources"][r] -= n
         if res and caravans:
-            res = send_by_train(world, rules, sender, receiver, res)      # a free train takes what fits; the rest walks as a caravan
+            if by != "caravan":
+                res = send_by_train(world, rules, sender, receiver, res)  # a free train takes what fits; the rest walks as a caravan
             if res:
                 send_caravan(world, sender, receiver, res)
         elif res:
@@ -151,15 +164,28 @@ def send_caravan(world, sender, receiver, res):
         "tile": world["nations"][sender]["capital"], "dest": world["nations"][receiver]["capital"]})
 
 
+def find_train(world, rules, nid):
+    """An idle train standing at nid's capital, or None."""
+    from .tick import rail_only
+    start = world["nations"][nid]["capital"]
+    return next((a for a in world["armies"] if a["owner"] == nid and a["tile"] == start and a["dest"] is None
+                 and rail_only(rules, a) and not (a.get("aboard") or a.get("cargo") or a.get("mission"))), None)
+
+
+def train_route(world, rules, sender, receiver):
+    from .tick import find_path, rails
+    cap = lambda n: world["nations"][n]["capital"]
+    return find_train(world, rules, sender) is not None and find_path(world, cap(sender), cap(receiver), rails(world)) is not None
+
+
 def send_by_train(world, rules, sender, receiver, res):
     """Load the sender's idle train at their capital and send it to the receiver's capital along the rails.
     Returns the goods that did not fit (all of them if there is no train or no rail line)."""
-    from .tick import rail_only, unit_cfg, find_path, rails
+    from .tick import unit_cfg
     start, dest = world["nations"][sender]["capital"], world["nations"][receiver]["capital"]
-    train = next((a for a in world["armies"] if a["owner"] == sender and a["tile"] == start and a["dest"] is None
-                  and rail_only(rules, a) and not (a.get("aboard") or a.get("cargo") or a.get("mission"))), None)
-    if train is None or find_path(world, start, dest, rails(world)) is None:
+    if not train_route(world, rules, sender, receiver):
         return res
+    train = find_train(world, rules, sender)
     room = unit_cfg(rules, train["unit"]).get("capacity", 40) * train["n"]
     load, rest = {}, {}
     for r, v in res.items():

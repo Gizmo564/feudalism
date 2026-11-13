@@ -1059,14 +1059,18 @@ async def activity_resolved(server_id, tid):
 @tree.command(description="Offer a trade. Leave 'to' empty to post it on the trade board for anyone with a Market.")
 @app_commands.describe(give="What you give, e.g. 'wood 10'", get="What you want, e.g. 'stone 5'",
                        to="Nation name (leave empty for an open offer)",
-                       who_sees="Public: posted on the trade board. Private: only you and the named nation see it")
+                       who_sees="Public: posted on the trade board. Private: only you and the named nation see it",
+                       goods_go_by="Train (needs a waiting train and rails between the capitals) or caravan (slower). Auto: a train if one is free")
 @app_commands.choices(who_sees=[app_commands.Choice(name="Public (trade board)", value="public"),
-                                app_commands.Choice(name="Private (only you and them)", value="private")])
-async def trade(interaction: discord.Interaction, give: str, get: str = "", to: str = "", who_sees: str = "public"):
+                                app_commands.Choice(name="Private (only you and them)", value="private")],
+                      goods_go_by=[app_commands.Choice(name="Auto (train if one is free)", value="auto"),
+                                   app_commands.Choice(name="Train", value="train"),
+                                   app_commands.Choice(name="Caravan", value="caravan")])
+async def trade(interaction: discord.Interaction, give: str, get: str = "", to: str = "", who_sees: str = "public", goods_go_by: str = "auto"):
     g = game_for(interaction.user.id)
     private = who_sees == "private"
     try:
-        tid, text = g.make_offer(interaction.user.id, to, give, get, private=private)
+        tid, text = g.make_offer(interaction.user.id, to, give, get, private=private, by=None if goods_go_by == "auto" else goods_go_by)
     except (GameError, ValueError) as e:
         return await say(interaction, "Can't do that: %s" % e)
     if g is game and await post_offer(tid):

@@ -236,7 +236,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             elif kind == "trade_offer":
                 private = bool(body.get("private"))
                 tid, message = game.make_offer(uid, str(body.get("to", "")), str(body.get("give", "")),
-                                               str(body.get("get", "")), private=private)
+                                               str(body.get("get", "")), private=private, by=body.get("by") or None)
                 server_id = request.headers.get("X-Guild-Id", "")
                 posted = await safely(hooks.get("offer"), server_id, tid)
                 if posted:

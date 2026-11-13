@@ -255,6 +255,21 @@ def do_claim(world, rules, n, o):
     W.ev(world, nid, "You claimed %s" % k)
 
 
+def rail_site_problem(world, rules, nid, k):
+    """Why nation nid can't lay a rail on free land at k (a sentence), or None. The line must grow out of
+    your own station, rail or capital, or out of free land you already laid rail on."""
+    t = world["tiles"].get(k)
+    if t is None or t["terrain"] == "water" or t["owner"] is not None:
+        return "rails go on land you own or on free land"
+    if t["building"]:
+        return "it already has a %s" % t["building"]
+    for m in neighbors(k):
+        u = world["tiles"].get(m)
+        if u and u["building"] in STATIONS and (u["owner"] == nid or (u["owner"] is None and u.get("laid_by") == nid)):
+            return None
+    return "free land needs a rail line of yours next to it, so track grows out of your own rails or capital"
+
+
 def do_build(world, rules, n, o):
     nid = n["id"]
     k, b = o.get("tile"), o["building"]
@@ -263,6 +278,10 @@ def do_build(world, rules, n, o):
         problem = port_problem(world, rules, nid, k)
         if problem:
             return W.ev(world, nid, "Port on %s failed: %s" % (k, problem))
+    elif b == "rail" and t is not None and t["owner"] is None:
+        problem = rail_site_problem(world, rules, nid, k)
+        if problem:
+            return W.ev(world, nid, "Rail on %s failed: %s" % (k, problem))
     elif t is None or t["owner"] != nid:
         return W.ev(world, nid, "Build on %s failed: not your tile" % k)
     elif t["terrain"] == "water" or t["building"] is not None:
@@ -273,7 +292,10 @@ def do_build(world, rules, n, o):
     if not can_pay(n["resources"], cost):
         return W.ev(world, nid, "Build %s failed: not enough resources (need %s)" % (b, cost))
     pay(n["resources"], cost)
-    t["owner"] = nid          # a port is built on water you don't own yet, next to your land
+    if b == "rail" and t["owner"] is None:
+        t["laid_by"] = nid      # track over free land stays unclaimed; whoever claims the tile later gets the rail
+    else:
+        t["owner"] = nid        # a port is built on water you don't own yet, next to your land
     t["building"] = b
     t.pop("level", None)
     good = refined_good(rules, b)

@@ -284,3 +284,42 @@ def test_a_train_carries_tanks_and_stops_at_the_border(rules, tmp_path):
     t2["aboard"], t2["dest"] = [], "5,0"
     tick.move_armies(w2, rules, random.Random(1))
     assert t2["tile"] == "5,0"
+
+
+def test_rail_can_be_laid_over_free_land_only_out_of_your_own_line(rules):
+    w = two_armies_world(rules)
+    for x in range(-5, 5):
+        w["tiles"]["%d,0" % x]["owner"] = None            # all free land, except the two capitals
+    w["tiles"]["-5,0"]["owner"] = 0
+    assert tick.rail_site_problem(w, rules, 0, "-4,0") is None            # next to my capital
+    assert tick.rail_site_problem(w, rules, 0, "-2,0")                    # too far from any line of mine
+    n = w["nations"][0]
+    n["resources"].update(planks=10, steel=10)
+    tick.do_build(w, rules, n, {"tile": "-4,0", "building": "rail"})
+    t = w["tiles"]["-4,0"]
+    assert t["building"] == "rail" and t["owner"] is None and t["laid_by"] == 0     # stays free land
+    assert tick.rail_site_problem(w, rules, 0, "-3,0") is None            # the line grows out of the free rail
+    assert tick.rail_site_problem(w, rules, 1, "-3,0")                    # but not for another nation
+    assert tick.find_path(w, "-5,0", "-3,0", tick.rails(w)) is None       # no rail on -3,0 yet
+
+
+def test_trade_by_train_or_caravan(rules):
+    from population import trade
+    w = two_armies_world(rules)
+    for x in range(-5, 6):
+        w["tiles"]["%d,0" % x].update(owner=0 if x < 0 else 1, building="rail")
+    w["tiles"]["-5,0"]["building"], w["tiles"]["5,0"]["building"] = "capital", "capital"
+    for n in w["nations"]:
+        n["resources"]["wood"] = 100
+        w["tiles"][n["capital"]]["building"] = "capital"
+    for k, nid in (("-4,1", 0), ("4,1", 1)):                  # markets off the rail line
+        w["tiles"][k].update(owner=nid, building="market")
+    t = W.add_army(w, 0, "-5,0", 1, unit="train")
+    with pytest.raises(ValueError):
+        trade.offer(w, rules, 1, 0, {"resources": {"wood": 5}}, {}, "train")     # B has no train
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 5}}, {}, "caravan")
+    trade.accept(w, rules, tid, 1)
+    assert not t.get("cargo") and len(w["caravans"]) == 1                     # asked for a caravan: the train stays home
+    tid = trade.offer(w, rules, 0, 1, {"resources": {"wood": 5}}, {}, "train")
+    trade.accept(w, rules, tid, 1)
+    assert t["cargo"] == {"wood": 5}

@@ -300,9 +300,15 @@ class Game:
             problem = tick.port_problem(w, r, nid, k)
             if problem:
                 raise GameError("Can't build a port on %s: %s." % (k, problem))
+        elif building == "rail" and t is not None and t["owner"] is None:
+            problem = tick.rail_site_problem(w, r, nid, k)
+            if problem:
+                raise GameError("Can't lay rail on %s: %s." % (k, problem))
+            if tick.foreign_army_on(w, k, nid):
+                raise GameError("Foreign soldiers are standing on %s. Drive them off first." % k)
         else:
             if t is None or t["owner"] != nid:
-                raise GameError("%s isn't yours. Build on land you own (pick it in /zoom)." % k)
+                raise GameError("%s isn't yours. Build on land you own (pick it in /zoom). Rails can also go on free land next to your rails." % k)
             if t["building"]:
                 raise GameError("%s already has a %s." % (k, t["building"]))
             if tick.foreign_army_on(w, k, nid):
@@ -614,7 +620,7 @@ class Game:
         """to_name blank = an open offer for anyone with a Market. Returns the text for the player."""
         return self.make_offer(uid, to_name, give_text, get_text)[1]
 
-    def make_offer(self, uid, to_name, give_text, get_text, private=False):
+    def make_offer(self, uid, to_name, give_text, get_text, private=False, by=None):
         """Three kinds: open to anyone (no name), public to one nation, or private to one nation (private=True)."""
         nid = self.nid(uid)
         other = self.nation_named(to_name) if (to_name or "").strip() else None
@@ -623,7 +629,7 @@ class Game:
         try:
             give = {"resources": parse_pairs(give_text)} if give_text.strip() else {}
             get = {"resources": parse_pairs(get_text)} if get_text.strip() else {}
-            tid = trade.offer(self.world, self.rules, nid, other["id"] if other else None, give, get)
+            tid = trade.offer(self.world, self.rules, nid, other["id"] if other else None, give, get, by or None)
         except ValueError as e:
             raise GameError(str(e))
         if private:
@@ -639,8 +645,9 @@ class Game:
         to = " to %s" % w["nations"][o["to"]]["name"] if o["to"] is not None else " to anyone with a Market"
         if o.get("private"):
             to += " (private)"
-        return "**Offer %d** - %s gives %s and wants %s%s." % (
-            o["id"], who, self.fmt(o["give"].get("resources", {})), self.fmt(o["get"].get("resources", {})), to)
+        by = " Goods go by %s." % o["by"] if o.get("by") else ""
+        return "**Offer %d** - %s gives %s and wants %s%s.%s" % (
+            o["id"], who, self.fmt(o["give"].get("resources", {})), self.fmt(o["get"].get("resources", {})), to, by)
 
     # ---------- pacts (records only) ----------
 

@@ -130,10 +130,29 @@
     /* the optional paper theme: an old parchment map */
     body.paper { --bg: #efe3c4; --panel: #f6ecd2; --line: #cdb98b; --text: #3b2f1e; --muted: #7a6a4c; --accent: #8b5a2b; --chip: #eadcb6;
                  font-family: Georgia, "Iowan Old Style", serif; }
-    /* the industrial theme (Industrialism games): soot, steel and rust */
-    body.industrial { --bg: #17191b; --panel: #232629; --line: #3a3f44; --text: #e6e2d8; --muted: #a29e93; --accent: #d9822b; --chip: #2a2e32;
-                      font-family: "Barlow Semi Condensed", "Arial Narrow", Inter, system-ui, sans-serif; }
-    body.industrial .chip.on { background: var(--accent); color: #1a1a1a; }
+    /* the industrial theme (Industrialism games): the steam age. Soot-brown iron, brass trim, riveted panels, slab serif type */
+    body.industrial { --bg: #1b1612; --panel: #2a221b; --line: #6b5230; --text: #eadfc8; --muted: #b3a283; --accent: #c8963e; --chip: #33291f;
+                      font-family: Rockwell, "Roboto Slab", "Rockwell Nova", Georgia, serif; }
+    body.industrial #top { background: linear-gradient(#2e251c, #1b1612); border-bottom: 2px solid #8a6a2f;
+                           box-shadow: 0 2px 0 #0e0b08; }
+    body.industrial .pill, body.industrial .hchip { background: #2a221b; border: 1px solid #6b5230; border-radius: 4px;
+                           box-shadow: inset 0 0 0 1px #0e0b08; }
+    body.industrial .box { background: #231c15; border: 2px solid #6b5230; border-radius: 4px;
+                           box-shadow: inset 0 0 0 1px #0e0b08, inset 0 0 12px #0e0b08;
+                           background-image: radial-gradient(circle at 7px 7px, #a67c35 2px, transparent 2.5px), radial-gradient(circle at calc(100% - 7px) 7px, #a67c35 2px, transparent 2.5px),
+                                             radial-gradient(circle at 7px calc(100% - 7px), #a67c35 2px, transparent 2.5px), radial-gradient(circle at calc(100% - 7px) calc(100% - 7px), #a67c35 2px, transparent 2.5px); }
+    body.industrial .box h3 { color: #d8b068; letter-spacing: .12em; }
+    body.industrial .chip { background: #2a221bf0; border: 1px solid #8a6a2f; border-radius: 4px; }
+    body.industrial .chip.on { background: var(--accent); color: #1b1612; font-weight: 700; }
+    body.industrial #zoom button, body.industrial #legend { background: #2a221bf0; border: 1px solid #8a6a2f; border-radius: 4px; }
+    body.industrial .btn { border-radius: 4px; }
+    body.industrial .btn.plain { background: #3d3022; border: 1px solid #6b5230; }
+    body.industrial .btn.primary { background: linear-gradient(#d8a64a, #a97a2a); color: #1b1612; border: 1px solid #e9c176; text-shadow: 0 1px 0 #e9c17688; }
+    body.industrial .btn.off { background: #2a221b; color: #7a6a4c; }
+    body.industrial .msg.ok { background: #3b4a26; }
+    body.industrial .msg.bad { background: #5a2a1f; }
+    body.industrial .row .short { color: #e0715a; }
+    body.industrial .btn:focus-visible, body.industrial .tab:focus-visible, body.industrial .chip:focus-visible { outline-color: var(--accent); }
     body.paper .chip { background: #f6ecd2e6; }
     body.paper .chip.on { background: var(--accent); color: #fff; }
     body.paper #zoom button, body.paper #legend { background: #f6ecd2f0; }
@@ -172,6 +191,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=26"></script>
+  <script src="/static/app.js?v=27"></script>
 </body>
 </html>

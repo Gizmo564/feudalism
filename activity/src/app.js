@@ -15,7 +15,7 @@ function el(tag, props = {}, ...kids) {
 const THEMES = {   // the map's colours: the normal ones, paper (old parchment map), and industrial (Industrialism games only)
   normal: {terrain: {field: "#e2e8c8", forest: "#bed2aa", hills: "#e2d4b0", mountain: "#c8c6c2", water: "#dcebf7"}, neutral: "#ede9e0", fog: "#c4c2ba", back: "#2b2d31"},
   paper: {terrain: {field: "#ebdfb9", forest: "#cfc795", hills: "#dcc78f", mountain: "#cbbfa5", water: "#b7cdd1"}, neutral: "#f1e6c6", fog: "#cdbf9c", back: "#e3d3a8"},
-  industrial: {terrain: {field: "#9aa08c", forest: "#6f8a73", hills: "#a89c88", mountain: "#8a8e96", water: "#6f93ad"}, neutral: "#b4b0a6", fog: "#55585c", back: "#1a1c1f"},
+  industrial: {terrain: {field: "#b3a67c", forest: "#85906a", hills: "#b89e74", mountain: "#8f867a", water: "#7a9a9c"}, neutral: "#c9bb9a", fog: "#4d4338", back: "#17120e"},
 };
 let TERRAIN = THEMES.normal.terrain, NEUTRAL = THEMES.normal.neutral, FOG = THEMES.normal.fog, BACK = THEMES.normal.back;
 function setTheme(name) {
@@ -317,10 +317,11 @@ function tradeTab(n) {
   const to = choose([["", "Anyone with a Market (trade board)"], ...n.others.map((m) => [m, m])]);
   const give = input("You give, e.g. wood 10"), get = input("You want, e.g. stone 5");
   const how = choose([["public", "Public: posted on the trade board"], ["private", "Private: only you and the named nation"]]);
+  const by = choose([["", "Goods go: by train if one is free, else caravan"], ["train", "Goods go by train (needs a train and rails)"], ["caravan", "Goods go by caravan (slower)"]]);
   return [
     ...(n.offers.length ? n.offers.map(offerRow) : [el("p", {className: "hint", textContent: "No open offers right now."})]),
-    box("Make an offer", to, give, get, how,
-        button("Send offer", () => send({action: "trade_offer", to: to.value, give: give.value, get: get.value, private: how.value === "private"}), "primary"),
+    box("Make an offer", to, give, get, how, by,
+        button("Send offer", () => send({action: "trade_offer", to: to.value, give: give.value, get: get.value, private: how.value === "private", by: by.value}), "primary"),
         note("Both sides need a Market. A private offer needs a nation named above.")),
   ];
 }
