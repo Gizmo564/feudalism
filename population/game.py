@@ -96,7 +96,7 @@ class Game:
         for key in rulepanel.keys(self.rules):
             _, label, kind, _, _, limits, note, tab = rulepanel.BY_KEY[key]
             rows.append({"key": key, "label": label, "kind": kind, "limits": limits, "note": note, "tab": tab,
-                         "risky": key in rulepanel.RISKY, "now": rulepanel.current(self.world, self.rules, key),
+                         "risky": key in rulepanel.RISKY, "advanced": key in rulepanel.ADVANCED, "now": rulepanel.current(self.world, self.rules, key),
                          "next": self.pending_rules.get(key)})
         return rows
 
@@ -373,10 +373,72 @@ class Game:
         note = "" if can >= n else " (you asked for %d, but only %d fit right now)" % (n, can)
         return "Training %d %ss queued%s." % (can, self.word("soldier"), note)
 
-    def move(self, uid, army, dest):
+    def mode_of(self, uid):
+        return self.world["nations"][self.nid(uid)].get("mode", "basic")
+
+    def advanced_allowed(self):
+        """Admins can switch Advanced off for the whole server (/admin settings advanced_mode 0)."""
+        return self.store.get("settings", {}).get("advanced_mode", "1") == "1"
+
+    def set_mode(self, uid, mode):
+        nid = self.nid(uid)
+        if mode not in ("basic", "advanced"):
+            raise GameError("Mode is basic or advanced.")
+        if mode == "advanced" and not self.advanced_allowed():
+            raise GameError("Advanced mode is switched off on this server.")
+        self.world["nations"][nid]["mode"] = mode
+        self.save()
+        if mode == "basic":
+            return "Basic mode: your work priorities (0-5) decide who works on what. Your exact counts are kept if you switch back."
+        return ("Advanced mode: set exact %s counts with /assign (for example 'food 8, wood 4'). Resources without a count "
+                "still use your priorities. You can also send part of an army." % self.word("worker"))
+
+    def need_advanced(self, nid):
+        if self.world["nations"][nid].get("mode", "basic") != "advanced":
+            raise GameError("That is an advanced-mode order. Turn it on with /mode advanced.")
+        if not self.advanced_allowed():
+            raise GameError("Advanced mode is switched off on this server.")
+
+    def assign(self, uid, text):
+        """/assign food 8, wood 4. 'auto' (or 'clear') puts everything back to priorities."""
+        nid = self.nid(uid)
+        self.need_advanced(nid)
+        if text.strip().lower() in ("auto", "clear"):
+            tick.set_assign(self.world, self.rules, nid, {r: None for r in self.rules["resources"]})
+            self.save()
+            return "All resources are automatic again (they follow your priorities)."
+        try:
+            tick.set_assign(self.world, self.rules, nid, parse_pairs(text))
+        except ValueError as e:
+            raise GameError("%s. Resources: %s." % (e, ", ".join(self.rules["resources"])))
+        self.save()
+        return "Worker counts updated. %s" % self.assign_line(nid)
+
+    def set_assign(self, uid, resource, count):
+        """One resource at a time, for the Activity. count None means automatic."""
+        nid = self.nid(uid)
+        self.need_advanced(nid)
+        try:
+            tick.set_assign(self.world, self.rules, nid, {resource: count})
+        except ValueError as e:
+            raise GameError(str(e))
+        self.save()
+        return "%s: %s." % (resource.capitalize(), "automatic" if count is None else "%d %ss" % (count, self.word("worker")))
+
+    def assign_line(self, nid):
+        n = self.world["nations"][nid]
+        fixed = n.get("assign", {})
+        placed = tick.work_plan(self.world, self.rules, n)
+        if not fixed:
+            return "Nothing is set by hand: everyone follows your priorities."
+        return "Set by hand: " + ", ".join("%s %d (working %d)" % (r, c, placed.get(r, (0, 0))[0]) for r, c in fixed.items()) + "."
+
+    def move(self, uid, army, dest, count=None):
         nid = self.nid(uid)
         w = self.world
         mine = [a for a in w["armies"] if a["owner"] == nid]
+        if count is not None:
+            self.need_advanced(nid)
         if not any(a["id"] == army for a in mine):
             have = ", ".join("%d (at %s)" % (a["id"], a["tile"]) for a in mine) or "none"
             raise GameError("You have no army %d. Your armies: %s." % (army, have))
@@ -385,7 +447,15 @@ class Game:
             raise GameError("%s isn't on the map. Open /zoom and pick a tile from the menu." % dest)
         if t["terrain"] == "water":
             raise GameError("Armies can't cross water. Pick a land tile.")
-        self.queue(nid, {"type": "move", "army": army, "dest": dest})
+        a = next(x for x in mine if x["id"] == army)
+        if count is not None and not 0 < count <= a["n"]:
+            raise GameError("Army %d has %d %ss. Send between 1 and %d." % (army, a["n"], self.word("soldier"), a["n"]))
+        order = {"type": "move", "army": army, "dest": dest}
+        if count is not None and count < a["n"]:
+            order["n"] = count
+        self.queue(nid, order)
+        if "n" in order:
+            return "%d %ss from army %d will march toward %s (one tile a night); the rest stay." % (count, self.word("soldier"), army, dest)
         return "Army %d will march toward %s (one tile a night)." % (army, dest)
 
     def cancel(self, uid):
@@ -535,6 +605,8 @@ class Game:
             len(W.owned(w, nid)), self.word("worker"), n["workers"], hw, self.word("soldier"), W.soldiers(w, nid), hs))
         lines.append("Stock: " + self.fmt(n["resources"]))
         lines.append("Priorities: " + ", ".join("%s %d" % (k, v) for k, v in n["priorities"].items()))
+        if n.get("mode") == "advanced":
+            lines.append("Advanced mode. " + self.assign_line(nid))
         lines.append("Next claim costs: " + self.fmt(tick.claim_cost(w, r, nid)))
         for a in w["armies"]:
             if a["owner"] == nid:

@@ -75,6 +75,9 @@ def nation_data(game, uid, nid):
         "others": [m["name"] for m in w["nations"] if m["id"] != nid],
         "resources": list(r["resources"]),
         "dm": game.wants_dm(uid),
+        "mode": n.get("mode", "basic"), "advanced_ok": game.advanced_allowed(),
+        "assign": dict(n.get("assign", {})), "working": {res: c for res, (c, _) in plan.items()},
+        "room": {res: tiles * r["workers_per_tile"] for res, (tiles, _) in infopage.makeable(w, r, nid).items()},
     }
 
 
@@ -162,7 +165,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"],
                         "dest": a["dest"] if a["owner"] == nid else None} for a in armies],
             "orders": [describe(o) for o in world["orders"] if o["nation"] == nid],
-            "soldier": game.word("soldier"), "worker": game.word("worker"),
+            "soldier": game.word("soldier"), "worker": game.word("worker"), "mode": world["nations"][nid].get("mode", "basic"),
             "caravans": [{"from": c["from"], "to": c["to"], "tile": c["tile"], "dest": c["dest"]} for c in caravans]})
 
     async def tile_data(request):
@@ -206,7 +209,8 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             elif kind == "build":
                 message = game.build(uid, str(body.get("tile", "")), str(body.get("building", "")))
             elif kind == "move":
-                message = game.move(uid, int(body.get("army")), str(body.get("tile", "")))
+                count = body.get("n")
+                message = game.move(uid, int(body.get("army")), str(body.get("tile", "")), None if count is None else int(count))
             elif kind == "cancel":
                 message = game.cancel(uid)
             elif kind == "upgrade":
@@ -233,6 +237,11 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
                 message = game.pact_propose(uid, str(body.get("to", "")), str(body.get("text", "")))
             elif kind in ("pact_accept", "pact_decline", "pact_break"):
                 message = getattr(game, kind)(uid, int(body.get("id")))
+            elif kind == "mode":
+                message = game.set_mode(uid, str(body.get("mode", "")))
+            elif kind == "assign":
+                count = body.get("count")
+                message = game.set_assign(uid, str(body.get("resource", "")), None if count is None else int(count))
             elif kind == "dm":
                 message = game.set_dm(uid, bool(body.get("on")))
             else:

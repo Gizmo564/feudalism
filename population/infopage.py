@@ -137,6 +137,11 @@ def page(world, rules, nid, tab="overview", resource="food"):
         balance = "%s Food %+d a night" % (icon("food"), net)
         balance += "" if nights is None else ", lasts about %d night%s" % (nights, "" if nights == 1 else "s")
         out["fields"].append(("Balance", balance + "\n" + (trend_text(world, rules, nid) or "Trends appear after the first night."), False))
+        if n.get("mode") == "advanced":
+            fixed = n.get("assign", {})
+            out["fields"].append(("Worker counts (advanced)", "\n".join(
+                "%s %s: %d set, %d working" % (icon(r), r, c, plan.get(r, (0, 0))[0]) for r, c in fixed.items())
+                or "None set by hand. Use /assign, for example 'food 8, wood 4'.", False))
         out["fields"].append(("Stock", stock_lines(), False))
     elif tab == "land":
         terrain, buildings = {}, {}

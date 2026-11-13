@@ -1,6 +1,6 @@
 import pytest
 
-from population import world as W
+from population import tick, world as W
 from population.game import Game, GameError, parse_pairs
 from population.store import Store
 
@@ -539,3 +539,89 @@ def test_second_building_costs_more_when_queued(game):
     first = game.build_price(nid, "home")
     game.build(100, free[0], "home")
     assert game.build_price(nid, "home")["wood"] > first["wood"]
+
+
+# ---------- basic and advanced mode ----------
+
+def _land_for_work(game, nid):
+    """Give nation nid four empty tiles it owns: two forest, two field."""
+    ks = [k for k in W.owned(game.world, nid) if game.world["tiles"][k]["building"] is None][:4]
+    for k, terrain in zip(ks, ("forest", "forest", "field", "field")):
+        game.world["tiles"][k]["terrain"], game.world["tiles"][k]["oil"] = terrain, False
+    for k in W.owned(game.world, nid):
+        if k not in ks and game.world["tiles"][k]["building"] is None:
+            game.world["tiles"][k]["terrain"], game.world["tiles"][k]["oil"] = "field", False
+    return ks
+
+
+def _worked(game, nid):
+    return {r: c for r, (c, _) in tick.work_plan(game.world, game.rules, game.world["nations"][nid]).items()}
+
+
+def test_basic_is_the_default_and_advanced_orders_need_advanced(game):
+    assert game.mode_of(100) == "basic"
+    with pytest.raises(GameError):
+        game.assign(100, "wood 4")
+    army = next(a for a in game.world["armies"] if a["owner"] == 0)
+    with pytest.raises(GameError):
+        game.move(100, army["id"], game.world["nations"][0]["capital"], 1)
+    assert "Advanced mode" in game.set_mode(100, "advanced")
+    with pytest.raises(GameError):
+        game.set_mode(100, "expert")
+
+
+def test_admin_can_switch_advanced_off(game):
+    game.store.set("settings", {"advanced_mode": "0"})
+    with pytest.raises(GameError):
+        game.set_mode(100, "advanced")
+
+
+def test_exact_worker_counts_are_followed_in_advanced_mode_only(game):
+    _land_for_work(game, 0)
+    n = game.world["nations"][0]
+    n["workers"] = 8
+    n["priorities"].update(food=5, wood=0, stone=0, ore=0, oil=0, livestock=0)
+    game.set_mode(100, "advanced")
+    game.assign(100, "wood 3")
+    assert _worked(game, 0).get("wood") == 3                      # by hand, even though wood priority is 0
+    assert _worked(game, 0).get("food") == 5                      # the rest follow priorities
+    game.set_mode(100, "basic")
+    assert "wood" not in _worked(game, 0)                         # the counts are kept but not used
+    game.set_mode(100, "advanced")
+    assert _worked(game, 0).get("wood") == 3
+
+
+def test_counts_over_tile_capacity_are_trimmed_and_zero_turns_off(game):
+    ks = _land_for_work(game, 0)
+    n = game.world["nations"][0]
+    n["workers"] = 30
+    game.set_mode(100, "advanced")
+    game.assign(100, "wood 99, food 0")
+    forest = [k for k in W.owned(game.world, 0) if game.world["tiles"][k]["terrain"] == "forest" and game.world["tiles"][k]["building"] is None]
+    assert _worked(game, 0)["wood"] == len(forest) * game.rules["workers_per_tile"]
+    assert "food" not in _worked(game, 0)
+    game.assign(100, "auto")
+    assert n["assign"] == {}
+
+
+def test_assign_rejects_bad_input(game):
+    game.set_mode(100, "advanced")
+    for text in ("wood", "wood x", "gold 3", "wood -2"):
+        with pytest.raises(GameError):
+            game.assign(100, text)
+
+
+def test_send_part_of_an_army(game):
+    game.set_mode(100, "advanced")
+    nid = 0
+    army = next(a for a in game.world["armies"] if a["owner"] == nid)
+    total = army["n"]
+    dest = next(k for k in W.owned(game.world, nid) if k != army["tile"] and game.world["tiles"][k]["terrain"] != "water")
+    with pytest.raises(GameError):
+        game.move(100, army["id"], dest, total + 1)
+    assert "from army" in game.move(100, army["id"], dest, 2)
+    tick.apply_orders(game.world, game.rules, __import__("random").Random(1))
+    mine = [a for a in game.world["armies"] if a["owner"] == nid]
+    assert sum(a["n"] for a in mine) == total and len(mine) == 2
+    assert sorted(a["n"] for a in mine) == [2, total - 2]
+    assert [a for a in mine if a["dest"] == dest][0]["n"] == 2

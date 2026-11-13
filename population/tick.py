@@ -44,10 +44,31 @@ def set_priorities(world, rules, nid, prios):
     n["active"] = True
 
 
+def set_assign(world, rules, nid, counts):
+    """Advanced mode: counts is {"food": 8, ...}; a value of None goes back to automatic for that resource."""
+    n = world["nations"][nid]
+    if not n["alive"]:
+        raise ValueError("your nation has been eliminated")
+    for r, v in counts.items():
+        if r not in rules["resources"]:
+            raise ValueError("unknown resource %s" % r)
+        if v is not None and not (isinstance(v, int) and 0 <= v <= 10000):
+            raise ValueError("a worker count must be a whole number, 0 or more")
+    assign = dict(n.get("assign", {}))
+    for r, v in counts.items():
+        if v is None:
+            assign.pop(r, None)
+        else:
+            assign[r] = v
+    n["assign"] = assign
+    n["active"] = True
+
+
 # ---------- helpers ----------
 
 def allocate(workers, weights, cap):
-    """Spread whole workers over keys in proportion to weights, at most `cap` each."""
+    """Spread whole workers over keys in proportion to weights, at most `cap` each (cap can be a number or {key: number})."""
+    room = cap if isinstance(cap, dict) else {k: cap for k in weights}
     alloc = {k: 0 for k in weights}
     remaining = workers
     active = set(k for k, w in weights.items() if w > 0)
@@ -57,7 +78,7 @@ def allocate(workers, weights, cap):
         rem = []
         for k in sorted(active):
             num = remaining * weights[k]
-            take = min(num // tw, cap - alloc[k])
+            take = min(num // tw, room[k] - alloc[k])
             alloc[k] += take
             given += take
             rem.append((-(num % tw), k))
@@ -65,10 +86,10 @@ def allocate(workers, weights, cap):
         for _, k in sorted(rem):
             if remaining == 0:
                 break
-            if alloc[k] < cap:
+            if alloc[k] < room[k]:
                 alloc[k] += 1
                 remaining -= 1
-        active = set(k for k in active if alloc[k] < cap)
+        active = set(k for k in active if alloc[k] < room[k])
     return alloc
 
 
@@ -241,6 +262,11 @@ def do_move(world, rules, n, o):
     t = world["tiles"].get(o.get("dest"))
     if a is None or t is None or t["terrain"] == "water":
         return W.ev(world, nid, "Move failed: bad army or destination")
+    count = o.get("n")
+    if count is not None and 0 < count < a["n"]:        # send only part of the army (advanced mode)
+        a["n"] -= count
+        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None)
+        return
     a["dest"] = o["dest"] if o["dest"] != a["tile"] else None
 
 
@@ -377,29 +403,46 @@ def is_coastal(world, k):
 
 def tile_plan(world, rules, n):
     """Where the workers go tonight, tile by tile: {tile: {resource: (workers, amount)}}.
-    A tile never holds more than workers_per_tile workers, so that is also its most output a night."""
-    nid, prio = n["id"], n["priorities"]
+    A tile never holds more than workers_per_tile workers, so that is also its most output a night.
+    Advanced mode: the exact counts in n["assign"] go first. Everyone left works by priority, but only on
+    resources with no count of their own (a resource set to 0 is off)."""
+    nid = n["id"]
+    cap = rules["workers_per_tile"]
+    room = {k: cap for k in W.owned(world, nid) if world["tiles"][k]["building"] is None}
+    plan = {}
+
+    def put(k, r, cnt):
+        amount = cnt * rules["yield_per_worker"][r]
+        if r == "food" and is_coastal(world, k):
+            amount += cnt * rules["coastal_food_bonus"]
+        old = plan.setdefault(k, {}).get(r, (0, 0))
+        plan[k][r] = (old[0] + cnt, old[1] + amount)
+
+    workers = n["workers"]
+    fixed = n.get("assign", {}) if n.get("mode") == "advanced" else {}
+    for r in rules["resources"]:
+        want = min(fixed.get(r, 0), workers)
+        # tiles that can only make this resource first, so flexible tiles stay free for the others
+        for k in sorted((k for k in room if r in candidates(world, rules, k)), key=lambda k: (len(candidates(world, rules, k)), k)):
+            take = min(want, room[k])
+            if take > 0:
+                put(k, r, take)
+                room[k] -= take
+                want -= take
+                workers -= take
+    prio = {r: v for r, v in n["priorities"].items() if r not in fixed}
     weights, cands = {}, {}
-    for k in W.owned(world, nid):
-        if world["tiles"][k]["building"] is not None:
-            continue
-        c = [r for r in candidates(world, rules, k) if prio[r] > 0]
-        if c:
+    for k, left in room.items():
+        c = [r for r in candidates(world, rules, k) if prio.get(r, 0) > 0]
+        if c and left > 0:
             cands[k] = c
             weights[k] = max(prio[r] for r in c)
-    plan = {}
-    per_tile = allocate(n["workers"], weights, rules["workers_per_tile"])
-    for k, w in per_tile.items():
+    for k, w in allocate(workers, weights, {k: room[k] for k in weights}).items():
         if w == 0:
             continue
-        split = allocate(w, {r: prio[r] for r in cands[k]}, w)
-        for r, cnt in split.items():
-            if cnt == 0:
-                continue
-            amount = cnt * rules["yield_per_worker"][r]
-            if r == "food" and is_coastal(world, k):
-                amount += cnt * rules["coastal_food_bonus"]
-            plan.setdefault(k, {})[r] = (cnt, amount)
+        for r, cnt in allocate(w, {r: prio[r] for r in cands[k]}, w).items():
+            if cnt:
+                put(k, r, cnt)
     return plan
 
 

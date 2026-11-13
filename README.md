@@ -26,7 +26,7 @@ The bot connects out to Discord, so you do not need a public URL or ngrok (that 
 - `/zoom` – interactive map: pan, zoom, pick a tile, then Claim / Build / Send army. A layers menu toggles terrain icons, buildings and housing numbers.
 - `/info` – your nation in four tabs (Overview, Economy, Land, Military) with alerts at the top; change work priorities with the buttons on the Economy tab.
 - `/report` – what happened to you last night. `/status`, `/standings`, `/map` – quick views.
-- `/help` – how to play in five short pages. `/cancel` – clear tonight's orders.
+- `/help` – how to play in six short pages. `/cancel` – clear tonight's orders.
 - `/claim`, `/build`, `/upgrade`, `/train`, `/move`, `/priorities`, `/trade`, `/offers`, `/accept`, `/decline` – typed versions of orders. `/trade` with no `to` posts an open offer on the trade board (Accept/Decline buttons; `/admin tradeboard` picks the channel, else announcements).
 - `/pact propose|accept|decline|break|list` – promises between nations, kept as a public record and never enforced. Orders are checked when you give them, with a message saying what to do instead.
 - `/tutorial start|night|hint|stop` – a private practice game against two simple rivals. While it is on, every command works on the practice realm.
@@ -76,3 +76,4 @@ On the server, `feudalism help` lists everything:
 - **Prices rise**: each building of a kind you already own makes the next of that kind 15% dearer (`/admin rules`, "Building price rise").
 - **Upgrades**: `/upgrade` (or the tile card) makes a home hold more workers or a barracks more soldiers, up to level 3. The map shows a dot per upgrade.
 - **Activity**: besides the map it now has Nation (people, work, priorities, training), Trade (offers, private or on the board), Pacts and Report tabs. Every command still works too.
+- **Basic and advanced mode** (each player chooses with `/mode`; basic is the default): basic uses the 0-5 priorities. Advanced adds `/assign` (an exact number of workers on a resource, like `food 8, wood 4`; resources without a count still follow the priorities) and `/move` with a count to send part of an army. The Nation tab in the Activity does the same with steppers. Admins can switch advanced off for the server with `/admin settings advanced_mode 0`, and `/admin rules` hides the less-used rules until "Show advanced rules" is pressed. Both modes are explained on the `/help` "modes" page.

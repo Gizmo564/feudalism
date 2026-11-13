@@ -214,7 +214,7 @@ def test_info_view_tabs_and_priority_buttons(bot, game):
 def test_help_view_has_every_page(bot, game):
     async def go():
         view = bot.HelpView(100, game)
-        assert len(view.children) == 5
+        assert len(view.children) == len(bot.guide.HELP_TABS) == 6
         for button in view.children:
             i = click(100)
             await button.callback(i)
@@ -338,6 +338,8 @@ def test_trade_board_buttons(bot, game):
 def test_rules_panel(bot, game):
     async def go():
         view = bot.RulesView(100, game)
+        view.advanced = True
+        view.layout()
         menu = selects(view)[0]
         assert len(menu.options) == len(view.rows()) and "Fog of war" in view.text()
         await find(view, "Turn on").callback(click(100))           # fog: queue a switch
@@ -376,6 +378,8 @@ def test_rules_panel_before_the_game_starts(bot, tmp_path):
 def test_rules_panel_number_entry_and_reset(bot, game):
     async def go():
         view = bot.RulesView(100, game)
+        view.advanced = True
+        view.layout()
         menu = selects(view)[0]
         await find(view, "Land").callback(click(100))
         menu = selects(view)[0]

@@ -137,9 +137,11 @@ function showTile(t, data, card, act, msg) {
     }
     const armies = data.armies.filter((a) => a.owner === data.me && a.tile !== t.k);
     if (card.can_move && armies.length) {
+      const part = el("input", {className: "field", placeholder: "How many (blank: all)", type: "number", min: 1});
       things.push(el("div", {className: "box"}, el("h3", {textContent: "Send an army here"}),
+        ...(data.mode === "advanced" ? [part] : []),
         ...armies.map((a) => button("Army " + a.id + " (" + a.n + " " + data.soldier + "s) from " + a.tile,
-                                    () => act({action: "move", army: a.id, tile: t.k}), "plain")),
+                                    () => act({action: "move", army: a.id, tile: t.k, ...(part.value ? {n: Number(part.value)} : {})}), "plain")),
         el("div", {className: "note", textContent: "It marches one tile a night."})));
     }
     out.push(...things);
@@ -219,11 +221,33 @@ function nationTab(n) {
   const count = input("How many");
   count.type = "number"; count.min = 1; count.value = 1;
   const food = n.food.net >= 0 ? "+" + n.food.net : String(n.food.net);
+  // advanced mode: an exact number of workers on a resource (or "auto": it follows the priorities)
+  const exact = (res) => {
+    const set = n.assign[res], working = n.working[res] || 0, room = n.room[res] || 0;
+    const row = el("div", {className: "row" + (room ? "" : " dim")}, el("span", {textContent: cap(res) + (room ? " (room for " + room + ")" : "")}));
+    const step = (d) => button(d > 0 ? "+" : "-", () => send({action: "assign", resource: res, count: Math.max(0, (set === undefined ? working : set) + d)}),
+                               !room ? "off" : "plain");
+    const label = set === undefined ? "auto " + working : set + (working < set ? " (" + working + " fit)" : "");
+    const auto = button("Auto", () => send({action: "assign", resource: res, count: null}), set === undefined ? "off" : "plain");
+    row.append(el("span", {className: "stepper"}, step(-1), el("b", {textContent: label}), step(1), auto));
+    return row;
+  };
+  const advanced = n.mode === "advanced";
+  const modeBox = box("Mode: " + (advanced ? "advanced" : "basic"),
+    note(advanced ? "You set exact worker counts. Resources left on auto follow the priorities below. Counts are kept if you go back to basic."
+                  : "Priorities decide who works on what. Advanced lets you set exact worker counts and send part of an army."),
+    button(advanced ? "Switch to basic" : "Switch to advanced", () => send({action: "mode", mode: advanced ? "basic" : "advanced"}),
+           !advanced && !n.advanced_ok ? "off" : "plain"),
+    ...(!advanced && !n.advanced_ok ? [note("An admin has switched advanced mode off on this server.")] : []));
   return [
+    modeBox,
+    ...(advanced ? [box("Workers on each resource", ...n.priorities.map((pr) => exact(pr.resource)),
+        note("A tile holds a fixed number of workers, so a count can't go past the room shown. 0 turns a resource off."))] : []),
     box("People", meter(n.worker + "s", p.workers, p.worker_room), meter(n.soldier + "s", p.soldiers, p.soldier_room)),
     box("Work tonight", ...(n.work.length ? n.work.map((w) => line(cap(w.resource), w.workers + " working, +" + w.amount)) : [note("Nobody is working.")]),
         line("Food", food + " a night" + (n.food.nights == null ? "" : ", lasts about " + n.food.nights + " nights"))),
-    box("Priorities", ...n.priorities.map(prio), note("0 turns a resource off, 5 is top. Only the proportions matter. Greyed resources need land that makes them.")),
+    box("Priorities", ...n.priorities.map(prio), note(advanced ? "These only decide the resources you left on auto." :
+        "0 turns a resource off, 5 is top. Only the proportions matter. Greyed resources need land that makes them.")),
     box("Train " + n.soldier + "s", note("Each costs " + n.train_cost + " and a " + n.worker + ". Room for " + room + " more."), count,
         button("Train", () => send({action: "train", n: Number(count.value)}), room ? "primary" : "off")),
     box("Advice", ...n.advice.map((a) => note("- " + a))),

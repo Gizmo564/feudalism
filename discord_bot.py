@@ -48,7 +48,7 @@ DM_REPORTS = os.environ.get("DM_REPORTS", "1").strip().lower() not in ("0", "fal
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTING_DEFAULTS = {"tick_time": TICK_TIME, "tick_tz": TICK_TZ, "tick_minutes": TICK_MINUTES, "admin_role": ADMIN_ROLE,
-                    "dm_reports": "1" if DM_REPORTS else "0"}      # each server can override these with /admin settings
+                    "dm_reports": "1" if DM_REPORTS else "0", "advanced_mode": "1"}      # each server can override these with /admin settings
 games = Games(os.environ.get("GAMES_DIR", "games"), int(os.environ.get("MAX_GAMES", "20") or 20))   # one game per server
 game = ThisServer(games, "game")        # the game of the server the current command came from
 store = ThisServer(games, "store")
@@ -393,7 +393,7 @@ class InfoView(discord.ui.View):
 
 
 class HelpView(discord.ui.View):
-    """Five short help pages, one button each."""
+    """Six short help pages, one button each."""
 
     def __init__(self, uid, g):
         super().__init__(timeout=900)
@@ -650,15 +650,28 @@ async def upgrade_tiles(interaction: discord.Interaction, current: str):
     return tile_choices(ok, current)
 
 
+@tree.command(description="Basic: work priorities decide everything. Advanced: you also set exact worker counts and split armies.")
+@app_commands.choices(mode=[app_commands.Choice(name="basic", value="basic"), app_commands.Choice(name="advanced", value="advanced")])
+async def mode(interaction: discord.Interaction, mode: app_commands.Choice[str]):
+    await run(interaction, game_for(interaction.user.id).set_mode, interaction.user.id, mode.value)
+
+
+@tree.command(description="Advanced mode: set exact workers per resource, like 'food 8, wood 4'. 'auto' goes back to priorities.")
+@app_commands.describe(counts="Pairs like 'food 8, wood 4', or 'auto' to clear them all")
+async def assign(interaction: discord.Interaction, counts: str):
+    await run(interaction, game_for(interaction.user.id).assign, interaction.user.id, counts)
+
+
 @tree.command(description="Turn workers into soldiers (needs barracks room, ore and food)")
 async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500]):
     await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count)
 
 
 @tree.command(description="March an army toward a tile (attacks if it is enemy land)")
-@app_commands.describe(army="Army number from /status", tile="Destination like 3,-2")
-async def move(interaction: discord.Interaction, army: int, tile: str):
-    await run(interaction, game_for(interaction.user.id).move, interaction.user.id, army, tile.strip())
+@app_commands.describe(army="Army number from /status", tile="Destination like 3,-2",
+                       count="Advanced mode: send only this many soldiers from the army")
+async def move(interaction: discord.Interaction, army: int, tile: str, count: app_commands.Range[int, 1, 5000] = None):
+    await run(interaction, game_for(interaction.user.id).move, interaction.user.id, army, tile.strip(), count)
 
 
 @move.autocomplete("tile")
@@ -1055,6 +1068,7 @@ class RulesView(discord.ui.View):
         self.uid, self.g = uid, g
         g.need_rules()
         self.tab = rulepanel.TABS[0][0]
+        self.advanced = False                # advanced rules are hidden until the admin asks
         self.sure = False                    # the "reset everyone's stock" button has been pressed once
         self.pick_first()
         self.layout()
@@ -1063,10 +1077,10 @@ class RulesView(discord.ui.View):
         return interaction.user.id == self.uid
 
     def pick_first(self):
-        self.key = rulepanel.keys(self.g.rules, self.tab)[0]
+        self.key = next(iter(self.rows()))
 
     def rows(self):
-        return {r["key"]: r for r in self.g.rule_rows() if r["tab"] == self.tab}
+        return {r["key"]: r for r in self.g.rule_rows() if r["tab"] == self.tab and (self.advanced or not r["advanced"])}
 
     def text(self):
         if self.g.phase == "signup":
@@ -1113,6 +1127,9 @@ class RulesView(discord.ui.View):
             self.add_item(self.button("+%d" % step, self.set_to(target + step), disabled=target + step > hi))
             self.add_item(self.button("Type a number", self.type_number(r["label"], lo, hi)))
         self.add_item(self.button("Undo change", self.set_to(r["now"]), disabled=r["next"] is None))
+        toggle = discord.ui.Button(row=4, label="Hide advanced rules" if self.advanced else "Show advanced rules")
+        toggle.callback = self.toggle_advanced
+        self.add_item(toggle)
         if self.tab == "start" and self.g.phase == "running":
             keep = discord.ui.Button(row=3, label="Save, keep everyone's current stock", style=discord.ButtonStyle.success)
             keep.callback = self.save_only
@@ -1133,6 +1150,11 @@ class RulesView(discord.ui.View):
         self.sure = False
         self.layout()
         await interaction.response.edit_message(content=self.text(), view=self)
+
+    async def toggle_advanced(self, interaction):
+        self.advanced = not self.advanced
+        self.pick_first()
+        await self.refresh(interaction)
 
     def go_tab(self, name):
         async def cb(interaction):

@@ -2,7 +2,7 @@
 Numbers come from the ruleset, so they stay right when the rules change. No Discord code here."""
 from . import advice, victory, world as W
 
-HELP_TABS = ("basics", "resources", "war", "winning", "commands")
+HELP_TABS = ("basics", "resources", "modes", "war", "winning", "commands")
 
 
 def claim_text(rules):
@@ -84,6 +84,24 @@ def resources(rules):
     return "\n".join(lines)
 
 
+def modes(rules):
+    worker, soldier, _ = words(rules)
+    return "\n".join([
+        "**Basic and advanced mode**",
+        "Each player picks their own with /mode. Everyone starts on basic. Your own choice is the only one that matters to you.",
+        "",
+        "**Basic**",
+        "Priorities (0 to 5) decide who works on what. Set them in /info. Only the proportions count. Nothing else to manage.",
+        "",
+        "**Advanced**",
+        "/assign sets an exact number of %ss on a resource, like 'food 8, wood 4'. A tile holds %d %ss, so you can't put more on a resource than your tiles for it can hold; /info shows what is actually working." % (worker, rules["workers_per_tile"], worker),
+        "Resources you don't give a count keep following your priorities. A count of 0 turns that resource off. '/assign auto' clears every count.",
+        "/move takes an optional count, so you can send part of an army and leave the rest.",
+        "",
+        "Your counts are kept if you switch back to basic, but only the mode you are in runs. An admin can switch advanced off for the whole server.",
+    ])
+
+
 def war(rules):
     worker, soldier, _ = words(rules)
     c = rules["combat"]
@@ -143,7 +161,9 @@ def commands(rules):
         "/report - what happened to you last night",
         "/status - a quick summary",
         "/standings - who is ahead",
-        "/claim, /build, /train, /move, /priorities - the typed versions of orders",
+        "/claim, /build, /upgrade, /train, /move, /priorities - the typed versions of orders",
+        "/mode basic|advanced - advanced adds /assign (exact workers per resource) and /move with a count (send part of an army)",
+        "/dms on|off - private messages (night reports, private trade offers); off until you turn them on",
         "/cancel - clear tonight's orders and start again",
         "/trade, /offers, /accept, /decline - deals with other players (open offers appear on the trade board)",
         "/pact propose|accept|decline|break|list - recorded promises",
@@ -151,7 +171,7 @@ def commands(rules):
     ])
 
 
-PAGES = {"basics": basics, "resources": resources, "war": war, "winning": winning, "commands": commands}
+PAGES = {"basics": basics, "resources": resources, "modes": modes, "war": war, "winning": winning, "commands": commands}
 
 
 def help_page(rules, tab):
@@ -166,7 +186,7 @@ def welcome(rules, name):
         "- When the game starts you get a capital, a few fields, %d %ss and %d %ss." % (
             rules["start"]["workers"], worker, rules["start"]["soldiers"], soldier),
         "- Every night the game runs. You give orders during the day.",
-        "- Use /help for the rules in five short pages, or /tutorial to practise first.",
+        "- Use /help for the rules in six short pages, or /tutorial to practise first.",
     ])
 
 

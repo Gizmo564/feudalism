@@ -49,6 +49,9 @@ for _res in ("food", "wood", "stone", "ore", "oil", "livestock"):
 TABS = [("game", "Game"), ("land", "Land"), ("trade", "Trade"), ("start", "Start")]
 BY_KEY = {r[0]: r for r in RULES}
 RISKY = {"workers"}
+# rules the panel hides until the admin presses "Show advanced rules"
+ADVANCED = {"hidden_oil", "caravans", "trade_speed", "scarcity", "share_stone_percent", "share_per_tile", "share_min_wood",
+            "share_min_stone", "workers", "start_ore", "start_oil", "start_livestock"}
 
 
 def applies(rules, key):

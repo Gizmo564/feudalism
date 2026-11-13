@@ -320,3 +320,27 @@ def test_trades_and_pacts_from_the_activity(tmp_path):
         assert (await (await post(c, 100, {"action": "pact_break", "id": waiting["id"]})).json())["ok"]
     run_as(g, steps, hooks={"offer": offer_hook, "resolved": resolved_hook})
     assert [s[0] for s in seen].count("offer") == 2
+
+
+def test_modes_assign_and_split_armies_from_the_activity(tmp_path):
+    g = make_game(tmp_path)
+    army = next(a for a in g.world["armies"] if a["owner"] == 0)
+    dest = next(k for k in W.owned(g.world, 0) if k != army["tile"])
+
+    async def steps(c):
+        h = {"Authorization": "Bearer 100"}
+        data = await (await c.get("/api/nation", headers=h)).json()
+        assert data["mode"] == "basic" and data["advanced_ok"] and data["assign"] == {}
+        assert (await post(c, 100, {"action": "assign", "resource": "wood", "count": 2})).status == 400      # basic mode
+        assert (await post(c, 100, {"action": "move", "army": army["id"], "tile": dest, "n": 1})).status == 400
+        assert (await (await post(c, 100, {"action": "mode", "mode": "advanced"})).json())["ok"]
+        assert (await (await c.get("/api/map", headers=h)).json())["mode"] == "advanced"
+        assert (await (await post(c, 100, {"action": "assign", "resource": "wood", "count": 2})).json())["ok"]
+        data = await (await c.get("/api/nation", headers=h)).json()
+        assert data["assign"] == {"wood": 2} and set(data["room"]) <= set(data["resources"])
+        assert (await (await post(c, 100, {"action": "assign", "resource": "wood", "count": None})).json())["ok"]
+        assert (await c.get("/api/nation", headers=h)).status == 200
+        assert (await (await c.get("/api/nation", headers=h)).json())["assign"] == {}
+        assert (await (await post(c, 100, {"action": "move", "army": army["id"], "tile": dest, "n": 1})).json())["ok"]
+        assert (await post(c, 100, {"action": "mode", "mode": "wizard"})).status == 400
+    run_as(g, steps)
