@@ -667,3 +667,8 @@ def test_pact_news_is_dmed_to_players_who_opted_in(game):
     assert [u for u, _ in game.take_notices()] == ["100"]
     game.pact_propose(100, "Corvain", "trade peace")      # Corvain never opted in
     assert game.take_notices() == []
+
+
+def test_goods_go_by_choice_is_ignored_in_modes_without_trains(game):
+    tid, _ = game.make_offer(100, "", "wood 5", "", by="train")      # feudalism has no trains: no error, no "by" on the offer
+    assert "by" not in next(o for o in game.world["trades"] if o["id"] == tid)

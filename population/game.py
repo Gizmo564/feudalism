@@ -623,6 +623,8 @@ class Game:
     def make_offer(self, uid, to_name, give_text, get_text, private=False, by=None):
         """Three kinds: open to anyone (no name), public to one nation, or private to one nation (private=True)."""
         nid = self.nid(uid)
+        if not any(c.get("rail_only") for c in self.rules.get("units", {}).values()):
+            by = None                                  # only modes with trains have a choice of how goods travel
         other = self.nation_named(to_name) if (to_name or "").strip() else None
         if private and other is None:
             raise GameError("A private offer needs a nation. Name who it is for, or make it public.")

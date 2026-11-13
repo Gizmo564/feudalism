@@ -322,8 +322,8 @@ function tradeTab(n) {
   const by = choose([["", "Goods go: by train if one is free, else caravan"], ["train", "Goods go by train (needs a train and rails)"], ["caravan", "Goods go by caravan (slower)"]]);
   return [
     ...(n.offers.length ? n.offers.map(offerRow) : [el("p", {className: "hint", textContent: "No open offers right now."})]),
-    box("Make an offer", to, give, get, how, by,
-        button("Send offer", () => send({action: "trade_offer", to: to.value, give: give.value, get: get.value, private: how.value === "private", by: by.value}), "primary"),
+    box("Make an offer", to, give, get, how, ...(n.trains ? [by] : []),
+        button("Send offer", () => send({action: "trade_offer", to: to.value, give: give.value, get: get.value, private: how.value === "private", by: n.trains ? by.value : ""}), "primary"),
         note("Both sides need a Market. A private offer needs a nation named above.")),
   ];
 }

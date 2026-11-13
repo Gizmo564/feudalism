@@ -71,6 +71,7 @@ def nation_data(game, uid, nid):
         "advice": advice.advice(w, r, nid),
         "train_cost": game.fmt(r["soldier"]["train_cost"]),
         "steel": {"problem": tick.steel_problem(w, r, nid), "cost": game.fmt(tick.train_cost(r, True)) if tick.steel_cfg(r) else ""},
+        "trains": any(c.get("rail_only") for c in r.get("units", {}).values()),
         "units": [{"unit": u, "problem": tick.unit_problem(w, r, nid, u), "cost": game.fmt(tick.train_cost(r, False, u))} for u in r.get("units", {})],
         "contests": game.contests(nid),
         "updates": {"pending": game.pending(nid), "past": game.world.get("past_reports", {}).get(str(nid), [])},
