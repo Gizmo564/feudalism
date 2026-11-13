@@ -10,6 +10,7 @@ All numbers in the ruleset are placeholders to be tuned.
 ## Game modes
 - `rules/population.json` – the simple mode (no titles).
 - `rules/feudalism.json` – titles by land share (Lord to Emperor), Emperor at 40% land wins, feudal wording in `terms`.
+- `rules/industrialism.json` – a third mode that starts in the industrial age. Coal (hills, mountains) and oil (rare deposits) are fuel with different power (1 and 3); workshops burn it each night. Goods chain: wood/stone/ore/coal refine into tools, bricks, provisions, coke, steel, planks, cement, then factories make machine parts and engine works make engines. Besides land, population and stock shares, you can win with 35% of all factory output (machine parts and engines made in a night) for 5 nights. `/autorefine on|off` (on by default here) keeps workshops busy whenever their inputs are in store. The Activity has an Industrial theme chip in these games. Still to come: rails, tanks, trains, artillery and air units.
 Run a mode with `python3 simulate.py --rules rules/feudalism.json`.
 
 ## Running the Discord bot

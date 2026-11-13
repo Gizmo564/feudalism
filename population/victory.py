@@ -9,13 +9,17 @@ def shares(world, rules):
     stk = {n["id"]: W.stock(n) for n in alive}
     pop_total = sum(pop.values()) or 1
     stk_total = sum(stk.values()) or 1
+    made = {n["id"]: n.get("made", 0) for n in alive}            # factory output tonight (Industrialism)
+    made_total = sum(made.values()) or 1
     out = {}
     for n in alive:
         i = n["id"]
         out[i] = {"land": 100 * len(W.owned(world, i)) // land_total,
                   "population": 100 * pop[i] // pop_total,
                   "stock": 100 * stk[i] // stk_total,
-                  "stock_amount": stk[i]}
+                  "stock_amount": stk[i],
+                  "output": 100 * made[i] // made_total,
+                  "output_amount": made[i]}
     return out
 
 
@@ -41,7 +45,7 @@ def check(world, rules):
         return alive[0]["id"], "last nation standing"
     sh = shares(world, rules)
     need = {"land": land_threshold(world, rules), "population": v["population_share_percent"],
-            "stock": v["stock_share_percent"]}
+            "stock": v["stock_share_percent"], "output": v.get("output_share_percent")}
     winner = None
     for n in alive:
         for metric, pct in need.items():
@@ -50,7 +54,9 @@ def check(world, rules):
             ok = sh[n["id"]][metric] >= pct
             if metric == "stock":
                 ok = ok and sh[n["id"]]["stock_amount"] >= v["stock_min"]
-            n["hold"][metric] = n["hold"][metric] + 1 if ok else 0
+            if metric == "output":
+                ok = ok and sh[n["id"]]["output_amount"] >= v.get("output_min", 1)
+            n["hold"][metric] = n["hold"].get(metric, 0) + 1 if ok else 0
             if winner is None and n["hold"][metric] >= v["hold_ticks"]:
                 winner = (n["id"], "%d%% of the world's %s held for %d ticks" % (pct, metric, v["hold_ticks"]))
     return winner

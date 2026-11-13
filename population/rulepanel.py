@@ -52,7 +52,7 @@ RULES = [
      "Soldiers a new nation starts with. Only nations created after the change are affected.", "start"),
 ]
 # starting stock: one rule per resource
-for _res in ("food", "wood", "stone", "ore", "oil", "livestock"):
+for _res in ("food", "wood", "stone", "ore", "oil", "coal", "livestock"):
     RULES.append(("start_" + _res, "Starting " + _res, "number", ("start", "resources", _res), 0, (0, 1000, 5),
                   "How much %s a new nation starts with. Only nations created after the change are affected." % _res, "start"))
 # the tabs of the admin's panel, in order
@@ -69,6 +69,8 @@ def applies(rules, key):
         return "port" in rules.get("buildings", {})
     if key == "steel_soldiers":
         return "steel_soldiers" in rules
+    if key == "start_coal":
+        return "coal" in rules["resources"]
     if key == "win_share":
         return "ranks" in rules and rules["victory"].get("land_share_percent") is not None
     return True

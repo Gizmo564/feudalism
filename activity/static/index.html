@@ -128,6 +128,10 @@
     /* the optional paper theme: an old parchment map */
     body.paper { --bg: #efe3c4; --panel: #f6ecd2; --line: #cdb98b; --text: #3b2f1e; --muted: #7a6a4c; --accent: #8b5a2b; --chip: #eadcb6;
                  font-family: Georgia, "Iowan Old Style", serif; }
+    /* the industrial theme (Industrialism games): soot, steel and rust */
+    body.industrial { --bg: #17191b; --panel: #232629; --line: #3a3f44; --text: #e6e2d8; --muted: #a29e93; --accent: #d9822b; --chip: #2a2e32;
+                      font-family: "Barlow Semi Condensed", "Arial Narrow", Inter, system-ui, sans-serif; }
+    body.industrial .chip.on { background: var(--accent); color: #1a1a1a; }
     body.paper .chip { background: #f6ecd2e6; }
     body.paper .chip.on { background: var(--accent); color: #fff; }
     body.paper #zoom button, body.paper #legend { background: #f6ecd2f0; }
@@ -154,6 +158,7 @@
           <button class="chip on" id="terrain">Terrain</button>
           <button class="chip" id="coords">Coordinates</button>
           <button class="chip" id="paper">Paper</button>
+          <button class="chip" id="industrial" style="display:none">Industrial</button>
         </div>
         <div id="zoom" class="overlay">
           <button id="zin" aria-label="Zoom in">+</button>
@@ -165,6 +170,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=21"></script>
+  <script src="/static/app.js?v=22"></script>
 </body>
 </html>

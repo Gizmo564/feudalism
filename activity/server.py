@@ -135,7 +135,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
         nation = game.world["nations"][nid]["name"] if live else None
         return web.json_response({"id": user["id"], "name": user.get("global_name") or user["username"], "nation": nation,
                                   "fallen": live and not game.world["nations"][nid]["alive"],
-                                  "over": over_data(game, nid) if live else None,
+                                  "over": over_data(game, nid) if live else None, "mode": game.rules["name"].lower() if live else None,
                                   "win": guide.winning(game.rules).split("\n\n")[0].replace("**", "").split("\n", 1)[1] if live else None})
 
     async def map_data(request):

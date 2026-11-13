@@ -646,6 +646,12 @@ def tile_plan(world, rules, n):
                 want -= take
                 workers -= take
     prio = {r: v for r, v in n["priorities"].items() if r not in fixed}
+    if n.get("auto"):                                  # auto-refine: refine whenever the inputs are in store, never when they are not
+        for r, spec in rules.get("refine", {}).items():
+            if r in fixed:
+                continue
+            have = all(n["resources"].get(i, 0) >= v for i, v in spec["inputs"].items())
+            prio[r] = max(prio.get(r, 0), 3) if have else 0
     weights, cands = {}, {}
     for k, left in room.items():
         c = [r for r in candidates(world, rules, k) if prio.get(r, 0) > 0]
@@ -671,20 +677,41 @@ def work_plan(world, rules, n):
     return plan
 
 
+def burn_fuel(rules, res, workers):
+    """Workshops burn fuel each night (rules "fuel"): coal first, then oil, which has more power. Returns the share (0 to 1) of the
+    power needed that was found; with less than that the workshops make proportionally less."""
+    cfg = rules.get("fuel")
+    need = workers * cfg["per_worker"] if cfg else 0
+    if need == 0:
+        return 1
+    power = 0
+    for r in sorted(cfg["power"], key=lambda r: cfg["power"][r]):          # weakest fuel first
+        use = min(res.get(r, 0), math.ceil((need - power) / cfg["power"][r]))
+        if use > 0:
+            res[r] -= use
+            power += use * cfg["power"][r]
+    return min(1, power / need)
+
+
 def produce(world, rules, n):
-    """Raw resources first, then workshops turn what is in the store into refined goods (never more than the inputs allow)."""
+    """Raw resources first, then workshops turn what is in the store into refined goods (never more than the inputs allow,
+    and, where the ruleset has fuel, never more than the fuel burned allows)."""
     plan = work_plan(world, rules, n)
     res, refine = n["resources"], rules.get("refine", {})
     for r, (_, amount) in plan.items():
         if r not in refine:
             res[r] = res.get(r, 0) + amount
+    share = burn_fuel(rules, res, sum(cnt for r, (cnt, _) in plan.items() if r in refine))
+    n["made"] = 0                                    # factory output tonight (goods marked "output" in the ruleset)
     for r, (_, amount) in plan.items():
         if r in refine:
             inputs = refine[r]["inputs"]
-            made = min([amount] + [res.get(i, 0) // v for i, v in inputs.items()])
+            made = min([int(amount * share)] + [res.get(i, 0) // v for i, v in inputs.items()])
             for i, v in inputs.items():
                 res[i] -= v * made
             res[r] = res.get(r, 0) + made
+            if refine[r].get("output"):
+                n["made"] += made
 
 
 def eat_and_grow(world, rules, n):

@@ -35,6 +35,11 @@ BUILDING_ICON = {
     "cookhouse": "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
     "port": "M0 -5V4M-3 -2H3M-4.5 1Q0 6 4.5 1",
     "kiln": "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
+    "sawmill": "M-5 3H5M-5 3L-3 -3L-1 3L1 -3L3 3L5 -3",
+    "cokeworks": "M-5 4H5V-1H-5ZM-3 -1V-5M3 -1V-5",
+    "cementworks": "M-5 4H5L3 -2H-3ZM-1.5 -2V-5H1.5V-2",
+    "factory": "M-5 4V-1L-1.5 -3V-1L2 -3V-1L5 -1V4ZM3 -1V-5",
+    "engineworks": "M-3 -3H3V3H-3ZM0 -5V-3M0 3V5M-5 0H-3M3 0H5",
 }
 CROWN_ICON = "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5"
 CARAVAN_ICON = "M-4.5 -3.5H3.5V1.5H-4.5ZM3.5 -1H5.5L6.5 1.5H3.5M-3 4.5V3M3 4.5V3"

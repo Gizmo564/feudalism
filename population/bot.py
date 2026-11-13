@@ -24,6 +24,28 @@ def enemy_targets(world, nid):
     return sorted(set(out))
 
 
+CHAIN = ["toolworks", "kiln", "cokeworks", "forge", "sawmill", "factory"]   # toolworks first: the factory costs tools
+
+
+def build_industry(world, rules, nid):
+    """Build the next missing workshop in CHAIN (one at a time) and put workers on refining."""
+    me = world["nations"][nid]
+    have = {world["tiles"][k]["building"] for k in W.owned(world, nid)}
+    queued = {o.get("building") for o in world["orders"] if o["nation"] == nid and o["type"] == "build"}
+    for b in CHAIN:
+        if b in have:
+            continue
+        if b not in queued:
+            for k in W.owned(world, nid):
+                if world["tiles"][k]["building"] is None and tick.can_pay(me["resources"], rules["buildings"][b]["cost"]):
+                    tick.queue(world, rules, nid, {"type": "build", "tile": k, "building": b})
+                    break
+        break
+    me["priorities"].update(stone=5, wood=4, ore=3, coal=4)
+    for good in rules["refine"]:
+        me["priorities"][good] = 4 if good in ("bricks", "coke", "steel", "planks", "machine_parts") else 0
+
+
 def act(world, rules, nid, aggression, rng):
     me = world["nations"][nid]
     res = me["resources"]
@@ -43,6 +65,9 @@ def act(world, rules, nid, aggression, rng):
             if t["building"] is None and tick.can_pay(res, rules["buildings"]["barracks"]["cost"]):
                 tick.queue(world, rules, nid, {"type": "build", "tile": k, "building": "barracks"})
                 break
+    # 2b. in a ruleset with a factory-output win, some bots (a third of them) build the chain toward factories and work it
+    if rules["victory"].get("output_share_percent") and nid % 3 == 0:
+        build_industry(world, rules, nid)
     # 3. claim the frontier tile closest to our capital
     front = frontier(world, nid)
     if front and tick.can_pay(res, tick.claim_cost(world, rules, nid)):

@@ -289,7 +289,7 @@ def found_nation(world, rules, name, k, resources, protected_until=0):
     world["nations"].append({
         "id": nid, "name": name, "alive": True, "capital": k,
         "workers": rules["start"]["workers"], "resources": resources,
-        "priorities": dict(rules["default_priorities"]),
+        "priorities": dict(rules["default_priorities"]), "auto": rules.get("auto_refine", False),
         "idle": 0, "active": False, "claims_this_tick": 0,
         "hold": {"land": 0, "population": 0, "stock": 0},
         "protected_until": protected_until,

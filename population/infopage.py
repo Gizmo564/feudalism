@@ -5,10 +5,12 @@ from . import advice, render, tick, victory, views, world as W
 TABS = ("overview", "economy", "land", "military")
 ICON = {"food": "\U0001f33e", "wood": "\U0001fab5", "stone": "\U0001faa8", "ore": "⛏️",
         "oil": "\U0001f6e2️", "livestock": "\U0001f404",
-        "tools": "\U0001f527", "steel": "⚙️", "provisions": "\U0001f35e", "bricks": "\U0001f9f1"}
+        "tools": "\U0001f527", "steel": "⚙️", "provisions": "\U0001f35e", "bricks": "\U0001f9f1",
+        "coal": "\U0001faa8", "coke": "\U0001f525", "planks": "\U0001f6d6", "cement": "\U0001f9f1", "machine_parts": "\U0001f529", "engines": "\U0001f69c"}
 SQUARE = {"food": "\U0001f7e9", "wood": "\U0001f7eb", "stone": "⬜", "ore": "\U0001f7e6",
           "oil": "⬛", "livestock": "\U0001f7e8",
-          "tools": "\U0001f7e7", "steel": "\U0001f7ea", "provisions": "\U0001f536", "bricks": "\U0001f7e5"}
+          "tools": "\U0001f7e7", "steel": "\U0001f7ea", "provisions": "\U0001f536", "bricks": "\U0001f7e5",
+          "coal": "⬛", "coke": "\U0001f7eb", "planks": "\U0001f7e8", "cement": "⬜", "machine_parts": "\U0001f7e6", "engines": "\U0001f7ea"}
 WIDTH = 10
 
 

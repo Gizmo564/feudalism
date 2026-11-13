@@ -66,6 +66,7 @@ def test_login_flow(tmp_path):
         me = await client.get("/api/me", headers={"Authorization": "Bearer tok"})
         got_me = await me.json()
         assert "nights in a row" in got_me.pop("win")
+        assert got_me.pop("mode") in ("population", "feudalism", "industrialism")
         assert got_me == {"id": "100", "name": "Alder", "nation": "Aldmere", "fallen": False, "over": None}
         assert (await client.get("/api/me")).status == 401                                       # no token
         assert (await client.get("/api/me", headers={"Authorization": "Bearer nope"})).status == 401

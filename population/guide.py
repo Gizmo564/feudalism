@@ -86,6 +86,10 @@ def resources(rules):
     lines.append("Your capital houses %d %ss and %d %ss and gets +%d%% defence." % (
         cap["houses_workers"], worker, cap["houses_soldiers"], soldier, cap["defense_percent"]))
     lines += ["", "**Priorities** (0 to 5) say how your %ss are shared between resources. Only the proportions matter." % worker]
+    fuel = rules.get("fuel")
+    if fuel:
+        lines += ["", "**Fuel**: every %s working in a workshop burns %d power a night, coal first, then oil. %s. Short of fuel, workshops make less." % (
+            worker, fuel["per_worker"], ", ".join("1 %s = %d power" % (r, p) for r, p in sorted(fuel["power"].items(), key=lambda x: x[1])))]
     return "\n".join(lines)
 
 
@@ -180,6 +184,8 @@ def winning(rules):
         parts.append("%d%% of all people" % v["population_share_percent"])
     if v["stock_share_percent"] is not None:
         parts.append("%d%% of all stored goods" % v["stock_share_percent"])
+    if v.get("output_share_percent") is not None:
+        parts.append("%d%% of all factory output (machine parts and engines made in a night)" % v["output_share_percent"])
     lines.append("Hold %s for %d nights in a row." % (" or ".join(parts), v["hold_ticks"]))
     if v.get("land_share_decay_per_tick") and v["land_share_percent"] is not None:
         lines.append("From night %d the land bar falls %d%% a night, down to a floor of %.1f times a fair share, so games always finish." % (
@@ -205,6 +211,7 @@ def commands(rules):
         "/contest - give up or fight for a tile you and someone else claimed the same night",
         "/play - the clickable map (Activity)",
         "/mode basic|advanced - advanced adds /assign (exact workers per resource) and /move with a count (send part of an army)",
+        *(["/autorefine on|off - workshops work whenever their inputs are in store"] if rules.get("refine") else []),
         "/dms on|off - the bot DMs you your night report, pact proposals and trade offers (with buttons to answer); off until you turn it on, and worth turning on",
         "/orders - see what you have queued for tonight",
         "/cancel - cancel one queued order by its number, or all of them",

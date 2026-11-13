@@ -117,13 +117,13 @@ def race(world, rules, nid=None):
     v = rules["victory"]
     sh = victory.shares(world, rules)
     need = {"land": victory.land_threshold(world, rules), "population": v["population_share_percent"],
-            "stock": v["stock_share_percent"]}
+            "stock": v["stock_share_percent"], "output": v.get("output_share_percent")}
     lines = []
     for metric, pct in need.items():
         if pct is None or not sh:
             continue
         lead = max(sh, key=lambda i: sh[i][metric])
-        text = "To win: %d%% of all %s for %d nights." % (pct, metric, v["hold_ticks"])
+        text = "To win: %d%% of all %s for %d nights." % (pct, "factory output" if metric == "output" else metric, v["hold_ticks"])
         if nid is not None:
             text += " You: %d%%." % sh.get(nid, {}).get(metric, 0)
         if lead == nid:

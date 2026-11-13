@@ -12,19 +12,22 @@ function el(tag, props = {}, ...kids) {
   return e;
 }
 
-const THEMES = {   // the map's colours: the normal ones, and the paper (old parchment map) ones
+const THEMES = {   // the map's colours: the normal ones, paper (old parchment map), and industrial (Industrialism games only)
   normal: {terrain: {field: "#e2e8c8", forest: "#bed2aa", hills: "#e2d4b0", mountain: "#c8c6c2", water: "#dcebf7"}, neutral: "#ede9e0", fog: "#c4c2ba", back: "#2b2d31"},
   paper: {terrain: {field: "#ebdfb9", forest: "#cfc795", hills: "#dcc78f", mountain: "#cbbfa5", water: "#b7cdd1"}, neutral: "#f1e6c6", fog: "#cdbf9c", back: "#e3d3a8"},
+  industrial: {terrain: {field: "#9aa08c", forest: "#6f8a73", hills: "#a89c88", mountain: "#8a8e96", water: "#6f93ad"}, neutral: "#b4b0a6", fog: "#55585c", back: "#1a1c1f"},
 };
 let TERRAIN = THEMES.normal.terrain, NEUTRAL = THEMES.normal.neutral, FOG = THEMES.normal.fog, BACK = THEMES.normal.back;
-function setTheme(paper) {
-  const t = THEMES[paper ? "paper" : "normal"];
+function setTheme(name) {
+  if (!THEMES[name]) name = "normal";
+  const t = THEMES[name];
   TERRAIN = t.terrain; NEUTRAL = t.neutral; FOG = t.fog; BACK = t.back;
-  document.body.classList.toggle("paper", paper);
-  try { localStorage.setItem("paper", paper ? "1" : ""); } catch (e) {}
+  for (const x of ["paper", "industrial"]) document.body.classList.toggle(x, x === name);
+  try { localStorage.setItem("theme", name); } catch (e) {}
 }
-try { setTheme(localStorage.getItem("paper") === "1"); } catch (e) {}
-const RES_COLOUR = {food: "#8fc46b", wood: "#c28a4a", stone: "#a9a7a1", ore: "#7fa3c7", oil: "#6b5a50", livestock: "#e0a1a1", tools: "#d9a441", steel: "#9aa5b1", provisions: "#e6c27a", bricks: "#c0614a"};
+const theme = () => ["paper", "industrial"].find((x) => document.body.classList.contains(x)) || "normal";
+try { setTheme(localStorage.getItem("theme") || (localStorage.getItem("paper") === "1" ? "paper" : "normal")); } catch (e) {}
+const RES_COLOUR = {food: "#8fc46b", wood: "#c28a4a", stone: "#a9a7a1", ore: "#7fa3c7", oil: "#6b5a50", livestock: "#e0a1a1", tools: "#d9a441", steel: "#9aa5b1", provisions: "#e6c27a", bricks: "#c0614a", coal: "#3b3b3f", coke: "#6e6a66", planks: "#d2a66b", cement: "#b8b4aa", machine_parts: "#7d8a99", engines: "#5c6b7a"};
 const SQRT3 = Math.sqrt(3);
 // the same little line icons the Discord map uses (drawn about 14 units wide)
 const ICON = {
@@ -47,6 +50,11 @@ const BUILDING_D = {
   cookhouse: "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
   port: "M0 -5V4M-3 -2H3M-4.5 1Q0 6 4.5 1",
   kiln: "M-5 -3H5V0H-5ZM-5 0H5V3H-5ZM0 -3V0M-2.5 0V3M2.5 0V3",
+  sawmill: "M-5 3H5M-5 3L-3 -3L-1 3L1 -3L3 3L5 -3",
+  cokeworks: "M-5 4H5V-1H-5ZM-3 -1V-5M3 -1V-5",
+  cementworks: "M-5 4H5L3 -2H-3ZM-1.5 -2V-5H1.5V-2",
+  factory: "M-5 4V-1L-1.5 -3V-1L2 -3V-1L5 -1V4ZM3 -1V-5",
+  engineworks: "M-3 -3H3V3H-3ZM0 -5V-3M0 3V5M-5 0H-3M3 0H5",
   capital: "M-5 4.5V-2.5L-2.5 0.5L0 -4.5L2.5 0.5L5 -2.5V4.5ZM-5 2H5",
 };
 const DIAMOND = new Path2D("M0 -12L10 0L0 12L-10 0Z");
@@ -70,7 +78,7 @@ const swatch = (colour) => el("i", {className: "sw", style: "background:" + colo
 function showBars(data, name) {
   const mine = data.nations.find((n) => n.id === data.me);
   $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name, el("span", {className: "night", textContent: "Night " + data.tick}));
-  const raw = ["food", "wood", "stone", "ore", "oil", "livestock"];        // refined goods only show up once you have some
+  const raw = ["food", "wood", "stone", "ore", "oil", "coal", "livestock"];        // refined goods only show up once you have some
   ui.contests = (data.contests || []).length;
   ui.pending = data.pending || 0;
   drawTabs();
@@ -578,8 +586,14 @@ function showMap(data, headers) {
   $("zout").onclick = () => zoom(0.8);
   $("home").onclick = () => { centreOn(data.capital); draw(); };
   $("coords").onclick = () => { coords = !coords; $("coords").classList.toggle("on", coords); draw(); };
-  $("paper").classList.toggle("on", document.body.classList.contains("paper"));
-  $("paper").onclick = () => { setTheme(!document.body.classList.contains("paper")); $("paper").classList.toggle("on", document.body.classList.contains("paper")); legend(); draw(); };
+  for (const x of ["paper", "industrial"]) {                 // each theme chip switches its theme on, or back to normal
+    $(x).classList.toggle("on", theme() === x);
+    $(x).onclick = () => {
+      setTheme(theme() === x ? "normal" : x);
+      for (const y of ["paper", "industrial"]) $(y).classList.toggle("on", theme() === y);
+      legend(); draw();
+    };
+  }
   $("terrain").onclick = () => { terrain = !terrain; $("terrain").classList.toggle("on", terrain); draw(); };
   addEventListener("resize", resize);
   ui.headers = headers; ui.refresh = refresh;
@@ -659,7 +673,9 @@ async function main() {
   const data = await (await fetch("/.proxy/api/map", {headers})).json();
   data.name = me.nation;
   showBars(data, me.nation);
+  if (me.mode !== "industrialism" && theme() === "industrial") setTheme("normal");        // that theme belongs to Industrialism games
   showMap(data, headers);
+  $("industrial").style.display = me.mode === "industrialism" ? "" : "none";
   showIntro(me);
 }
 

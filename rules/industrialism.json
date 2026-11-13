@@ -1,0 +1,604 @@
+{
+  "name": "Industrialism",
+  "version": 1,
+  "resources": [
+    "food",
+    "wood",
+    "stone",
+    "ore",
+    "oil",
+    "coal",
+    "livestock",
+    "tools",
+    "bricks",
+    "provisions",
+    "steel",
+    "coke",
+    "planks",
+    "cement",
+    "machine_parts",
+    "engines"
+  ],
+  "terrain": {
+    "field": {
+      "produces": [
+        "food",
+        "livestock"
+      ],
+      "defense_percent": 0
+    },
+    "forest": {
+      "produces": [
+        "wood"
+      ],
+      "defense_percent": 20
+    },
+    "hills": {
+      "produces": [
+        "stone",
+        "livestock",
+        "coal"
+      ],
+      "defense_percent": 25
+    },
+    "mountain": {
+      "produces": [
+        "ore",
+        "coal"
+      ],
+      "defense_percent": 50
+    },
+    "water": {
+      "produces": [],
+      "defense_percent": 0
+    }
+  },
+  "terrain_weights": {
+    "field": 40,
+    "forest": 20,
+    "hills": 15,
+    "mountain": 15,
+    "water": 10
+  },
+  "oil_deposit_one_in": 8,
+  "yield_per_worker": {
+    "food": 5,
+    "livestock": 2,
+    "wood": 2,
+    "stone": 2,
+    "ore": 1,
+    "oil": 2,
+    "tools": 1,
+    "steel": 1,
+    "provisions": 1,
+    "bricks": 1,
+    "coal": 3,
+    "coke": 1,
+    "planks": 1,
+    "cement": 1,
+    "machine_parts": 1,
+    "engines": 1
+  },
+  "coastal_food_bonus": 1,
+  "workers_per_tile": 5,
+  "default_priorities": {
+    "food": 5,
+    "wood": 3,
+    "stone": 3,
+    "ore": 2,
+    "oil": 1,
+    "livestock": 1,
+    "tools": 0,
+    "steel": 0,
+    "provisions": 0,
+    "bricks": 0,
+    "coal": 2,
+    "coke": 0,
+    "planks": 0,
+    "cement": 0,
+    "machine_parts": 0,
+    "engines": 0
+  },
+  "eat_per_person": 1,
+  "food_value": {
+    "livestock": 2
+  },
+  "spoilage": {
+    "keep_ticks": 10,
+    "percent": 10
+  },
+  "growth": {
+    "percent": 10,
+    "reserve_ticks": 1
+  },
+  "over_housing_shrink_percent": 20,
+  "starvation_death_percent": 50,
+  "buildings": {
+    "home": {
+      "cost": {
+        "wood": 12,
+        "stone": 6
+      },
+      "houses_workers": 10,
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 30,
+            "stone": 18,
+            "tools": 4
+          },
+          "houses_workers": 14
+        },
+        {
+          "cost": {
+            "wood": 60,
+            "stone": 36,
+            "tools": 8,
+            "bricks": 4
+          },
+          "houses_workers": 18
+        }
+      ]
+    },
+    "barracks": {
+      "cost": {
+        "wood": 19,
+        "stone": 19,
+        "ore": 6
+      },
+      "houses_soldiers": 10,
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 38,
+            "stone": 38,
+            "ore": 6,
+            "steel": 4
+          },
+          "houses_soldiers": 14
+        },
+        {
+          "cost": {
+            "wood": 75,
+            "stone": 75,
+            "ore": 10,
+            "steel": 8,
+            "bricks": 4
+          },
+          "houses_soldiers": 18
+        }
+      ]
+    },
+    "market": {
+      "cost": {
+        "wood": 25,
+        "stone": 13
+      }
+    },
+    "wall": {
+      "cost": {
+        "stone": 25
+      },
+      "defense_percent": 20
+    },
+    "toolworks": {
+      "cost": {
+        "wood": 20,
+        "stone": 10
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 30,
+            "stone": 18
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 60,
+            "stone": 36,
+            "tools": 6
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "forge": {
+      "cost": {
+        "wood": 15,
+        "stone": 15,
+        "ore": 4
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 25,
+            "stone": 25,
+            "ore": 6
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 50,
+            "stone": 50,
+            "ore": 12,
+            "steel": 4
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "cookhouse": {
+      "cost": {
+        "wood": 18,
+        "stone": 8
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 28,
+            "stone": 12
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 55,
+            "stone": 24,
+            "provisions": 5
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "kiln": {
+      "cost": {
+        "wood": 12,
+        "stone": 20
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 20,
+            "stone": 30
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 40,
+            "stone": 60,
+            "bricks": 4
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "port": {
+      "cost": {
+        "wood": 40,
+        "stone": 20,
+        "tools": 6,
+        "bricks": 4
+      }
+    },
+    "sawmill": {
+      "cost": {
+        "wood": 15,
+        "stone": 8
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 25,
+            "stone": 15
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 50,
+            "stone": 30,
+            "tools": 6
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "cokeworks": {
+      "cost": {
+        "wood": 12,
+        "stone": 20,
+        "bricks": 2
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 20,
+            "stone": 30,
+            "bricks": 4
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 40,
+            "stone": 60,
+            "bricks": 8
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "cementworks": {
+      "cost": {
+        "wood": 15,
+        "stone": 25,
+        "bricks": 2
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "wood": 25,
+            "stone": 40,
+            "bricks": 4
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "wood": 50,
+            "stone": 80,
+            "bricks": 8
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "factory": {
+      "cost": {
+        "wood": 30,
+        "stone": 30,
+        "bricks": 8,
+        "steel": 4,
+        "tools": 4
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "planks": 10,
+            "bricks": 12,
+            "steel": 8,
+            "tools": 6
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "planks": 20,
+            "cement": 10,
+            "steel": 16,
+            "machine_parts": 4
+          },
+          "slots": 5
+        }
+      ]
+    },
+    "engineworks": {
+      "cost": {
+        "planks": 10,
+        "bricks": 10,
+        "steel": 8,
+        "machine_parts": 2
+      },
+      "upgrades": [
+        {
+          "cost": {
+            "planks": 16,
+            "cement": 8,
+            "steel": 14,
+            "machine_parts": 4
+          },
+          "slots": 4
+        },
+        {
+          "cost": {
+            "planks": 30,
+            "cement": 16,
+            "steel": 24,
+            "machine_parts": 8
+          },
+          "slots": 5
+        }
+      ]
+    }
+  },
+  "capital": {
+    "houses_workers": 20,
+    "houses_soldiers": 10,
+    "defense_percent": 50
+  },
+  "start": {
+    "workers": 12,
+    "soldiers": 6,
+    "resources": {
+      "food": 40,
+      "wood": 40,
+      "stone": 30,
+      "ore": 10,
+      "oil": 0,
+      "livestock": 0,
+      "tools": 0,
+      "steel": 0,
+      "provisions": 0,
+      "bricks": 0,
+      "coal": 10,
+      "coke": 0,
+      "planks": 0,
+      "cement": 0,
+      "machine_parts": 0,
+      "engines": 0
+    },
+    "min_spacing": 4,
+    "min_land_neighbors": 5,
+    "min_fields_near": 3,
+    "min_wood_stone_near": 2,
+    "start_fields": 3,
+    "late_join_catchup_percent": 50,
+    "late_join_protection_ticks": 3
+  },
+  "claim": {
+    "base": {
+      "wood": 3
+    },
+    "per_tile": {
+      "wood": 1,
+      "stone": 1
+    },
+    "per_tick": 1,
+    "share_percent": 20,
+    "share_stone_percent": 10,
+    "share_per_tile": 1,
+    "share_min": {
+      "wood": 3,
+      "stone": 1
+    },
+    "scarcity_percent": 200
+  },
+  "soldier": {
+    "train_cost": {
+      "ore": 1,
+      "food": 2
+    }
+  },
+  "combat": {
+    "capital_takes_all_land": true,
+    "roll_percent": [
+      80,
+      90,
+      100,
+      110,
+      120
+    ],
+    "casualty_percent": 50
+  },
+  "movement": {
+    "trade_tiles_per_tick": 2,
+    "army_steps_on_own_land": 2
+  },
+  "oil_upkeep": {
+    "soldiers_per_oil": 5,
+    "shortfall_loss_percent": 20
+  },
+  "trade": {
+    "requires_market": true,
+    "caravans": false,
+    "offer_expires_ticks": 3,
+    "water": 0,
+    "sea_speed_percent": 150
+  },
+  "vision_radius": 2,
+  "fog_of_war": false,
+  "autopilot": {
+    "idle_ticks_before_decay": 5,
+    "decay_percent": 5
+  },
+  "victory": {
+    "hold_ticks": 5,
+    "land_share_percent": 40,
+    "population_share_percent": 35,
+    "stock_share_percent": 35,
+    "stock_min": 200,
+    "last_nation_standing": true,
+    "output_share_percent": 35,
+    "output_min": 10
+  },
+  "build": {
+    "rise_percent": 15
+  },
+  "refine_slots": 3,
+  "refine": {
+    "tools": {
+      "building": "toolworks",
+      "inputs": {
+        "wood": 1,
+        "stone": 1
+      }
+    },
+    "bricks": {
+      "building": "kiln",
+      "inputs": {
+        "stone": 1,
+        "coal": 1
+      }
+    },
+    "provisions": {
+      "building": "cookhouse",
+      "inputs": {
+        "livestock": 1,
+        "food": 1
+      }
+    },
+    "coke": {
+      "building": "cokeworks",
+      "inputs": {
+        "coal": 2
+      }
+    },
+    "steel": {
+      "building": "forge",
+      "inputs": {
+        "ore": 1,
+        "coke": 1
+      }
+    },
+    "planks": {
+      "building": "sawmill",
+      "inputs": {
+        "wood": 2
+      }
+    },
+    "cement": {
+      "building": "cementworks",
+      "inputs": {
+        "stone": 2,
+        "coal": 1
+      }
+    },
+    "machine_parts": {
+      "building": "factory",
+      "inputs": {
+        "steel": 1,
+        "planks": 1
+      },
+      "output": true
+    },
+    "engines": {
+      "building": "engineworks",
+      "inputs": {
+        "machine_parts": 2,
+        "steel": 1
+      },
+      "output": true
+    }
+  },
+  "port": {
+    "boat_wood": 8
+  },
+  "steel_soldiers": {
+    "enabled": true,
+    "steel": 1,
+    "bonus_percent": 25,
+    "min_barracks_level": 2
+  },
+  "fuel": {
+    "per_worker": 1,
+    "power": {
+      "coal": 1,
+      "oil": 3
+    }
+  },
+  "auto_refine": true
+}

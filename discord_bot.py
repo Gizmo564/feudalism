@@ -498,7 +498,8 @@ LAYERS = (("icons", "Terrain icons", "Draw a small picture on each tile"),
           ("people", "Housing numbers", "Label buildings with how many people they house"),
           ("production", "Production", "Show what each of your tiles makes tonight"),
           ("coords", "Coordinates", "Label every tile with its number"))
-LETTER = {"food": "F", "livestock": "L", "wood": "W", "stone": "S", "ore": "O", "oil": "Oi", "tools": "T", "steel": "St", "provisions": "P", "bricks": "B"}
+LETTER = {"food": "F", "livestock": "L", "wood": "W", "stone": "S", "ore": "O", "oil": "Oi", "tools": "T", "steel": "St", "provisions": "P", "bricks": "B",
+          "coal": "C", "coke": "Ck", "planks": "Pl", "cement": "Ce", "machine_parts": "M", "engines": "E"}
 
 
 class MapView(discord.ui.View):
@@ -528,7 +529,7 @@ class MapView(discord.ui.View):
         if not self.layers["production"]:
             return None
         plan = tick.tile_plan(self.g.world, self.g.rules, self.g.world["nations"][self.nid])
-        return {k: " ".join("%s%d" % (LETTER[r], c) for r, (c, _) in per.items()) for k, per in plan.items()}
+        return {k: " ".join("%s%d" % (LETTER.get(r, r[:2].title()), c) for r, (c, _) in per.items()) for k, per in plan.items()}
 
     def text(self):
         lines = ["**[Practice game]**"] if self.practice else []
@@ -699,7 +700,8 @@ async def claim_tiles(interaction: discord.Interaction, current: str):
 
 @tree.command(description="Build on one of your tiles")
 @app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market, wall, workshop, or port")
-@app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall", "toolworks", "forge", "cookhouse", "kiln", "port")])
+@app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall", "toolworks", "forge", "cookhouse", "kiln", "port",
+                                                                                 "sawmill", "cokeworks", "cementworks", "factory", "engineworks")])
 async def build(interaction: discord.Interaction, tile: str, building: app_commands.Choice[str]):
     await run(interaction, game_for(interaction.user.id).build, interaction.user.id, tile.strip(), building.value)
 
@@ -1076,6 +1078,12 @@ async def trade(interaction: discord.Interaction, give: str, get: str = "", to: 
 async def dms(interaction: discord.Interaction, setting: app_commands.Choice[str]):
     g = game_for(interaction.user.id)
     await say(interaction, g.set_dm(interaction.user.id, setting.value == "on"))
+
+
+@tree.command(description="Workshops refine automatically whenever their inputs are in store (on or off)")
+@app_commands.choices(setting=[app_commands.Choice(name="on", value="on"), app_commands.Choice(name="off", value="off")])
+async def autorefine(interaction: discord.Interaction, setting: app_commands.Choice[str]):
+    await run(interaction, game_for(interaction.user.id).auto_refine, interaction.user.id, setting.value == "on")
 
 
 @tree.command(description="List the trade offers you can accept right now")

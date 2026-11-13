@@ -542,6 +542,17 @@ class Game:
         self.save()
         return "Priorities updated."
 
+    def auto_refine(self, uid, on):
+        nid = self.nid(uid)
+        if not self.rules.get("refine"):
+            raise GameError("This mode has no refined goods.")
+        self.world["nations"][nid]["auto"] = on
+        self.save()
+        if on:
+            return ("Auto-refine is on: %ss in a workshop work whenever its inputs are in store, and stay free for other jobs when they are not. "
+                    "Your priorities still decide the rest. Turn off with /autorefine off." % self.word("worker"))
+        return "Auto-refine is off: workshops follow your priorities only. Turn on with /autorefine on."
+
     def nation_named(self, name):
         other = next((n for n in self.world["nations"] if n["name"].lower() == name.strip().lower()), None)
         if other is None:
