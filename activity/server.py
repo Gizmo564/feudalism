@@ -221,6 +221,10 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             elif kind == "move":
                 count = body.get("n")
                 message = game.move(uid, int(body.get("army")), str(body.get("tile", "")), None if count is None else int(count))
+            elif kind == "board":
+                message = game.board(uid, int(body.get("train")), int(body.get("army")))
+            elif kind == "disembark":
+                message = game.disembark(uid, int(body.get("train")))
             elif kind == "cancel":
                 message = game.cancel(uid, body.get("number"), body.get("text"))
             elif kind == "upgrade":

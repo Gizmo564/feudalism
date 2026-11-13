@@ -572,66 +572,37 @@ class Game:
             raise GameError("Army %s is not one of your trains." % army)
         return nid, a, tick.unit_cfg(self.rules, a["unit"])
 
-    def load(self, uid, army, resource, amount):
-        """Move goods from your stock into a train waiting at your capital."""
-        nid, a, cfg = self.my_train(uid, army)
-        me = self.world["nations"][nid]
-        if a["tile"] != me["capital"]:
-            raise GameError("Goods are loaded at your capital.")
-        if resource not in self.rules["resources"]:
-            raise GameError("Unknown resource. Resources: %s." % ", ".join(self.rules["resources"]))
-        hold = a.setdefault("cargo", {})
-        room = cfg.get("capacity", 40) * a["n"] - sum(hold.values())
-        amount = min(amount, room, me["resources"].get(resource, 0))
-        if amount <= 0:
-            raise GameError("Nothing to load: the train is full (room %d) or you have none of that." % max(0, room))
-        me["resources"][resource] -= amount
-        hold[resource] = hold.get(resource, 0) + amount
-        self.save()
-        return "Loaded %d %s onto train %d. Hold: %s." % (amount, resource, army, self.fmt(hold))
-
-    def unload(self, uid, army):
-        """Hand a train's cargo to the nation that owns the station it stands on (yours, or another nation's: a delivery)."""
-        nid, a, _ = self.my_train(uid, army)
-        w = self.world
-        t = w["tiles"][a["tile"]]
-        if t["building"] not in tick.STATIONS or t["owner"] is None:
-            raise GameError("Unload at a rail station or a capital.")
-        hold = a.get("cargo")
-        if not hold:
-            raise GameError("Train %d carries no cargo." % army)
-        to = w["nations"][t["owner"]]
-        for r, v in hold.items():
-            to["resources"][r] = to["resources"].get(r, 0) + v
-        if t["owner"] != nid:
-            W.ev(w, t["owner"], "%s's train delivered %s at %s" % (w["nations"][nid]["name"], self.fmt(hold), a["tile"]))
-        a["cargo"] = {}
-        self.save()
-        return "Train %d unloaded %s at %s%s." % (army, self.fmt(hold), a["tile"], "" if t["owner"] == nid else " for " + to["name"])
+    def seats(self, a):
+        """Seats an army takes on a train: soldiers one each, tanks and guns more."""
+        return a["n"] * (tick.unit_cfg(self.rules, a.get("unit")) or {}).get("seats", 1)
 
     def board(self, uid, train, army):
-        """A plain army boards a train standing on the same tile; the soldiers ride as passengers."""
+        """An army (soldiers, tanks, guns) boards a train standing on the same tile and rides inside it."""
         nid, t, cfg = self.my_train(uid, train)
         a = next((x for x in self.world["armies"] if x["id"] == army and x["owner"] == nid and x["tile"] == t["tile"]
-                  and not x.get("unit") and x is not t), None)
+                  and not tick.rail_only(self.rules, x)), None)
         if a is None:
-            raise GameError("Army %s must be a plain army on the same tile as the train." % army)
-        room = cfg.get("passengers", 10) * t["n"] - t.get("pax", 0)
-        if room < a["n"]:
-            raise GameError("The train has room for %d more passengers; that army has %d." % (max(0, room), a["n"]))
-        t["pax"] = t.get("pax", 0) + a["n"]
+            raise GameError("Army %s must be an army (not a train) on the same tile as the train." % army)
+        used = sum(self.seats(b) for b in t.get("aboard", []))
+        room = cfg.get("passengers", 10) * t["n"] - used
+        if room < self.seats(a):
+            raise GameError("The train has %d free seats; that army needs %d (a tank or gun takes more than a soldier)." % (max(0, room), self.seats(a)))
+        a["dest"] = None
+        t.setdefault("aboard", []).append(a)
         self.world["armies"] = [x for x in self.world["armies"] if x is not a]
         self.save()
-        return "Army %d boarded train %d (%d passengers aboard)." % (army, train, t["pax"])
+        return "Army %d boarded train %d." % (army, train)
 
     def disembark(self, uid, train):
         nid, t, _ = self.my_train(uid, train)
-        if not t.get("pax"):
-            raise GameError("Train %d has no passengers." % train)
-        W.add_army(self.world, nid, t["tile"], t["pax"])
-        n, t["pax"] = t["pax"], 0
+        if not t.get("aboard"):
+            raise GameError("Train %d has nobody aboard." % train)
+        for b in t["aboard"]:
+            b["tile"], b["dest"] = t["tile"], None
+            self.world["armies"].append(b)
+        n, t["aboard"] = len(t["aboard"]), []
         self.save()
-        return "%d passengers stepped off train %d at %s as an army." % (n, train, t["tile"])
+        return "%d armies stepped off train %d at %s." % (n, train, t["tile"])
 
     def nation_named(self, name):
         other = next((n for n in self.world["nations"] if n["name"].lower() == name.strip().lower()), None)

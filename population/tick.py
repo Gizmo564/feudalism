@@ -501,7 +501,8 @@ def attack(world, rules, rng, a, k):
     defenders = [d for d in world["armies"] if d["tile"] == k and d["owner"] != a["owner"]]
     owner = tile["owner"]
     if rail_only(rules, a) and owner != a["owner"]:         # a train passes over other nations' rails: it never captures, and soldiers on the line stop it
-        if defenders:
+        friends = (a["owner"], (a.get("mission") or {}).get("to"))       # the nation a train delivers to never blocks it
+        if any(d["owner"] not in friends for d in defenders):
             a["dest"] = None
             return W.ev(world, a["owner"], "Your train stopped at %s: soldiers block the line" % k)
         a["tile"] = k
@@ -604,6 +605,11 @@ def move_armies(world, rules, rng):
                 break
             own = world["tiles"][step]["owner"] == a["owner"] and world["tiles"][a["tile"]]["owner"] == a["owner"]
             train = rail_only(rules, a)
+            border = world["tiles"][step]["owner"] not in (None, a["owner"])
+            if train and border and a.get("aboard"):         # checkpoint: a train with soldiers or tanks aboard may not enter another nation
+                a["dest"] = None
+                W.ev(world, a["owner"], "Train %d was stopped at the border before %s: its soldiers cannot cross" % (a["id"], step))
+                break
             if (own or train) and on_rail(world, a["tile"], step) and rail_left > 0:
                 rail_left -= 1
             elif steps_left > 0:
@@ -617,7 +623,8 @@ def move_armies(world, rules, rng):
                 break
     merged = []
     for a in world["armies"]:
-        same = next((m for m in merged if m["owner"] == a["owner"] and m["tile"] == a["tile"]
+        loaded = a.get("aboard") or a.get("cargo") or a.get("mission")
+        same = None if loaded else next((m for m in merged if m["owner"] == a["owner"] and m["tile"] == a["tile"] and not (m.get("aboard") or m.get("cargo") or m.get("mission"))
                      and m["dest"] == a["dest"] and bool(m.get("steel")) == bool(a.get("steel")) and m.get("unit") == a.get("unit")), None)
         if same:
             same["n"] += a["n"]
@@ -874,6 +881,7 @@ def run_tick(world, rules):
     resolve_contests(world, rules, rng)
     apply_orders(world, rules, rng)
     move_armies(world, rules, rng)
+    trade.run_trains(world, rules)
     trade.move_caravans(world, rules)
     oil_upkeep(world, rules)
     for n in world["nations"]:

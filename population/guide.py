@@ -167,7 +167,7 @@ def war(rules):
           if rules.get("steel_soldiers", {}).get("enabled") else []),
         *(["Units (/train unit; each needs its workshop): " + "; ".join(
             "%s +%s, x%g%s" % (u, cost(c["cost"]).replace(" machine_parts", " parts"), c["strength_percent"] / 100,
-                               ", ignores walls" if c.get("ignore_defences") else ", rails only, carries cargo and soldiers" if c.get("rail_only") else "")
+                               ", ignores walls" if c.get("ignore_defences") else ", rails only, hauls trade goods and armies" if c.get("rail_only") else "")
             for u, c in rules["units"].items()) + "."]
           if rules.get("units") else []),
         "Two nations claiming the same free tile in one night makes it contested: each can give up or fight (/contest or the announcement buttons). "
@@ -219,7 +219,7 @@ def commands(rules):
         "/play - the clickable map (Activity)",
         "/mode basic|advanced - advanced adds /assign (exact workers per resource) and /move with a count (send part of an army)",
         *(["/autorefine on|off - workshops work whenever their inputs are in store"] if rules.get("refine") else []),
-        *(["/load, /unload, /board, /disembark - trains carry cargo and soldiers; unload at another nation's station to deliver"]
+        *(["/board, /disembark - armies ride trains (not across a border)"]
           if any(c.get("rail_only") for c in rules.get("units", {}).values()) else []),
         "/dms on|off - the bot DMs you your night report, pact proposals and trade offers (with buttons to answer); off until you turn it on, and worth turning on",
         "/orders - see what you have queued for tonight",

@@ -165,12 +165,22 @@ function showTile(t, data, card, act, msg) {
         button(up.queued ? "An upgrade is already queued" : short ? "You cannot pay for this yet" : "Upgrade",
                () => act({action: "upgrade", tile: t.k}), up.queued || short ? "off" : "primary")));
     }
+    const here = data.armies.filter((a) => a.owner === data.me && a.tile === t.k);
+    const trains = here.filter((a) => a.unit === "train");
+    for (const tr of trains) {                                       // a train on this tile: what is aboard, and who may board
+      const aboard = tr.aboard || [];
+      const others = here.filter((a) => a.unit !== "train");
+      things.push(el("div", {className: "box"}, el("h3", {textContent: "Train " + tr.id + " (" + tr.n + " unit" + (tr.n > 1 ? "s" : "") + ")"}),
+        el("div", {className: "note", textContent: aboard.length ? "Aboard: " + aboard.map((b) => b.n + " " + (b.unit || data.soldier) + "s").join(", ") : "Nobody aboard. It stops at a border if it carries soldiers or tanks."}),
+        ...others.map((a) => button("Board army " + a.id + " (" + a.n + " " + (a.unit || data.soldier) + "s)", () => act({action: "board", train: tr.id, army: a.id}), "plain")),
+        ...(aboard.length ? [button("Everyone steps off", () => act({action: "disembark", train: tr.id}), "plain")] : [])));
+    }
     const armies = data.armies.filter((a) => a.owner === data.me && a.tile !== t.k);
     if (card.can_move && armies.length) {
       const part = el("input", {className: "field", placeholder: "How many (blank: all)", type: "number", min: 1});
       things.push(el("div", {className: "box"}, el("h3", {textContent: "Send an army here"}),
         ...(data.mode === "advanced" ? [part] : []),
-        ...armies.map((a) => button("Army " + a.id + " (" + a.n + " " + data.soldier + "s) from " + a.tile,
+        ...armies.map((a) => button((a.unit ? cap(a.unit) + " " : "Army ") + a.id + " (" + a.n + " " + (a.unit ? a.unit + "s" : data.soldier + "s") + ") from " + a.tile,
                                     () => act({action: "move", army: a.id, tile: t.k, ...(part.value ? {n: Number(part.value)} : {})}), "plain")),
         el("div", {className: "note", textContent: "It marches one tile a night."})));
     }

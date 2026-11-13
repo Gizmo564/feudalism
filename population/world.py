@@ -23,7 +23,7 @@ def owned(world, nid):
 
 
 def soldiers(world, nid):
-    return sum(a["n"] + a.get("pax", 0) for a in world["armies"] if a["owner"] == nid)     # passengers on a train still count
+    return sum(a["n"] + sum(b["n"] for b in a.get("aboard", [])) for a in world["armies"] if a["owner"] == nid)     # soldiers aboard a train still count
 
 
 def people(world, nid):

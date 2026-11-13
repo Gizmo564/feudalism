@@ -31,7 +31,8 @@ def map_view(world, rules, nid):
 def armies_view(world, rules, nid):
     """Your own armies always; other nations' armies only on tiles you can see."""
     vis = visible_keys(world, rules, nid)
-    return [a for a in world["armies"] if a["owner"] == nid or a["tile"] in vis]
+    hide = lambda a: {k: v for k, v in a.items() if k not in ("aboard", "cargo", "mission")}      # what a train carries is its owner's business
+    return [a if a["owner"] == nid else hide(a) for a in world["armies"] if a["owner"] == nid or a["tile"] in vis]
 
 
 def caravans_view(world, rules, nid):

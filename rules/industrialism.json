@@ -622,7 +622,8 @@
         "steel": 2
       },
       "strength_percent": 400,
-      "oil_weight": 3
+      "oil_weight": 3,
+      "seats": 5
     },
     "artillery": {
       "building": "factory",
@@ -632,7 +633,8 @@
       },
       "strength_percent": 250,
       "oil_weight": 2,
-      "ignore_defences": true
+      "ignore_defences": true,
+      "seats": 5
     },
     "train": {
       "building": "engineworks",

@@ -203,21 +203,37 @@ def test_auto_refine_stops_when_the_good_piles_up(rules):
     assert "machine_parts" in tick.work_plan(w, rules, n)         # factory output is the win condition, so it never stops
 
 
-def test_caravans_ride_connected_rails_even_across_nations(rules):
+def test_trade_goods_go_by_train_when_a_train_waits(rules):
+    import random
     from population import trade
     w = two_armies_world(rules)
-    for x in range(-5, 6):                                     # one unbroken line: A's rails, then B's rails
+    for x in range(-5, 6):
         w["tiles"]["%d,0" % x].update(owner=0 if x < 0 else 1, building="rail")
     w["tiles"]["-5,0"]["building"], w["tiles"]["5,0"]["building"] = "capital", "capital"
+    w["armies"] = [a for a in w["armies"] if a["owner"] == 1] 
+    t = W.add_army(w, 0, "-5,0", 1, unit="train")
+    left = trade.send_by_train(w, rules, 0, 1, {"wood": 50})
+    assert left == {"wood": 10} and t["cargo"] == {"wood": 40}          # one train unit holds 40; the rest is for a caravan
+    before = w["nations"][1]["resources"]["wood"]
+    tick.move_armies(w, rules, random.Random(1))
+    trade.run_trains(w, rules)
+    assert w["nations"][1]["resources"]["wood"] == before + 40         # 10 tiles in a night by train
+    assert t["dest"] == "-5,0" and not t["cargo"]                       # and it drives home empty
+    tick.move_armies(w, rules, random.Random(1))
+    trade.run_trains(w, rules)
+    assert t["tile"] == "-5,0" and not t["mission"]
+    w2 = two_armies_world(rules)
+    assert trade.send_by_train(w2, rules, 0, 1, {"wood": 5}) == {"wood": 5}   # no train: a caravan walks it
+
+
+def test_caravans_walk_even_where_rails_run(rules):
+    from population import trade
+    w = two_armies_world(rules)
+    for x in range(-5, 6):
+        w["tiles"]["%d,0" % x].update(owner=0 if x < 0 else 1, building="rail")
     trade.send_caravan(w, 0, 1, {"wood": 5})
     trade.move_caravans(w, rules)
-    assert w["caravans"][0]["tile"] == "3,0"                   # 8 tiles in a night: 6 by train, 2 on foot
-    trade.move_caravans(w, rules)
-    assert not w["caravans"] and w["nations"][1]["resources"]["wood"] >= 5
-    w2 = two_armies_world(rules)
-    trade.send_caravan(w2, 0, 1, {"wood": 5})
-    trade.move_caravans(w2, rules)
-    assert w2["caravans"][0]["tile"] == "-3,0"                 # without rails it walks 2 tiles
+    assert w["caravans"][0]["tile"] == "-3,0"                          # 2 tiles a night: trade by caravan is the slow way
 
 
 def test_a_train_crosses_foreign_rails_without_capturing_them(rules):
@@ -233,7 +249,8 @@ def test_a_train_crosses_foreign_rails_without_capturing_them(rules):
     assert all(w["tiles"]["%d,0" % x]["owner"] == (0 if x < 0 else 1) for x in range(-5, 6))
 
 
-def test_a_train_carries_cargo_and_soldiers(rules, tmp_path):
+def test_a_train_carries_tanks_and_stops_at_the_border(rules, tmp_path):
+    import random
     from population.game import Game, GameError
     from population.store import Store
     g = Game(Store(str(tmp_path / "t.db")))
@@ -243,20 +260,27 @@ def test_a_train_carries_cargo_and_soldiers(rules, tmp_path):
     g.start(6, seed=3)
     w = g.world
     w["armies"] = []
-    a, b = w["nations"][0], w["nations"][1]
+    a = w["nations"][0]
     t = W.add_army(w, 0, a["capital"], 2, unit="train")
-    a["resources"]["wood"] = 100
-    g.load(1, t["id"], "wood", 500)
-    assert t["cargo"]["wood"] == 80 and a["resources"]["wood"] == 20      # 2 train units hold 40 each
-    t["tile"] = b["capital"]                                             # parked at B's station
-    before = b["resources"]["wood"]
-    g.unload(1, t["id"])
-    assert b["resources"]["wood"] == before + 80 and not t["cargo"]
-    t["tile"] = a["capital"]
-    soldiers = W.add_army(w, 0, a["capital"], 15)
+    tank = W.add_army(w, 0, a["capital"], 2, unit="tank")
+    soldiers = W.add_army(w, 0, a["capital"], 5)
+    g.board(1, t["id"], tank["id"])                                     # 2 tanks take 10 of the 20 seats
     g.board(1, t["id"], soldiers["id"])
-    assert t["pax"] == 15 and W.soldiers(w, 0) >= 15 + 2
     with pytest.raises(GameError):
-        g.board(1, t["id"], W.add_army(w, 0, a["capital"], 10)["id"])    # only 20 seats
+        g.board(1, t["id"], W.add_army(w, 0, a["capital"], 6)["id"])    # only 5 seats left
+    assert W.soldiers(w, 0) >= 2 + 2 + 5
     g.disembark(1, t["id"])
-    assert not t["pax"]
+    assert not t["aboard"] and {x["id"] for x in w["armies"]} >= {tank["id"], soldiers["id"]}
+    # checkpoint: with soldiers aboard the train halts where its own land ends; empty, it carries on
+    w2 = two_armies_world(rules)
+    for x in range(-5, 6):
+        w2["tiles"]["%d,0" % x].update(owner=0 if x < 0 else 1, building="rail")
+    w2["armies"] = []
+    t2 = W.add_army(w2, 0, "-5,0", 2, unit="train")
+    t2["aboard"] = [{"id": 99, "owner": 0, "tile": "-5,0", "n": 3, "dest": None}]
+    t2["dest"] = "5,0"
+    tick.move_armies(w2, rules, random.Random(1))
+    assert t2["tile"] == "-1,0" and t2["dest"] is None                  # -1,0 is the last tile of nation A
+    t2["aboard"], t2["dest"] = [], "5,0"
+    tick.move_armies(w2, rules, random.Random(1))
+    assert t2["tile"] == "5,0"

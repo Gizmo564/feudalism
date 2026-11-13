@@ -122,13 +122,15 @@ def accept(world, rules, tid, by):
         for r, n in res.items():
             world["nations"][sender]["resources"][r] -= n
         if res and caravans:
-            send_caravan(world, sender, receiver, res)
+            res = send_by_train(world, rules, sender, receiver, res)      # a free train takes what fits; the rest walks as a caravan
+            if res:
+                send_caravan(world, sender, receiver, res)
         elif res:
             world["shipments"].append({"to": receiver, "res": res, "arrive": world["tick"] + travel - 1})
         for k in side.get("tiles", []):
             world["tiles"][k]["owner"] = receiver
     o["status"] = "accepted"
-    how = "A caravan carries the resources (%d tile(s) a tick)." % speed if caravans else "Resources arrive in %d tick(s)." % travel
+    how = "A train or caravan carries the resources (a caravan walks %d tile(s) a tick)." % speed if caravans else "Resources arrive in %d tick(s)." % travel
     W.ev(world, o["from"], "Trade %d accepted. %s" % (tid, how))
     W.ev(world, o["to"], "Trade %d done. %s" % (tid, how))
 
@@ -147,6 +149,61 @@ def send_caravan(world, sender, receiver, res):
     world.setdefault("caravans", []).append({
         "id": cid, "from": sender, "to": receiver, "res": res,
         "tile": world["nations"][sender]["capital"], "dest": world["nations"][receiver]["capital"]})
+
+
+def send_by_train(world, rules, sender, receiver, res):
+    """Load the sender's idle train at their capital and send it to the receiver's capital along the rails.
+    Returns the goods that did not fit (all of them if there is no train or no rail line)."""
+    from .tick import rail_only, unit_cfg, find_path, rails
+    start, dest = world["nations"][sender]["capital"], world["nations"][receiver]["capital"]
+    train = next((a for a in world["armies"] if a["owner"] == sender and a["tile"] == start and a["dest"] is None
+                  and rail_only(rules, a) and not (a.get("aboard") or a.get("cargo") or a.get("mission"))), None)
+    if train is None or find_path(world, start, dest, rails(world)) is None:
+        return res
+    room = unit_cfg(rules, train["unit"]).get("capacity", 40) * train["n"]
+    load, rest = {}, {}
+    for r, v in res.items():
+        take = min(v, room)
+        room -= take
+        if take:
+            load[r] = take
+        if v > take:
+            rest[r] = v - take
+    train["cargo"], train["mission"], train["dest"] = load, {"to": receiver, "home": start}, dest
+    W.ev(world, sender, "Train %d leaves with %s for %s" % (train["id"], cargo(load), world["nations"][receiver]["name"]))
+    return rest
+
+
+def run_trains(world, rules):
+    """After the trains have moved: deliver cargo that has arrived, send emptied trains home, hand back goods that cannot get through."""
+    from .tick import find_path, rails
+    for a in world["armies"]:
+        m = a.get("mission")
+        if not m:
+            continue
+        if m.get("to") is not None:                              # outbound with cargo
+            goal = world["nations"][m["to"]]["capital"]
+            if a["tile"] == goal:
+                n = world["nations"][m["to"]]
+                if n["alive"]:
+                    for r, v in a["cargo"].items():
+                        n["resources"][r] += v
+                    W.ev(world, m["to"], "A train arrived carrying %s." % cargo(a["cargo"]))
+                W.ev(world, a["owner"], "Train %d delivered %s." % (a["id"], cargo(a["cargo"])))
+                a["cargo"], a["mission"], a["dest"] = {}, {"to": None, "home": m["home"]}, m["home"]
+            elif a["dest"] is None:                              # stopped on the way: try again, or give the goods back if the line is cut
+                if find_path(world, a["tile"], goal, rails(world)):
+                    a["dest"] = goal
+                else:
+                    home = world["nations"][a["owner"]]
+                    for r, v in a["cargo"].items():
+                        home["resources"][r] += v
+                    W.ev(world, a["owner"], "Train %d could not get through and brought %s back." % (a["id"], cargo(a["cargo"])))
+                    a["cargo"], a["mission"] = {}, None
+        elif a["tile"] == m["home"]:                              # empty and home again
+            a["mission"] = None
+        elif a["dest"] is None:
+            a["dest"] = m["home"]
 
 
 def cargo(res):
@@ -172,23 +229,18 @@ def capture(world, c, nid):
 def move_caravans(world, rules):
     """Run after the armies have moved. Each caravan walks up to the trade speed along the land path;
     an enemy army on a tile it reaches captures it. Reaching the other capital delivers the goods."""
-    from .tick import next_step, find_path, STATIONS
-    on_rails = lambda k: world["tiles"][k]["building"] in STATIONS        # rails of any nation: lines of different nations connect
+    from .tick import next_step
     left = []
     for c in world.get("caravans", []):
         speed = speed_between(world, rules, c["tile"], c["dest"])
         nid = raider(world, c)
-        steps, rail_left = 0, rules["movement"].get("rail_steps", 0)
+        steps = 0
         while nid is None and c["tile"] != c["dest"] and steps < speed:
-            by_rail = find_path(world, c["tile"], c["dest"], on_rails) if rail_left > 0 else None
-            step = by_rail[0] if by_rail else next_step(world, c["tile"], c["dest"])      # a connected rail line is a train ride
+            step = next_step(world, c["tile"], c["dest"])
             if step is None:
                 break
             c["tile"] = step
-            if by_rail:
-                rail_left -= 1                  # train steps are free; the rest of the trip is the usual caravan walk
-            else:
-                steps += 1
+            steps += 1
             nid = raider(world, c)
         if nid is not None:
             capture(world, c, nid)
