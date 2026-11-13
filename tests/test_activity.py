@@ -64,7 +64,9 @@ def test_login_flow(tmp_path):
         got = await client.post("/.proxy/api/token", json={"code": "good-code"})
         assert (await got.json()) == {"access_token": "tok"}
         me = await client.get("/api/me", headers={"Authorization": "Bearer tok"})
-        assert (await me.json()) == {"id": "100", "name": "Alder", "nation": "Aldmere", "fallen": False, "over": None}
+        got_me = await me.json()
+        assert "nights in a row" in got_me.pop("win")
+        assert got_me == {"id": "100", "name": "Alder", "nation": "Aldmere", "fallen": False, "over": None}
         assert (await client.get("/api/me")).status == 401                                       # no token
         assert (await client.get("/api/me", headers={"Authorization": "Bearer nope"})).status == 401
     run(tmp_path, steps)

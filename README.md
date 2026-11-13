@@ -98,3 +98,4 @@ On the server, `feudalism help` lists everything:
 - **Your night message**: under the nightly announcement there is a "My night" button. It shows you, privately, your night report, pact proposals, open trade offers and contested tiles, each with its own Accept/Decline (or Give up/Fight) buttons. Players with DMs on (`/dms on`) get the same message by DM right after the announcement.
 - **Updates tab** in the Activity: what needs your answer (with the same buttons) and your last 7 nights' reports. The tab shows a dot while something is waiting.
 - Help, the welcome message and the tutorial now suggest turning on /dms (night report, pact proposals and trade offers by DM, with buttons).
+- **First-launch intro** in the Activity: a short card on what the game is and how to win (from the live rules), shown once per browser with a "Got it" button.

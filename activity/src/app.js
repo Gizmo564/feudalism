@@ -625,6 +625,21 @@ function showOver(me) {   // the game is over (or this nation has fallen): a cro
   $("over").style.display = "block";
 }
 
+function showIntro(me) {   // first launch only: a quick look at the game and how to win
+  let seen = false;
+  try { seen = localStorage.getItem("intro") === "1"; } catch (e) {}
+  if (seen) return;
+  const done = () => { try { localStorage.setItem("intro", "1"); } catch (e) {} $("intro").style.display = "none"; };
+  $("intro").replaceChildren(el("div", {className: "card"},
+    el("h2", {textContent: "Welcome, " + me.nation}),
+    el("p", {textContent: "Everyone plays at once on one hex map. Pick tiles to claim, build, train armies and trade. Orders you give are queued and happen together at the nightly tick."}),
+    el("p", {textContent: "Your nation needs food and upkeep each night. Grow, make pacts, and watch your neighbours."}),
+    el("h3", {textContent: "How to win"}),
+    el("p", {textContent: me.win}),
+    el("button", {textContent: "Got it", onclick: done})));
+  $("intro").style.display = "flex";
+}
+
 async function main() {
   const {clientId} = await (await fetch("/.proxy/api/config")).json();
   const sdk = new DiscordSDK(clientId);
@@ -645,6 +660,7 @@ async function main() {
   data.name = me.nation;
   showBars(data, me.nation);
   showMap(data, headers);
+  showIntro(me);
 }
 
 main().catch((e) => say("Something went wrong: " + (e && e.message ? e.message : e)));

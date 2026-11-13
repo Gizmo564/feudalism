@@ -107,6 +107,12 @@
       #panel .grip { display: block; width: 40px; height: 4px; border-radius: 2px; background: #5a5d66; margin: 0 auto 12px; }
       h2 { font-size: 20px; }
     }
+    #intro { display: none; position: fixed; inset: 0; z-index: 10; align-items: center; justify-content: center; background: rgba(0,0,0,.6); padding: 16px; box-sizing: border-box; }
+    #intro .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; max-width: 440px; max-height: 90%; overflow-y: auto; font-size: 14px; line-height: 1.45; }
+    #intro h2 { margin: 0 0 8px; font-size: 20px; }
+    #intro h3 { margin: 12px 0 4px; font-size: 14px; }
+    #intro p { margin: 6px 0; }
+    #intro button { margin-top: 12px; width: 100%; padding: 10px; font-size: 15px; cursor: pointer; }
     #over { display: none; position: absolute; inset: 0; overflow-y: auto; padding: 32px 16px; box-sizing: border-box; text-align: center; }
     #over img { height: 200px; max-width: 80%; object-fit: contain; }
     #over h1 { margin: 12px 0 4px; font-size: 32px; font-weight: 700; }
@@ -137,6 +143,7 @@
 <body>
   <p id="status">Connecting to Discord...</p>
   <div id="over"></div>
+  <div id="intro"></div>
   <div id="app">
     <div id="top"><div id="who"></div><div id="pills"></div></div>
     <div id="hold"></div>
@@ -158,6 +165,6 @@
       <aside id="panel"><div class="grip"></div><div id="tabs"></div><div id="npanel" style="display:none"></div><div id="card"><p class="hint">Click a tile to see what is there.</p></div></aside>
     </div>
   </div>
-  <script src="/static/app.js?v=20"></script>
+  <script src="/static/app.js?v=21"></script>
 </body>
 </html>
