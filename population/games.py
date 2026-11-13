@@ -51,6 +51,16 @@ class Games:
     def all(self):
         return [(i, self.get(i)) for i in self.ids()]
 
+    def factory_reset(self, server_id):
+        "Erase a server's game, rules, settings and sign-ups for good: its file is deleted, so the next /admin open starts clean."
+        server_id = int(server_id)
+        found = self.loaded.pop(server_id, None)
+        if found is not None:
+            found.store.db.close()
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            if os.path.exists(self.path(server_id) + suffix):
+                os.remove(self.path(server_id) + suffix)
+
 
 class ThisServer:
     "Acts like the Game (part='game') or its Store (part='store') of the server the current command came from."

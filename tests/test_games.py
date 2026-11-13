@@ -100,3 +100,15 @@ def test_stats_describe_the_games_and_warn_when_full(tmp_path):
     assert "Games: 2 of 2" in out and "Test Server (10)" in out and "Servers the bot is in: 7" in out
     problems = " ".join(stats.warnings(info))
     assert "game limit" in problems and "90 seconds" in problems
+
+
+def test_factory_reset_erases_a_servers_game(tmp_path):
+    from population.games import Games
+    gs = Games(str(tmp_path / "games"))
+    g = gs.create(5)
+    g.open_signup("population")
+    g.store.set("settings", {"tick_time": "05:00"})
+    gs.factory_reset(5)
+    assert gs.get(5) is None and gs.ids() == []
+    fresh = gs.create(5)
+    assert fresh.phase != "running" and fresh.store.get("settings", {}) == {}

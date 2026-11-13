@@ -1185,6 +1185,64 @@ class ClearView(discord.ui.View):
         self.stop()
 
 
+class FactoryResetView(discord.ui.View):
+    """Asks once before erasing this server's game and settings (and, if asked, the bot's own messages)."""
+
+    def __init__(self, uid, guild_id, clear_messages=False):
+        super().__init__(timeout=120)
+        self.uid, self.guild_id, self.clear_messages = uid, guild_id, clear_messages
+
+    async def interaction_check(self, interaction):
+        return interaction.user.id == self.uid
+
+    def channels(self):
+        """The announcement, trade and log channels this server set up (read before the settings are erased)."""
+        found = games.get(self.guild_id)
+        ids = {found.store.get(k) for k in ("announce_channel", "report_channel", "trade_channel", "log_channel")} if found else set()
+        return [c for c in (client.get_channel(i) for i in ids if i) if c is not None]
+
+    @discord.ui.button(label="Yes, erase everything", style=discord.ButtonStyle.danger)
+    async def yes(self, interaction, button):
+        channels = self.channels() if self.clear_messages else []
+        games.factory_reset(self.guild_id)
+        text = "Factory reset done. This server has no game and every setting is back to its default. /admin open starts a new one."
+        if not self.clear_messages:
+            await interaction.response.edit_message(content=text, view=None)
+            return self.stop()
+        await interaction.response.edit_message(content="Erasing the game, then deleting my messages ...", view=None)
+        count = 0
+        for channel in channels:
+            mine = lambda m: m.author == client.user and not m.pinned
+            try:
+                try:
+                    count += len(await channel.purge(limit=None, check=mine))
+                except discord.Forbidden:       # without Manage Messages a bot can still delete its own, one at a time
+                    count += len(await channel.purge(limit=None, check=mine, bulk=False))
+            except discord.HTTPException:
+                text += " I couldn't clear my messages in #%s." % channel.name
+        await interaction.edit_original_response(content="%s Deleted %d of my messages (pinned ones were kept)." % (text, count))
+        self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+    async def no(self, interaction, button):
+        await interaction.response.edit_message(content="Nothing was changed.", view=None)
+        self.stop()
+
+
+@admin.command(name="factoryreset", description="Erase this server's game, sign-ups, rules and settings and start from defaults")
+@app_commands.describe(clear_messages="Also delete the bot's own messages in the announcement, trade and log channels")
+async def admin_factoryreset(interaction: discord.Interaction, clear_messages: bool = False):
+    if not is_admin(interaction):
+        return await say(interaction, deny(interaction))
+    if interaction.guild_id is None or games.get(interaction.guild_id) is None:
+        return await say(interaction, "There is nothing to reset: this server has no game yet.")
+    await interaction.response.send_message(
+        "This permanently erases this server's game, sign-ups, rule changes and settings (tick time, channels, admin role). It cannot be undone. %s" % (
+            "I will also delete my own messages in the announcement, trade and log channels (pinned ones stay)." if clear_messages
+            else "Messages in channels are not touched."),
+        view=FactoryResetView(interaction.user.id, interaction.guild_id, clear_messages), ephemeral=True)
+
+
 @admin.command(name="wipe", description="Delete all messages in a channel (for a fresh start), keeping pinned ones")
 @app_commands.describe(channel="The channel to clear, for example the announcements, log or trade board channel")
 async def admin_wipe(interaction: discord.Interaction, channel: discord.TextChannel):
