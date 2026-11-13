@@ -191,7 +191,7 @@ def test_trains_run_along_rails_only(rules):
     tick.move_armies(w, rules, random.Random(1))
     assert t["tile"] == "2,0"                               # 7 tiles in one night, more than a soldier walks
     w["tiles"]["0,0"].update(building=None)                 # cut the line: no rail route, so the train cannot be ordered across
-    assert tick.find_path(w, "-5,0", "2,0", tick.own_rail(w, 0)) is None
+    assert tick.find_path(w, "-5,0", "2,0", tick.rails(w)) is None
 
 
 def test_auto_refine_stops_when_the_good_piles_up(rules):
@@ -218,3 +218,45 @@ def test_caravans_ride_connected_rails_even_across_nations(rules):
     trade.send_caravan(w2, 0, 1, {"wood": 5})
     trade.move_caravans(w2, rules)
     assert w2["caravans"][0]["tile"] == "-3,0"                 # without rails it walks 2 tiles
+
+
+def test_a_train_crosses_foreign_rails_without_capturing_them(rules):
+    import random
+    w = two_armies_world(rules)
+    for x in range(-5, 6):
+        w["tiles"]["%d,0" % x].update(owner=0 if x < 0 else 1, building="rail")
+    w["armies"] = []                                           # no soldiers anywhere to block the line
+    t = W.add_army(w, 0, "-5,0", 2, unit="train")
+    t["dest"] = "5,0"
+    tick.move_armies(w, rules, random.Random(1))
+    assert t["tile"] == "5,0"                                  # 10 tiles on a line that runs into nation B
+    assert all(w["tiles"]["%d,0" % x]["owner"] == (0 if x < 0 else 1) for x in range(-5, 6))
+
+
+def test_a_train_carries_cargo_and_soldiers(rules, tmp_path):
+    from population.game import Game, GameError
+    from population.store import Store
+    g = Game(Store(str(tmp_path / "t.db")))
+    g.open_signup("industrialism")
+    g.join(1, "Aldmere")
+    g.join(2, "Brask")
+    g.start(6, seed=3)
+    w = g.world
+    w["armies"] = []
+    a, b = w["nations"][0], w["nations"][1]
+    t = W.add_army(w, 0, a["capital"], 2, unit="train")
+    a["resources"]["wood"] = 100
+    g.load(1, t["id"], "wood", 500)
+    assert t["cargo"]["wood"] == 80 and a["resources"]["wood"] == 20      # 2 train units hold 40 each
+    t["tile"] = b["capital"]                                             # parked at B's station
+    before = b["resources"]["wood"]
+    g.unload(1, t["id"])
+    assert b["resources"]["wood"] == before + 80 and not t["cargo"]
+    t["tile"] = a["capital"]
+    soldiers = W.add_army(w, 0, a["capital"], 15)
+    g.board(1, t["id"], soldiers["id"])
+    assert t["pax"] == 15 and W.soldiers(w, 0) >= 15 + 2
+    with pytest.raises(GameError):
+        g.board(1, t["id"], W.add_army(w, 0, a["capital"], 10)["id"])    # only 20 seats
+    g.disembark(1, t["id"])
+    assert not t["pax"]

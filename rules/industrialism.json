@@ -644,7 +644,9 @@
       "strength_percent": 300,
       "oil_weight": 1,
       "rail_only": true,
-      "rail_steps": 12
+      "rail_steps": 12,
+      "capacity": 40,
+      "passengers": 10
     }
   },
   "auto_refine_cap": 20

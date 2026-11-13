@@ -381,7 +381,7 @@ def do_move(world, rules, n, o):
     t = world["tiles"].get(o.get("dest"))
     if a is None or t is None or (t["terrain"] == "water" and t["building"] != "port"):
         return W.ev(world, nid, "Move failed: bad army or destination")
-    if rail_only(rules, a) and find_path(world, a["tile"], o["dest"], own_rail(world, nid)) is None:
+    if rail_only(rules, a) and find_path(world, a["tile"], o["dest"], rails(world)) is None:
         return W.ev(world, nid, "Move failed: a train stays on your own connected rails")
     path = find_path(world, a["tile"], o["dest"])
     if crosses_water(world, path):          # sailing over ports costs a flat amount of wood for the boat
@@ -500,6 +500,12 @@ def attack(world, rules, rng, a, k):
     tile = world["tiles"][k]
     defenders = [d for d in world["armies"] if d["tile"] == k and d["owner"] != a["owner"]]
     owner = tile["owner"]
+    if rail_only(rules, a) and owner != a["owner"]:         # a train passes over other nations' rails: it never captures, and soldiers on the line stop it
+        if defenders:
+            a["dest"] = None
+            return W.ev(world, a["owner"], "Your train stopped at %s: soldiers block the line" % k)
+        a["tile"] = k
+        return
     me = world["nations"][a["owner"]]
     if owner is not None and owner != a["owner"] and world["nations"][owner]["protected_until"] > world["tick"]:
         a["dest"] = None
@@ -576,8 +582,9 @@ def rail_only(rules, a):
     return bool(a.get("unit") and (unit_cfg(rules, a["unit"]) or {}).get("rail_only"))
 
 
-def own_rail(world, nid):
-    return lambda k: world["tiles"][k]["owner"] == nid and world["tiles"][k]["building"] in STATIONS
+def rails(world):
+    """Tiles a train may run on: every rail and capital, any nation's (lines of different nations connect)."""
+    return lambda k: world["tiles"][k]["building"] in STATIONS
 
 
 def move_armies(world, rules, rng):
@@ -589,14 +596,15 @@ def move_armies(world, rules, rng):
         rail_left = rules["movement"].get("rail_steps", 0)      # steps along your own connected rails cost nothing, up to this many
         ok = None
         if rail_only(rules, a):                                 # a train only has rail steps
-            steps_left, rail_left, ok = 0, unit_cfg(rules, a["unit"]).get("rail_steps", rail_left), own_rail(world, a["owner"])
+            steps_left, rail_left, ok = 0, unit_cfg(rules, a["unit"]).get("rail_steps", rail_left), rails(world)
         while a in world["armies"] and a["dest"]:
             step = next_step(world, a["tile"], a["dest"], ok)
             if step is None:
                 a["dest"] = None
                 break
             own = world["tiles"][step]["owner"] == a["owner"] and world["tiles"][a["tile"]]["owner"] == a["owner"]
-            if own and on_rail(world, a["tile"], step) and rail_left > 0:
+            train = rail_only(rules, a)
+            if (own or train) and on_rail(world, a["tile"], step) and rail_left > 0:
                 rail_left -= 1
             elif steps_left > 0:
                 steps_left -= 1
@@ -605,7 +613,7 @@ def move_armies(world, rules, rng):
             attack(world, rules, rng, a, step)
             if a in world["armies"] and a["tile"] == a["dest"]:
                 a["dest"] = None
-            if not own:
+            if not own and not train:
                 break
     merged = []
     for a in world["armies"]:

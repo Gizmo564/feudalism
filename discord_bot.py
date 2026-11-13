@@ -1089,6 +1089,26 @@ async def autorefine(interaction: discord.Interaction, setting: app_commands.Cho
     await run(interaction, game_for(interaction.user.id).auto_refine, interaction.user.id, setting.value == "on")
 
 
+@tree.command(description="Load goods onto a train waiting at your capital")
+async def load(interaction: discord.Interaction, train: int, resource: str, amount: app_commands.Range[int, 1, 100000]):
+    await run(interaction, game_for(interaction.user.id).load, interaction.user.id, train, resource.strip().lower(), amount)
+
+
+@tree.command(description="Unload a train's cargo at the station it stands on (your own, or a delivery to another nation)")
+async def unload(interaction: discord.Interaction, train: int):
+    await run(interaction, game_for(interaction.user.id).unload, interaction.user.id, train)
+
+
+@tree.command(description="Put a plain army on a train standing on the same tile, to ride its rails")
+async def board(interaction: discord.Interaction, train: int, army: int):
+    await run(interaction, game_for(interaction.user.id).board, interaction.user.id, train, army)
+
+
+@tree.command(description="Passengers step off a train as an army")
+async def disembark(interaction: discord.Interaction, train: int):
+    await run(interaction, game_for(interaction.user.id).disembark, interaction.user.id, train)
+
+
 @tree.command(description="List the trade offers you can accept right now")
 async def offers(interaction: discord.Interaction):
     g = game_for(interaction.user.id)
