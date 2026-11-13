@@ -72,6 +72,7 @@ def nation_data(game, uid, nid):
         "train_cost": game.fmt(r["soldier"]["train_cost"]),
         "steel": {"problem": tick.steel_problem(w, r, nid), "cost": game.fmt(tick.train_cost(r, True)) if tick.steel_cfg(r) else ""},
         "contests": game.contests(nid),
+        "updates": {"pending": game.pending(nid), "past": game.world.get("past_reports", {}).get(str(nid), [])},
         "report": game.report(uid), "standings": standings,
         "offers": offers, "pacts": pact_rows,
         "others": [m["name"] for m in w["nations"] if m["id"] != nid],
@@ -171,7 +172,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
                         "dest": a["dest"] if a["owner"] == nid else None} for a in armies],
             "orders": [describe(o) for o in world["orders"] if o["nation"] == nid],
             "contested": [k for k, c in world.get("contested", {}).items() if k in {t["k"] for t in tiles if t["visible"]}],
-            "contests": game.contests(nid),
+            "contests": game.contests(nid), "pending": sum(len(v) for v in game.pending(nid).values()),
             "soldier": game.word("soldier"), "worker": game.word("worker"), "mode": world["nations"][nid].get("mode", "basic"),
             "caravans": [{"from": c["from"], "to": c["to"], "tile": c["tile"], "dest": c["dest"]} for c in caravans]})
 

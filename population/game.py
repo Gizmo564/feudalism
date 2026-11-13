@@ -582,6 +582,16 @@ class Game:
 
     # ---------- pacts (records only) ----------
 
+    def pending(self, nid):
+        """What needs this nation's answer: pact proposals made to it, open trade offers it can accept, contested tiles it hasn't answered."""
+        w = self.world
+        mine = [{"id": p["id"], "line": "%s proposes pact %d: %s" % (w["nations"][p["a"]]["name"], p["id"], p["text"])}
+                for p in pacts.for_nation(w, nid) if p["status"] == "proposed" and p["b"] == nid]
+        offers = [{"id": o["id"], "line": self.offer_line(o)} for o in w["trades"]
+                  if o["status"] == "open" and o["from"] != nid and o["to"] in (nid, None)]
+        contests = [c for c in self.contests(nid) if c["choice"] is None]
+        return {"pacts": mine, "offers": offers, "contests": contests}
+
     def notify(self, nid, text):
         """Queue a private message for a nation's player, if they chose DMs. The bot sends it after the command (take_notices)."""
         uid = next((u for u, n in self.players.items() if n == nid), None)
@@ -797,6 +807,11 @@ class Game:
         self.world["last_public"] = list(events.get("public", []))
         self.world["last_pacts"] = list(events.get("pacts", []))
         self.world["last_events"] = events
+        past = self.world.setdefault("past_reports", {})        # each player's last 7 night reports, for the Activity's Updates tab
+        for i in before:
+            rows = past.setdefault(str(i), [])
+            rows.insert(0, {"tick": self.world["tick"], "text": guide.report(self.world, self.rules, i, self.world["report"][str(i)], events.get(str(i), []))})
+            del rows[7:]
         self.world["events"] = {}
         self.store.snapshot(self.world["tick"], W.to_json(self.world))
         lines = ["**Tick %d**" % self.world["tick"]] + rule_lines

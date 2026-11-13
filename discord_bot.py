@@ -236,11 +236,11 @@ def make_embed(page):
     return embed
 
 
-async def dm(user_id, text):
+async def dm(user_id, text, view=None):
     """Send a private message. Quietly gives up if the person has DMs closed."""
     try:
         user = await client.fetch_user(int(user_id))
-        await user.send(text[:2000])
+        await user.send(text[:2000], **({"view": view} if view else {}))
     except (discord.HTTPException, ValueError):
         pass
 
@@ -852,6 +852,97 @@ class ContestButton(discord.ui.DynamicItem[discord.ui.Button], template=r"contes
         except (GameError, ValueError) as e:
             return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
         await interaction.response.send_message(text, ephemeral=True)
+
+
+class NightButton(discord.ui.DynamicItem[discord.ui.Button],
+                  template=r"night:(?P<g>\d+):(?P<kind>pact|trade|contest):(?P<act>accept|decline|yield|fight):(?P<id>[-\d,]+)"):
+    """The answer buttons in a player's personal night message. The server id is in the custom id because a DM has no server."""
+    LABEL = {"accept": "Accept", "decline": "Decline", "yield": "Give up", "fight": "Fight"}
+    STYLE = {"accept": discord.ButtonStyle.success, "decline": discord.ButtonStyle.secondary,
+             "yield": discord.ButtonStyle.secondary, "fight": discord.ButtonStyle.danger}
+
+    def __init__(self, server, kind, act, ident):
+        what = {"pact": "pact %s", "trade": "trade %s", "contest": "%s"}[kind] % ident
+        super().__init__(discord.ui.Button(label="%s %s" % (self.LABEL[act], what), style=self.STYLE[act],
+                                           custom_id="night:%s:%s:%s:%s" % (server, kind, act, ident)))
+        self.server, self.kind, self.act, self.ident = server, kind, act, ident
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["g"], match["kind"], match["act"], match["id"])
+
+    async def callback(self, interaction):
+        current_server.set(int(self.server))
+        uid = interaction.user.id
+        try:
+            if self.kind == "pact":
+                text = (game.pact_accept if self.act == "accept" else game.pact_decline)(uid, int(self.ident))
+            elif self.kind == "trade":
+                text = (game.trade_accept if self.act == "accept" else game.trade_decline)(uid, int(self.ident))
+            else:
+                text = game.contest(uid, self.ident, self.act)
+        except (GameError, ValueError, NoGame) as e:
+            return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+        await interaction.response.send_message(text, ephemeral=True)
+        for to, note in game.take_notices():
+            await dm(to, note)
+
+
+class MyNightButton(discord.ui.DynamicItem[discord.ui.Button], template=r"mynight"):
+    """Under the nightly announcement: shows the player their own night report and what needs their answer, privately."""
+
+    def __init__(self):
+        super().__init__(discord.ui.Button(label="My night", style=discord.ButtonStyle.primary, custom_id="mynight"))
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction):
+        try:
+            text, view = night_message(game, interaction.user.id, interaction.guild_id)
+        except (GameError, NoGame) as e:
+            return await interaction.response.send_message("Can't do that: %s" % e, ephemeral=True)
+        await interaction.response.send_message(text, view=view, ephemeral=True) if view else \
+            await interaction.response.send_message(text, ephemeral=True)
+
+
+def night_message(g, uid, server):
+    """A player's own night: their report, what needs their answer, and buttons to answer. Returns (text, view or None)."""
+    nid = g.nid(uid)
+    todo = g.pending(nid)
+    lines, items = [], []
+    if todo["pacts"]:
+        lines += ["", "**Pact proposals**"] + ["- " + p["line"] for p in todo["pacts"]]
+        for p in todo["pacts"]:
+            items += [NightButton(server, "pact", "accept", p["id"]), NightButton(server, "pact", "decline", p["id"])]
+    if todo["offers"]:
+        lines += ["", "**Open trade offers**"] + ["- " + o["line"] for o in todo["offers"]]
+        for o in todo["offers"]:
+            items += [NightButton(server, "trade", "accept", o["id"]), NightButton(server, "trade", "decline", o["id"])]
+    if todo["contests"]:
+        lines += ["", "**Contested tiles** (no answer counts as fight)"] + ["- %s with %s" % (c["tile"], " and ".join(c["against"])) for c in todo["contests"]]
+        for c in todo["contests"]:
+            items += [NightButton(server, "contest", "yield", c["tile"]), NightButton(server, "contest", "fight", c["tile"])]
+    tail = "\n".join(lines)
+    if len(items) > 20:
+        tail += "\n(More are waiting: see /pact list, /offers, /contest.)"
+    text = g.report(uid)[:max(300, 1950 - len(tail))] + tail
+    if not items:
+        return text, None
+    view = discord.ui.View(timeout=None)
+    for i, item in enumerate(items[:20]):
+        item.item.row = i // 4                      # a pair of buttons never splits across rows
+        view.add_item(item)
+    return text, view
+
+
+class NightView(discord.ui.View):
+    """The button under the nightly announcement."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(MyNightButton())
 
 
 def contest_view(tile):
@@ -1582,7 +1673,7 @@ async def do_tick():
     channel = announce_channel()
     if channel:
         data = overview()
-        await channel.send((report + "\nUse /report to see your own night.")[:1990], file=png(data, "tick.png"))
+        await channel.send((report + "\nPress My night (or use /report) to see your own night.")[:1990], file=png(data, "tick.png"), view=NightView())
         try:
             await sync_roles(channel.guild)
         except discord.Forbidden:
@@ -1598,7 +1689,8 @@ async def do_tick():
         prefix = "**%s**\n" % guild.name if guild else ""        # a player may be in several servers' games
         for uid in game.players:
             if game.wants_dm(uid):
-                await dm(uid, prefix + game.report(uid))
+                text, view = night_message(game, uid, current_server.get())
+                await dm(uid, prefix + text, view)
     store.set("last_tick_seconds", int(time.time() - started))
 
 
@@ -1661,7 +1753,7 @@ async def on_interaction(interaction: discord.Interaction):
 
 @client.event
 async def on_ready():
-    client.add_dynamic_items(TradeButton, ContestButton)
+    client.add_dynamic_items(TradeButton, ContestButton, NightButton, MyNightButton)
     if not getattr(client, "commands_synced", False):       # on_ready can fire again after a reconnect
         client.commands_synced = True
         if ACTIVITY_PORT:

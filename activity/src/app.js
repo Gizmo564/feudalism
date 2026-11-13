@@ -72,6 +72,7 @@ function showBars(data, name) {
   $("who").replaceChildren(swatch(mine ? mine.color : "#888"), name, el("span", {className: "night", textContent: "Night " + data.tick}));
   const raw = ["food", "wood", "stone", "ore", "oil", "livestock"];        // refined goods only show up once you have some
   ui.contests = (data.contests || []).length;
+  ui.pending = data.pending || 0;
   drawTabs();
   $("pills").replaceChildren(...data.resources.filter(([r, n]) => raw.includes(r) || n > 0).map(([r, n]) =>
     el("div", {className: "pill"}, el("i", {style: "background:" + (RES_COLOUR[r] || "#888")}), el("span", {textContent: cap(r)}), el("b", {textContent: n}))));
@@ -173,7 +174,7 @@ function showTile(t, data, card, act, msg) {
 
 
 // ---- the tabs beside the map: Tile (above), then Nation, Trade, Pacts and Report. They use the same orders as the commands ----
-const TABS = [["tile", "Tile"], ["nation", "Nation"], ["trade", "Trade"], ["pacts", "Pacts"], ["report", "Report"]];
+const TABS = [["tile", "Tile"], ["nation", "Nation"], ["updates", "Updates"], ["trade", "Trade"], ["pacts", "Pacts"], ["report", "Report"]];
 const ui = {tab: "tile", headers: null, msg: null, refresh: async () => {}};
 const plain = (text) => text.replace(/\*\*/g, "");
 const box = (title, ...kids) => el("div", {className: "box"}, ...(title ? [el("h3", {textContent: title})] : []), ...kids);
@@ -201,7 +202,7 @@ async function send(body) {
 
 function drawTabs() {
   $("tabs").replaceChildren(...TABS.map(([id, label]) => {
-    const alert = id === "nation" && ui.contests;                       // a dot when a tile of yours is contested
+    const alert = (id === "nation" && ui.contests) || (id === "updates" && ui.pending);   // a dot when a tile is contested or something waits for your answer
     const b = el("button", {className: "tab" + (ui.tab === id ? " on" : "") + (alert ? " alert" : ""), textContent: label + (alert ? " \u25cf" : "")});
     b.onclick = () => { ui.tab = id; ui.msg = null; drawTabs(); showTab(); };
     return b;
@@ -222,7 +223,7 @@ async function loadNation() {
   const n = await got.json();
   const out = [];
   if (ui.msg) out.push(el("div", {className: "msg " + (ui.msg.ok ? "ok" : "bad"), textContent: ui.msg.message}));
-  out.push(...{nation: nationTab, trade: tradeTab, pacts: pactsTab, report: reportTab}[ui.tab](n));
+  out.push(...{nation: nationTab, updates: updatesTab, trade: tradeTab, pacts: pactsTab, report: reportTab}[ui.tab](n));
   $("npanel").replaceChildren(...out);
 }
 
@@ -316,6 +317,25 @@ function pactsTab(n) {
     ...(n.pacts.length ? n.pacts.map(row) : [el("p", {className: "hint", textContent: "You have no pacts."})]),
     box("Propose a pact", to, text, button("Propose", () => send({action: "pact_propose", to: to.value, text: text.value}), "primary"),
         note("A pact is a public record only. Nothing enforces it, and breaking it shows in the next report.")),
+  ];
+}
+
+function updatesTab(n) {   // what waits for your answer, then your last nights' reports
+  const u = n.updates, todo = u.pending;
+  const ask = (text, ...buttons) => box("", note(plain(text)), el("div", {className: "pair"}, ...buttons));
+  const rows = [
+    ...todo.pacts.map((p) => ask(p.line, button("Accept", () => send({action: "pact_accept", id: p.id}), "primary"),
+                                         button("Decline", () => send({action: "pact_decline", id: p.id}), "plain"))),
+    ...todo.offers.map((o) => ask(o.line, button("Accept", () => send({action: "trade_accept", id: o.id}), "primary"),
+                                          button("Decline", () => send({action: "trade_decline", id: o.id}), "plain"))),
+    ...todo.contests.map((c) => ask(c.tile + " is contested with " + c.against.join(", ") + ". No answer counts as fight.",
+                                    button("Give up", () => send({action: "contest", tile: c.tile, choice: "yield"}), "plain"),
+                                    button("Fight", () => send({action: "contest", tile: c.tile, choice: "fight"}), "primary"))),
+  ];
+  return [
+    ...(rows.length ? [el("h3", {textContent: "Needs your answer"}), ...rows] : [el("p", {className: "hint", textContent: "Nothing is waiting for your answer."})]),
+    ...(u.past.length ? [el("h3", {textContent: "Your last nights"}), ...u.past.map((r) => box("Night " + r.tick, el("div", {className: "text", textContent: plain(r.text)})))]
+                      : [el("p", {className: "hint", textContent: "Your reports will collect here after each night."})]),
   ];
 }
 

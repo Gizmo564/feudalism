@@ -364,3 +364,22 @@ def test_game_over_screen_data(tmp_path):
         finally:
             await client.close()
     asyncio.run(go())
+
+
+def test_updates_data_lists_what_needs_an_answer_and_past_nights(tmp_path):
+    g = make_game(tmp_path)
+    g.pact_propose(101, "Aldmere", "no attacks")
+    g.run_tick()
+
+    async def go():
+        client = TestClient(TestServer(server.make_app("1", "s", only(g), fake_discord([]))))
+        await client.start_server()
+        try:
+            n = await (await client.get("/api/nation", headers={"Authorization": "Bearer tok"})).json()
+            assert [p["id"] for p in n["updates"]["pending"]["pacts"]] == [1]
+            assert len(n["updates"]["past"]) == 1 and n["updates"]["past"][0]["tick"] == 1
+            m = await (await client.get("/api/map", headers={"Authorization": "Bearer tok"})).json()
+            assert m["pending"] >= 1
+        finally:
+            await client.close()
+    asyncio.run(go())

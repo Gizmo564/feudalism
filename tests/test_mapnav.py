@@ -331,7 +331,7 @@ def test_nightly_tick_posts_report_log_and_private_reports(bot, game, monkeypatc
     monkeypatch.setattr(bot, "sync_roles", AsyncMock())
     sent_dms = []
 
-    async def fake_dm(uid, text):
+    async def fake_dm(uid, text, view=None):
         sent_dms.append((uid, text))
 
     monkeypatch.setattr(bot, "dm", fake_dm)
@@ -633,3 +633,14 @@ def test_admin_wipe_asks_first_then_wipes_unpinned_messages(bot, game, monkeypat
         await view.no.callback(stop)
         assert "Nothing was deleted" in stop.response.edit_message.await_args.kwargs["content"]
     asyncio.run(go())
+
+
+def test_night_message_lists_what_needs_an_answer_with_buttons(bot, game):
+    game.pact_propose(101, "Aldmere", "no attacks until night 30")
+    text, view = bot.night_message(game, 100, 7)
+    assert "Pact proposals" in text and "proposes pact 1" in text
+    labels = [c.item.label for c in view.children]
+    assert labels == ["Accept pact 1", "Decline pact 1"]
+    assert view.children[0].item.custom_id == "night:7:pact:accept:1"
+    text, view = bot.night_message(game, 102, 7)          # nothing waiting for Corvain
+    assert view is None and "Pact proposals" not in text
