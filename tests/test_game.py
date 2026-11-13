@@ -261,7 +261,7 @@ def test_help_pages_and_welcome(game):
 def test_tutorial_walks_through_the_basics():
     from population import advice
     from population.tutorial import Tutorial
-    t = Tutorial(555, seed=3)
+    t = Tutorial(555, seed=1)
     g = t.game
     assert "Step 1" in t.hint()
     g.claim(555, sorted(advice.free_frontier(g.world, 0))[0])

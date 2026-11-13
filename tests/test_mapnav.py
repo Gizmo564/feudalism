@@ -1,3 +1,4 @@
+from population.hexes import distance
 import asyncio
 import importlib
 from types import SimpleNamespace
@@ -53,7 +54,9 @@ def test_card_for_claimable_own_and_water(game):
 
 def test_fog_hides_tiles_in_card(game):
     game.world["settings"]["fog"] = True
-    far = next(k for k, t in game.world["tiles"].items() if t["owner"] == 3)
+    mine = [k for k, t in game.world["tiles"].items() if t["owner"] == 0]
+    far = next(k for k, t in game.world["tiles"].items()
+               if t["owner"] == 3 and all(distance(k, m) > game.rules["vision_radius"] for m in mine))
     assert "fogged" in mapnav.tile_card(game.world, game.rules, 0, far)["text"]
 
 

@@ -41,13 +41,7 @@
       "defense_percent": 0
     }
   },
-  "terrain_weights": {
-    "field": 30,
-    "forest": 25,
-    "hills": 20,
-    "mountain": 15,
-    "water": 10
-  },
+  "terrain_weights": {"field": 40, "forest": 20, "hills": 15, "mountain": 15, "water": 10},
   "oil_deposit_one_in": 12,
   "yield_per_worker": {
     "food": 5,

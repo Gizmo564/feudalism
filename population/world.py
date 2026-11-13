@@ -139,7 +139,8 @@ def default_radius(players):
     return max(5, round(math.sqrt(22 * players / 3)))
 
 
-REACH = 6        # every dry tile has hills, forest and a mountain within this many tiles, so nobody is locked out
+PATCH_PERCENT = 4   # how many tiles are patch seeds: fewer seeds means bigger patches
+REACH = 8        # every dry tile has hills, forest and a mountain within this many tiles, so nobody is locked out
 
 
 def exact_mix(rng, n, weights):
@@ -234,7 +235,7 @@ def make_tiles(rules, rng, keys, tiles):
     mix = {name: w for name, w in weights.items() if name not in ("water", "mountain") and w > 0}
     rest = sorted(free)
     if rest and mix:
-        count = max(2, len(rest) * 6 // 100)
+        count = max(2, len(rest) * PATCH_PERCENT // 100)
         seeds = list(zip(rng.sample(rest, min(count, len(rest))), exact_mix(rng, count, mix)))
         for k in rest:
             terrain[k] = min(seeds, key=lambda s: distance(k, s[0]) + rng.random() * 0.9)[1]
