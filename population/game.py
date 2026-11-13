@@ -357,18 +357,22 @@ class Game:
         self.queue(nid, {"type": "upgrade", "tile": tile})
         return "Upgrade of the %s on %s to level %d queued. Cost: %s." % (t["building"], tile, W.level_of(t) + 1, self.fmt(up["cost"]))
 
-    def train(self, uid, n, steel=False):
+    def train(self, uid, n, steel=False, tank=False):
         nid = self.nid(uid)
         w, r = self.world, self.rules
         me = w["nations"][nid]
         if steel and tick.steel_problem(w, r, nid):
             raise GameError("Can't train steel %ss: %s." % (self.word("soldier"), tick.steel_problem(w, r, nid)))
-        cost = tick.train_cost(r, steel)
+        if tank and tick.tank_problem(w, r, nid):
+            raise GameError("Can't train tanks: %s." % tick.tank_problem(w, r, nid))
+        if tank and steel:
+            raise GameError("Pick tanks or steel %ss, not both." % self.word("soldier"))
+        cost = tick.train_cost(r, steel, tank)
         mine = [o for o in w["orders"] if o["nation"] == nid and o["type"] == "train"]   # trainings already queued tonight count against the limits
         queued = sum(o["n"] for o in mine)
         spent = {}
         for o in mine:
-            for res, v in tick.train_cost(r, bool(o.get("steel"))).items():
+            for res, v in tick.train_cost(r, bool(o.get("steel")), bool(o.get("tank"))).items():
                 spent[res] = spent.get(res, 0) + v * o["n"]
         room = W.housing(w, r, nid)[1] - W.soldiers(w, nid) - queued
         can = max(0, min(n, room, me["workers"] - 1 - queued))
@@ -388,8 +392,12 @@ class Game:
         order = {"type": "train", "n": can}
         if steel:
             order["steel"] = True
+        if tank:
+            order["tank"] = True
         self.queue(nid, order)
         note = "" if can >= n else " (you asked for %d, but only %d fit right now)" % (n, can)
+        if tank:
+            return "Training %d tank%s queued%s." % (can, "" if can == 1 else "s", note)
         return "Training %d %s%ss queued%s." % (can, "steel " if steel else "", self.word("soldier"), note)
 
     def contests(self, nid):
@@ -494,10 +502,10 @@ class Game:
         a = next(x for x in mine if x["id"] == army)
         boat = ""
         if tick.crosses_water(w, tick.find_path(w, a["tile"], dest)):
-            fee = self.rules.get("port", {}).get("boat_wood", 0)
-            if w["nations"][nid]["resources"].get("wood", 0) < fee:
-                raise GameError("That route crosses water over ports, and a boat costs %d wood. You don't have enough." % fee)
-            boat = " A boat will cost %d wood." % fee
+            fee = tick.boat_cost(self.rules)
+            if not tick.can_pay(w["nations"][nid]["resources"], fee):
+                raise GameError("That route crosses water over ports, and a boat costs %s. You don't have enough." % self.fmt(fee))
+            boat = " A boat will cost %s." % self.fmt(fee)
         if count is not None and not 0 < count <= a["n"]:
             raise GameError("Army %d has %d %ss. Send between 1 and %d." % (army, a["n"], self.word("soldier"), a["n"]))
         order = {"type": "move", "army": army, "dest": dest}

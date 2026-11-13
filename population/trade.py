@@ -177,11 +177,19 @@ def move_caravans(world, rules):
     for c in world.get("caravans", []):
         speed = speed_between(world, rules, c["tile"], c["dest"])
         nid = raider(world, c)
-        steps = 0
+        steps, rail_left = 0, rules["movement"].get("rail_steps", 0)
         while nid is None and c["tile"] != c["dest"] and steps < speed:
             step = next_step(world, c["tile"], c["dest"])
             if step is None:
                 break
+            ends = {world["tiles"][c["tile"]]["owner"], world["tiles"][step]["owner"]}
+            on_rail = (len(ends) == 1 and ends <= {c["from"], c["to"]}                  # a rail of one of the two trading nations
+                       and world["tiles"][c["tile"]]["building"] == "rail" and world["tiles"][step]["building"] == "rail")
+            if on_rail and rail_left > 0:
+                rail_left -= 1
+                c["tile"] = step
+                nid = raider(world, c)
+                continue
             c["tile"] = step
             steps += 1
             nid = raider(world, c)

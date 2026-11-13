@@ -701,7 +701,7 @@ async def claim_tiles(interaction: discord.Interaction, current: str):
 @tree.command(description="Build on one of your tiles")
 @app_commands.describe(tile="Your tile, like 3,-2", building="home, barracks, market, wall, workshop, or port")
 @app_commands.choices(building=[app_commands.Choice(name=b, value=b) for b in ("home", "barracks", "market", "wall", "toolworks", "forge", "cookhouse", "kiln", "port",
-                                                                                 "sawmill", "cokeworks", "cementworks", "factory", "engineworks")])
+                                                                                 "sawmill", "cokeworks", "cementworks", "factory", "engineworks", "rail")])
 async def build(interaction: discord.Interaction, tile: str, building: app_commands.Choice[str]):
     await run(interaction, game_for(interaction.user.id).build, interaction.user.id, tile.strip(), building.value)
 
@@ -745,8 +745,8 @@ async def assign(interaction: discord.Interaction, counts: str):
 
 
 @tree.command(description="Turn workers into soldiers (needs barracks room, ore and food)")
-async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500], steel: bool = False):
-    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count, steel)
+async def train(interaction: discord.Interaction, count: app_commands.Range[int, 1, 500], steel: bool = False, tank: bool = False):
+    await run(interaction, game_for(interaction.user.id).train, interaction.user.id, count, steel, tank)
 
 
 @tree.command(description="Give up or fight for a tile you and someone else claimed in the same night")

@@ -71,6 +71,7 @@ def nation_data(game, uid, nid):
         "advice": advice.advice(w, r, nid),
         "train_cost": game.fmt(r["soldier"]["train_cost"]),
         "steel": {"problem": tick.steel_problem(w, r, nid), "cost": game.fmt(tick.train_cost(r, True)) if tick.steel_cfg(r) else ""},
+        "tank": {"problem": tick.tank_problem(w, r, nid), "cost": game.fmt(tick.train_cost(r, False, True)) if tick.tank_cfg(r) else ""},
         "contests": game.contests(nid),
         "updates": {"pending": game.pending(nid), "past": game.world.get("past_reports", {}).get(str(nid), [])},
         "report": game.report(uid), "standings": standings,
@@ -169,7 +170,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             "holdings": {"land": land, "buildings": buildings, "building_types": list(rules["buildings"])},
             "tiles": [{"k": t["k"], "terrain": t["terrain"], "owner": t["owner"], "building": t["building"],
                        "oil": bool(t["oil"]), "visible": t["visible"], "level": t.get("level", 1)} for t in tiles],
-            "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"], "steel": bool(a.get("steel")),
+            "armies": [{"id": a["id"], "owner": a["owner"], "tile": a["tile"], "n": a["n"], "steel": bool(a.get("steel")), "tank": bool(a.get("tank")),
                         "dest": a["dest"] if a["owner"] == nid else None} for a in armies],
             "orders": [describe(o) for o in world["orders"] if o["nation"] == nid],
             "contested": [k for k, c in world.get("contested", {}).items() if k in {t["k"] for t in tiles if t["visible"]}],
@@ -225,7 +226,7 @@ def make_app(client_id, client_secret, find_game, call=discord_request, hooks=No
             elif kind == "upgrade":
                 message = game.upgrade(uid, str(body.get("tile", "")))
             elif kind == "train":
-                message = game.train(uid, int(body.get("n")), bool(body.get("steel")))
+                message = game.train(uid, int(body.get("n")), bool(body.get("steel")), bool(body.get("tank")))
             elif kind == "priority":
                 message = game.set_priority(uid, str(body.get("resource", "")), int(body.get("value")))
             elif kind == "trade_offer":

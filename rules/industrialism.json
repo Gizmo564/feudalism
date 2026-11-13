@@ -413,6 +413,12 @@
           "slots": 5
         }
       ]
+    },
+    "rail": {
+      "cost": {
+        "planks": 2,
+        "steel": 2
+      }
     }
   },
   "capital": {
@@ -486,7 +492,8 @@
   },
   "movement": {
     "trade_tiles_per_tick": 2,
-    "army_steps_on_own_land": 2
+    "army_steps_on_own_land": 2,
+    "rail_steps": 6
   },
   "oil_upkeep": {
     "soldiers_per_oil": 5,
@@ -516,7 +523,10 @@
     "output_min": 10
   },
   "build": {
-    "rise_percent": 15
+    "rise_percent": 15,
+    "flat": [
+      "rail"
+    ]
   },
   "refine_slots": 3,
   "refine": {
@@ -585,7 +595,9 @@
     }
   },
   "port": {
-    "boat_wood": 8
+    "boat_cost": {
+      "coal": 2
+    }
   },
   "steel_soldiers": {
     "enabled": true,
@@ -600,5 +612,15 @@
       "oil": 3
     }
   },
-  "auto_refine": true
+  "auto_refine": true,
+  "tanks": {
+    "enabled": true,
+    "building": "engineworks",
+    "cost": {
+      "engines": 1,
+      "steel": 2
+    },
+    "strength_percent": 400,
+    "oil_weight": 3
+  }
 }

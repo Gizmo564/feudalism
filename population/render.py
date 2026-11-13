@@ -31,6 +31,7 @@ BUILDING_ICON = {
     "market": "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
     "wall": "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
     "toolworks": "M-4.5 4.5L1.5 -1.5M-1 -5H5V1H-1Z",
+    "rail": "M-5 -2H5M-5 2H5M-3.5 -4V4M0 -4V4M3.5 -4V4",
     "forge": "M-5 -2H5L3 1H-3ZM-2 1V4H2V1",
     "cookhouse": "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
     "port": "M0 -5V4M-3 -2H3M-4.5 1Q0 6 4.5 1",
@@ -332,7 +333,7 @@ def render(world, rules, nid=None, center=None, radius=None, tile=30, legend=Tru
             if a["tile"] not in keys:
                 continue
             x, y = pos[a["tile"]][0] + ox, pos[a["tile"]][1] + oy
-            label = str(a["n"]) if a["owner"] == nid else "?"
+            label = ("T" if a.get("tank") else "") + str(a["n"]) if a["owner"] == nid else "?"
             w = s * (0.42 + 0.2 * len(label))
             if tidy:  # small tag in the lower-right corner of the tile
                 x, y = x + s * 0.5, y + s * 0.45

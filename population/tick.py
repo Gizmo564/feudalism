@@ -22,7 +22,7 @@ def describe_order(o):
     if kind == "move":
         return "Army %d to %s" % (o["army"], o["dest"])
     if kind == "train":
-        return "Train %d%s" % (o["n"], " steel" if o.get("steel") else "")
+        return "Train %d%s" % (o["n"], " tanks" if o.get("tank") else " steel" if o.get("steel") else "")
     if kind == "upgrade":
         return "Upgrade %s" % o["tile"]
     return kind
@@ -154,8 +154,18 @@ def port_problem(world, rules, nid, k):
     return None
 
 
+def boat_cost(rules):
+    """What one boat trip over ports costs: port.boat_cost (like steamships burning coal) or, by default, port.boat_wood wood."""
+    cfg = rules.get("port", {})
+    return dict(cfg.get("boat_cost") or ({"wood": cfg["boat_wood"]} if cfg.get("boat_wood") else {}))
+
+
 def crosses_water(world, path):
     return any(world["tiles"][k]["terrain"] == "water" for k in path or [])
+
+
+def fmt_cost(cost):
+    return ", ".join("%d %s" % (v, k) for k, v in cost.items() if v) or "nothing"
 
 
 def can_pay(res, cost):
@@ -169,7 +179,7 @@ def pay(res, cost):
 
 def build_cost(world, rules, nid, building, queued=0):
     """Each building you already own of the same kind makes the next one dearer. `queued` counts ones already ordered tonight."""
-    rise = rules.get("build", {}).get("rise_percent", 0)
+    rise = 0 if building in rules.get("build", {}).get("flat", []) else rules.get("build", {}).get("rise_percent", 0)   # rails don't get dearer
     have = sum(1 for t in world["tiles"].values() if t["owner"] == nid and t["building"] == building) + queued
     return {r: -(-v * (100 + rise * have) // 100) if v else 0 for r, v in rules["buildings"][building]["cost"].items()}
 
@@ -306,36 +316,58 @@ def steel_problem(world, rules, nid):
     return None
 
 
-def train_cost(rules, steel=False):
+def tank_cfg(rules):
+    cfg = rules.get("tanks", {})
+    return cfg if cfg.get("enabled") else None
+
+
+def tank_problem(world, rules, nid):
+    """Why nation nid can't train tanks (a sentence), or None if it can."""
+    cfg = tank_cfg(rules)
+    if cfg is None:
+        return "this game has no tanks"
+    if not any(t["owner"] == nid and t["building"] == cfg["building"] for t in world["tiles"].values()):
+        return "you need an %s" % cfg["building"]
+    return None
+
+
+def train_cost(rules, steel=False, tank=False):
     cost = dict(rules["soldier"]["train_cost"])
     if steel:
         cost["steel"] = cost.get("steel", 0) + steel_cfg(rules)["steel"]
+    if tank:
+        for r, v in tank_cfg(rules)["cost"].items():
+            cost[r] = cost.get(r, 0) + v
     return cost
 
 
 def strength(rules, a):
     """An army's fighting strength: its soldiers, plus the steel bonus."""
     cfg = steel_cfg(rules)
+    if a.get("tank") and tank_cfg(rules):
+        return a["n"] * tank_cfg(rules)["strength_percent"] // 100
     return a["n"] * (100 + cfg["bonus_percent"]) // 100 if a.get("steel") and cfg else a["n"]
 
 
 def do_train(world, rules, n, o):
     nid = n["id"]
-    steel = bool(o.get("steel"))
+    steel, tank = bool(o.get("steel")), bool(o.get("tank"))
     if steel and steel_problem(world, rules, nid):
         return W.ev(world, nid, "Steel training failed: %s" % steel_problem(world, rules, nid))
-    cost = train_cost(rules, steel)
+    if tank and tank_problem(world, rules, nid):
+        return W.ev(world, nid, "Tank training failed: %s" % tank_problem(world, rules, nid))
+    cost = train_cost(rules, steel, tank)
     limits = {"barracks room": W.housing(world, rules, nid)[1] - W.soldiers(world, nid), "workers (one must stay)": n["workers"] - 1}
     for r, v in cost.items():
         if v > 0:
             limits[r] = n["resources"][r] // v
     count = max(0, min([o["n"]] + list(limits.values())))
-    word = "steel soldiers" if steel else "soldiers"
+    word = "tanks" if tank else "steel soldiers" if steel else "soldiers"
     if count > 0:
         for r, v in cost.items():
             n["resources"][r] -= v * count
         n["workers"] -= count
-        W.add_army(world, nid, n["capital"], count, steel=steel)
+        W.add_army(world, nid, n["capital"], count, steel=steel, tank=tank)
     left = o["n"] - count
     if left <= 0:
         return W.ev(world, nid, "You trained %d %s" % (count, word))
@@ -351,15 +383,15 @@ def do_move(world, rules, n, o):
         return W.ev(world, nid, "Move failed: bad army or destination")
     path = find_path(world, a["tile"], o["dest"])
     if crosses_water(world, path):          # sailing over ports costs a flat amount of wood for the boat
-        fee = rules.get("port", {}).get("boat_wood", 0)
-        if n["resources"].get("wood", 0) < fee:
-            return W.ev(world, nid, "Army %d can't sail: a boat costs %d wood" % (a["id"], fee))
-        n["resources"]["wood"] -= fee
-        W.ev(world, nid, "A boat for army %d cost %d wood" % (a["id"], fee))
+        fee = boat_cost(rules)
+        if not can_pay(n["resources"], fee):
+            return W.ev(world, nid, "Army %d can't sail: a boat costs %s" % (a["id"], fmt_cost(fee)))
+        pay(n["resources"], fee)
+        W.ev(world, nid, "A boat for army %d cost %s" % (a["id"], fmt_cost(fee)))
     count = o.get("n")
     if count is not None and 0 < count < a["n"]:        # send only part of the army (advanced mode)
         a["n"] -= count
-        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None, steel=a.get("steel"))
+        W.add_army(world, nid, a["tile"], count, dest=o["dest"] if o["dest"] != a["tile"] else None, steel=a.get("steel"), tank=a.get("tank"))
         return
     a["dest"] = o["dest"] if o["dest"] != a["tile"] else None
 
@@ -529,28 +561,39 @@ def attack(world, rules, rng, a, k):
     world["armies"] = [x for x in world["armies"] if x["n"] > 0]
 
 
+def on_rail(world, k1, k2):
+    """True if both tiles hold a rail (the caller checks who owns them)."""
+    return world["tiles"][k1]["building"] == "rail" and world["tiles"][k2]["building"] == "rail"
+
+
 def move_armies(world, rules, rng):
     rank = {n["id"]: i for i, n in enumerate(sorted(world["nations"], key=lambda _: rng.random()))}
     for a in sorted([x for x in world["armies"] if x["dest"]], key=lambda x: (rank[x["owner"]], x["id"])):
         if a not in world["armies"]:
             continue
-        for i in range(rules["movement"].get("army_steps_on_own_land", 1)):   # extra steps only over your own land
-            if a not in world["armies"] or not a["dest"]:
-                break
+        steps_left = rules["movement"].get("army_steps_on_own_land", 1)
+        rail_left = rules["movement"].get("rail_steps", 0)      # steps along your own connected rails cost nothing, up to this many
+        while a in world["armies"] and a["dest"]:
             step = next_step(world, a["tile"], a["dest"])
             if step is None:
                 a["dest"] = None
                 break
-            own_land = world["tiles"][step]["owner"] == a["owner"] and world["tiles"][a["tile"]]["owner"] == a["owner"]
+            own = world["tiles"][step]["owner"] == a["owner"] and world["tiles"][a["tile"]]["owner"] == a["owner"]
+            if own and on_rail(world, a["tile"], step) and rail_left > 0:
+                rail_left -= 1
+            elif steps_left > 0:
+                steps_left -= 1
+            else:
+                break
             attack(world, rules, rng, a, step)
             if a in world["armies"] and a["tile"] == a["dest"]:
                 a["dest"] = None
-            if not own_land:
+            if not own:
                 break
     merged = []
     for a in world["armies"]:
         same = next((m for m in merged if m["owner"] == a["owner"] and m["tile"] == a["tile"]
-                     and m["dest"] == a["dest"] and bool(m.get("steel")) == bool(a.get("steel"))), None)
+                     and m["dest"] == a["dest"] and bool(m.get("steel")) == bool(a.get("steel")) and bool(m.get("tank")) == bool(a.get("tank"))), None)
         if same:
             same["n"] += a["n"]
         else:
@@ -565,7 +608,8 @@ def oil_upkeep(world, rules):
             continue
         away = [a for a in world["armies"]
                 if a["owner"] == n["id"] and world["tiles"][a["tile"]]["owner"] != n["id"]]
-        total = sum(a["n"] for a in away)
+        weight = (tank_cfg(rules) or {}).get("oil_weight", 1)          # a tank drinks more oil than a soldier
+        total = sum(a["n"] * (weight if a.get("tank") else 1) for a in away)
         if total == 0:
             continue
         need = math.ceil(total / cfg["soldiers_per_oil"])

@@ -46,6 +46,7 @@ const BUILDING_D = {
   market: "M-4.2 -1L-3.2 -4H3.2L4.2 -1ZM-3 -1V4H3V-1",
   wall: "M-4 4V-3H-2.6V-1.6H-1.2V-3H1.2V-1.6H2.6V-3H4V4Z",
   toolworks: "M-4.5 4.5L1.5 -1.5M-1 -5H5V1H-1Z",
+  rail: "M-5 -2H5M-5 2H5M-3.5 -4V4M0 -4V4M3.5 -4V4",
   forge: "M-5 -2H5L3 1H-3ZM-2 1V4H2V1",
   cookhouse: "M-4 -1H4V3H-4ZM-5 -1H5M-1.5 -4Q0 -2.5 1.5 -4",
   port: "M0 -5V4M-3 -2H3M-4.5 1Q0 6 4.5 1",
@@ -254,7 +255,9 @@ function nationTab(n) {
   const room = Math.max(0, p.soldier_room - p.soldiers);
   const count = input("How many");
   count.type = "number"; count.min = 1; count.value = 1;
-  const kind = choose([["", "Plain"], ["steel", "Steel" + (n.steel.problem ? " (" + n.steel.problem + ")" : " - costs " + n.steel.cost)]]);
+  const kinds = [["", "Plain"], ["steel", "Steel" + (n.steel.problem ? " (" + n.steel.problem + ")" : " - costs " + n.steel.cost)]];
+  if (n.tank.cost) kinds.push(["tank", "Tank" + (n.tank.problem ? " (" + n.tank.problem + ")" : " - costs " + n.tank.cost)]);
+  const kind = choose(kinds);
   const food = n.food.net >= 0 ? "+" + n.food.net : String(n.food.net);
   // advanced mode: an exact number of workers on a resource (or "auto": it follows the priorities)
   const exact = (res) => {
@@ -291,7 +294,7 @@ function nationTab(n) {
     box("Priorities (about how much each makes tonight)", ...n.priorities.map(prio), note(advanced ? "These only decide the resources you left on auto." :
         "0 turns a resource off, 5 is top. Only the proportions matter. Greyed resources need land that makes them.")),
     box("Train " + n.soldier + "s", note("Each costs " + n.train_cost + " and a " + n.worker + ". Room for " + room + " more."), count, kind,
-        button("Train", () => send({action: "train", n: Number(count.value), steel: kind.value === "steel"}), room ? "primary" : "off")),
+        button("Train", () => send({action: "train", n: Number(count.value), steel: kind.value === "steel", tank: kind.value === "tank"}), room ? "primary" : "off")),
     box("Advice", ...n.advice.map((a) => note("- " + a))),
   ];
 }
@@ -488,7 +491,7 @@ function showMap(data, headers) {
       const t = at[a.tile]; if (!t || !seen.includes(t)) continue;
       let x = sx(t), y = sy(t), k = size / 21;
       if (t.building) { x -= size * 0.5; y += size * 0.45; k *= 0.8; }
-      shield(x, y, k, a.owner, a.owner === data.me ? String(a.n) : "?", a.steel);
+      shield(x, y, k, a.owner, a.owner === data.me ? (a.tank ? "T" : "") + a.n : "?", a.steel);
     }
     for (const c of data.caravans || []) {                           // 5. caravans: carts, moved to the top-left corner if something else is there
       const t = at[c.tile]; if (!t || !seen.includes(t)) continue;

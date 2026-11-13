@@ -101,3 +101,61 @@ def test_auto_refine_works_only_when_inputs_are_in_store(rules):
     w, n = shop(rules, "cokeworks", coal=20)             # off: priority 0 means idle
     n["auto"] = False
     assert "coke" not in tick.work_plan(w, rules, n)
+
+
+def two_armies_world(rules):
+    w = blank_world(rules, radius=6)
+    for name, k in (("A", "-5,0"), ("B", "5,0")):
+        W.found_nation(w, rules, name, k, dict(rules["start"]["resources"]))
+    for x in range(-5, 5):                                     # a long strip of A's land along the row
+        w["tiles"]["%d,0" % x].update(owner=0)
+    return w
+
+
+def test_rails_let_armies_cover_more_ground(rules):
+    import random
+    w = two_armies_world(rules)
+    a = W.add_army(w, 0, "-5,0", 5)
+    a["dest"] = "3,0"
+    tick.move_armies(w, rules, random.Random(1))
+    assert a["tile"] == "-3,0"                                  # 2 steps a night on your own land
+    w = two_armies_world(rules)
+    for x in range(-5, 4):
+        w["tiles"]["%d,0" % x]["building"] = "rail" if x != -5 else "capital"
+    w["tiles"]["-5,0"]["building"] = "rail"
+    a = W.add_army(w, 0, "-5,0", 5)
+    a["dest"] = "3,0"
+    tick.move_armies(w, rules, random.Random(1))
+    assert a["tile"] == "3,0"                                   # 8 tiles in one night: 6 free rail steps plus 2
+
+
+def test_rail_cost_never_rises_but_other_buildings_do(rules):
+    w = two_armies_world(rules)
+    first = tick.build_cost(w, rules, 0, "rail")
+    for x in range(-4, -1):
+        w["tiles"]["%d,0" % x]["building"] = "rail"
+    assert tick.build_cost(w, rules, 0, "rail") == first
+    w["tiles"]["-1,0"]["building"] = "home"
+    assert tick.build_cost(w, rules, 0, "home") != rules["buildings"]["home"]["cost"]
+
+
+def test_tanks_cost_more_and_fight_like_four_soldiers(rules):
+    w = two_armies_world(rules)
+    assert "engineworks" in tick.tank_problem(w, rules, 0)
+    w["tiles"]["-4,0"].update(building="engineworks")
+    assert tick.tank_problem(w, rules, 0) is None
+    cost = tick.train_cost(rules, tank=True)
+    assert cost["engines"] == 1 and cost["steel"] == 2 and cost["ore"] == 1
+    n = w["nations"][0]
+    n["resources"].update(engines=2, steel=10, ore=10, food=50)
+    n["workers"] = 20
+    w["tiles"]["-3,0"].update(building="barracks")
+    tick.queue(w, rules, 0, {"type": "train", "n": 5, "tank": True})
+    tick.apply_orders(w, rules, __import__("random").Random(1))
+    tanks = [a for a in w["armies"] if a.get("tank")]
+    assert sum(a["n"] for a in tanks) == 2                                  # only two engines
+    assert tick.strength(rules, tanks[0]) == 8                              # each tank counts as four
+
+
+def test_boats_burn_coal(rules):
+    assert tick.boat_cost(rules) == {"coal": 2}
