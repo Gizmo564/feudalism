@@ -655,23 +655,28 @@ def test_title_roles_get_the_rank_colours(bot, game):
     made, edited = {}, {}
 
     class Role:
-        def __init__(self, name, colour):
-            self.name, self.colour = name, colour
+        def __init__(self, name, colour, hoist=False):
+            self.name, self.colour, self.hoist = name, colour, hoist
 
-        async def edit(self, colour, reason=None):
-            edited[self.name] = colour.value
+        async def edit(self, colour, hoist, reason=None):
+            edited[self.name] = (colour.value, hoist)
 
     class Guild:
         roles = [Role("Duke", discord.Colour(0x123456))]            # an older role with the wrong colour
 
-        async def create_role(self, name, colour, reason=None):
-            made[name] = colour.value
-            return Role(name, colour)
+        async def create_role(self, name, colour, hoist, reason=None):
+            made[name] = (colour.value, hoist)
+            return Role(name, colour, hoist)
 
         async def fetch_member(self, uid):
             raise discord.NotFound(MagicMock(status=404), "gone")
 
     bot.game = game
     asyncio.run(bot.sync_roles(Guild()))
-    assert made["Lord"] == 0x9aa0a6 and made["Emperor"] == 0xd6453d and "Duke" not in made
-    assert edited == {"Duke": 0x8e5fd0}
+    assert made["Lord"] == (0x9aa0a6, True) and made["Emperor"] == (0xd6453d, True) and "Duke" not in made
+    assert edited == {"Duke": (0x8e5fd0, True)}                       # shown as its own group by default
+    made.clear(); edited.clear()
+    bot.store.set("settings", {"hoist_roles": "0"})                    # an admin switches the groups off
+    Guild.roles = []
+    asyncio.run(bot.sync_roles(Guild()))
+    assert made["Lord"] == (0x9aa0a6, False)

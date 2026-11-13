@@ -96,6 +96,7 @@ SETTINGS = {
     "admin_role": "name of the admin role",
     "dm_reports": "allow night reports by DM (1 or 0); players still opt in themselves with /dms",
     "advanced_mode": "let players switch to advanced mode: exact worker counts, split armies (1 or 0)",
+    "hoist_roles": "show each title (Lord, Baron...) as its own group in the member list (1 or 0)",
 }
 
 
@@ -117,7 +118,7 @@ def check_setting(name, text):
         raise GameError("tick_minutes is a number from 1 to 1440, or blank")
     if name == "admin_role" and not 1 <= len(text) <= 50:
         raise GameError("admin_role needs a name (up to 50 characters)")
-    if name in ("dm_reports", "advanced_mode"):
+    if name in ("dm_reports", "advanced_mode", "hoist_roles"):
         if text.lower() not in ("1", "0", "on", "off", "yes", "no"):
             raise GameError("%s is 1 or 0" % name)
         text = "1" if text.lower() in ("1", "on", "yes") else "0"

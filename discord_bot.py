@@ -48,7 +48,7 @@ DM_REPORTS = os.environ.get("DM_REPORTS", "1").strip().lower() not in ("0", "fal
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 SETTING_DEFAULTS = {"tick_time": TICK_TIME, "tick_tz": TICK_TZ, "tick_minutes": TICK_MINUTES, "admin_role": ADMIN_ROLE,
-                    "dm_reports": "1" if DM_REPORTS else "0", "advanced_mode": "1"}      # each server can override these with /admin settings
+                    "dm_reports": "1" if DM_REPORTS else "0", "advanced_mode": "1", "hoist_roles": "1"}      # each server can override these with /admin settings
 games = Games(os.environ.get("GAMES_DIR", "games"), int(os.environ.get("MAX_GAMES", "20") or 20))   # one game per server
 game = ThisServer(games, "game")        # the game of the server the current command came from
 store = ThisServer(games, "store")
@@ -1699,14 +1699,15 @@ async def sync_roles(guild):
         return
     names = [r["title"] for r in game.rules["ranks"]]
     roles = {}
+    hoist = settings(store, SETTING_DEFAULTS)["hoist_roles"] == "1"     # admins can switch the separate member-list groups off
     for rank in game.rules["ranks"]:
         name, hexcol = rank["title"], rank.get("color")
         colour = discord.Colour(int(hexcol[1:], 16)) if hexcol else discord.Colour.default()
         role = discord.utils.get(guild.roles, name=name)
         if role is None:
-            role = await guild.create_role(name=name, colour=colour, reason="Game title")
-        elif hexcol and role.colour != colour:
-            await role.edit(colour=colour, reason="Title colour")       # an older role gets the rank's colour too
+            role = await guild.create_role(name=name, colour=colour, hoist=hoist, reason="Game title")
+        elif (hexcol and role.colour != colour) or role.hoist != hoist:
+            await role.edit(colour=colour, hoist=hoist, reason="Title look")       # an older role gets the rank's colour and grouping too
         roles[name] = role
     for uid, title in titles.items():
         try:
