@@ -277,6 +277,8 @@ def test_tutorial_walks_through_the_basics():
     assert "Step 4" in t.hint()
     t.night()
     t.night()
+    last = t.hint()
+    assert "Step 5" in last and "Activity" in last
     assert "Tutorial complete" in t.hint()
     assert g.world["tick"] == 4 and t.game.world["nations"][1]["alive"]
 

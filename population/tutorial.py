@@ -6,7 +6,7 @@ from . import bot
 from .game import Game
 from .store import Store
 
-STEPS = 4
+STEPS = 5
 RIVALS = (("Rival North", 0.1), ("Rival South", 0.3))
 
 
@@ -18,6 +18,7 @@ class Tutorial:
         saved = self.game.store.get("tutorial")
         if saved:                                   # a practice game from before a restart: pick up where it was
             self.nights, self.start_land = saved["nights"], saved["start_land"]
+            self.seen_activity = saved.get("seen_activity", False)
             return
         self.game.open_signup(mode)
         self.game.join(self.uid, "Your Realm")
@@ -25,11 +26,13 @@ class Tutorial:
             self.game.join("rival%d" % i, name)
         self.game.start(5, seed=seed)
         self.nights = 0
+        self.seen_activity = False                  # the Activity step has been shown
         self.start_land = len(self.land())
         self.save()
 
     def save(self):
-        self.game.store.set("tutorial", {"nights": self.nights, "start_land": self.start_land})
+        self.game.store.set("tutorial", {"nights": self.nights, "start_land": self.start_land,
+                                                  "seen_activity": self.seen_activity})
 
     def land(self):
         return [k for k, t in self.game.world["tiles"].items() if t["owner"] == self.nid]
@@ -51,7 +54,8 @@ class Tutorial:
         return {"claim": len(self.land()) > self.start_land,
                 "build": any(w["tiles"][k]["building"] not in (None, "capital") for k in self.land()),
                 "priorities": n["priorities"] != self.game.rules["default_priorities"],
-                "nights": self.nights >= 3}
+                "nights": self.nights >= 3,
+                "activity": self.seen_activity}
 
     def hint(self):
         """The next thing to try, as a short message."""
@@ -73,4 +77,12 @@ class Tutorial:
             return "Step 2 of %d - Build: in /zoom pick one of your own tiles and press Home. Homes let your people grow." % STEPS
         if not done["priorities"]:
             return "Step 3 of %d - Work: open /info, go to the Economy tab and change a priority with the - and + buttons." % STEPS
-        return "Step 4 of %d - Let a few nights pass with /tutorial night (%d so far). Check /report and /info each time." % (STEPS, self.nights)
+        if not done["nights"]:
+            return "Step 4 of %d - Let a few nights pass with /tutorial night (%d so far). Check /report and /info each time." % (STEPS, self.nights)
+        self.seen_activity = True          # this step is only shown, not done: the next hint says the tutorial is complete
+        self.save()
+        return ("Step 5 of %d - The Activity: it is the same game as a live map you can click. Open the app launcher next to "
+                "the message box and start this bot's Activity. Pick a tile to claim or build, and use the Nation tab to set "
+                "work, the Trade tab for offers, Pacts, and Report. It shows the real game, not this practice one, so it will say "
+                "you are not in a running game until you have joined. If you don't see it, this server hasn't turned it on; "
+                "every command does the same things. Type /tutorial hint when you've had a look." % STEPS)
