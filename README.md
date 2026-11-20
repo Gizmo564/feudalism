@@ -1,5 +1,7 @@
 # Feudalism and Population – game engine (code package is named `population`) (no Discord code yet)
 
+Part of [0801564.xyz](https://0801564.xyz).
+
 - `rules/population.json` holds every game number. To change the rules, edit a copy and pass it to `simulate.py --rules`.
 - `population/` is the engine: `world.py` (state, map), `tick.py` (orders and the nightly tick), `combat.py`, `trade.py`, `victory.py`, `views.py` (fog), `bot.py` (test players).
 - Run tests: `python3 -m pytest -q`
